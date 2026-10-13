@@ -1,11 +1,49 @@
-# HMigBot-iOS 0.5.0
+# HMigBot-iOS 0.7.0
 
 读取原生 iOS 源码与功能特征，按原 HMigBot 五阶段生成 spec、计划和原生鸿蒙代码。
-本工具基于独立 HMigBot CodeX 1.6.1；完整所需资源随包提供，无需原插件目录。
+本工具保留独立 HMigBot CodeX 1.6.1 的实施/验证资源，并接入 1.7.0 调度核心；所需资源随包提供，无需原插件目录。
 
 **主入口：`$a2h-run`。主线：a2h-spec → a2h-plan → a2h-execute → a2h-verify → a2h-retrospect。**
 由宿主模型执行技能规程完成理解、设计、编码和修复；脚本负责索引、检查、构建与证据记录。
 `bin/a2h` 是原运行支持程序，不能单独完成语义迁移。
+
+## 0.6.0 可执行 Harness
+
+七个 iOS 技能接入机器事实、覆盖义务、稳定 AC、冻结计划和摘要回执。实现执行采用原版 `next_batch → dispatch → receipt → land_results`，旧版通过记录需显式导入复核。错误初值、笼统不适用、遗漏义务、越界写入和空处理器有程序门禁；生成、编译、行为观察分开记录。
+
+[实现范围与限制](docs/HARNESS-0.6.md) · [字段、命令和恢复协议](skills/ios-source-analysis/references/harness-v2.md)
+
+本轮验证为工具/合同/安装及隔离夹具，未完成指定真实 App 的双端设备验收。缺少运行证据的 AC 保持 UNVERIFIED。
+
+## 0.7.0 外部 iOS 专业能力
+
+固定版本的上游资料实际随包提供，安装后无需联网获取；由原 iOS 分析技能按主题加载，
+专业知识与源事实分别记录。未修改上游文件，不把上游开发/现代化指令用于修改待迁移源仓。
+
+| 上游资料 | 固定提交 | 使用位置 | 本版状态 |
+|---|---|---|---|
+| [AvdLee SwiftUI](https://github.com/AvdLee/SwiftUI-Agent-Skill) | `204dba7c67256a8b707ee3fbc5759a824191974f` | UI 状态、组合、身份、导航、布局 | MIT；已导入实际 skill、参考和脚本 |
+| [AvdLee Swift Concurrency](https://github.com/AvdLee/Swift-Concurrency-Agent-Skill) | `d5770817d2622e1585b1f7eaebc791a9cb0959c8` | 工程并发配置、任务/Actor、取消、回调、生命周期 | MIT；已导入实际 skill 和参考 |
+| [Axiom UIKit/内存主题](https://github.com/CharlesWiltgen/Axiom) | `d35eaca69e423d5157bb39c2a1b5f76ff9802f86` | UIKit、桥接、Auto Layout、Scene、Combine、ARC/block | MIT；只导入所选主题 |
+
+共 3 个快照、87 个文件，来源和逐文件 SHA256 在 `vendor/ios-expertise/manifest.json`。
+运行 `expertise-audit` 核验；`expertise-plan` 产生本轮加载清单，`expertise-review` 保存实际源观察。
+必需审阅缺失、资料摘要不符、源码变化或清单被编辑时，`source-check --harness` 拒绝进入实现计划。
+上述检查保证来源/记录合同，不证明模型的语义判断正确；独立源审阅和行为验收继续必需。
+
+| MCP/工具能力 | 本版接入方式 | 实际运行前提/状态 |
+|---|---|---|
+| Serena / SourceKit 类 MCP | 已实现 stdio 初始化、工具发现、源只读查询、原始结果采集和证据关联门禁 | 服务另行安装并固定版本；本轮仅实测隔离协议服务，未实测真实 Serena/SourceKit |
+| Apple Xcode MCP | 同一适配器支持 XcodeRead/Grep/Glob 等源读工具；按实际 tools/list 判断可用性 | Mac/Xcode 打开源工程并启用访问；本机未连接 |
+| MobileBuildMCP | 源端构建/测试/日志通过宿主可用工具或其真实 CLI，进入原采集/验证协议 | 可选；需 Mac/Xcode；本机未连接；不属于源只读适配器白名单 |
+| DevEco/hvigor/hdc 与原校验器 | 保留原 HMigBot 构建、结构、UT、UI/视觉流程 | 按实际目标 SDK、签名和设备判定；工具发行测试不代表用户 App 已验收 |
+
+MCP 未配置时可继续源码静态分析；依赖有效构建、动态绑定或运行观察的结论保持 unknown/待验。
+本版 MCP 响应为 `tool_response`，不自动改写机器 facts，也不提升为 compiler_binding/runtime。
+本版实现 stdio；远端 Mac 可提供显式 SSH stdio 桥，HTTP transport 尚未实现。
+Serena 最新应用为 GPL-3.0-or-later，SolidLSP 为 MIT；本包未打包 Serena 应用。
+[运行与字段协议](skills/ios-source-analysis/references/external-expertise.md) ·
+[第三方许可](docs/THIRD-PARTY-NOTICES.md)
 
 ## 安装
 
@@ -43,6 +81,126 @@ python .hmigbot-ios/plugin/scripts/a2h_ios.py init --source 'D:/Projects/MyNativ
 
 配置使用 `source_platform: ios`、`ios`、`harmonyos`；构建工具路径按实际环境填写。
 没有 Mac 仍可读源码和实施鸿蒙代码；源编译、iPhone 安装、源运行与双端验收单独记录。
+
+## 迁移流水线、细分步骤与阶段交接
+
+以下路径均相对**鸿蒙目标项目根目录**。`<runtime>` 在安装后为 `.hmigbot-ios/plugin`。
+F/AC 是稳定功能/验收 ID；源事实 ID 关联原生语义和验收，不能用生成的目标实现反推源预期。
+主入口 `$a2h-run` 依次消费五阶段产物；脚本负责机械检查，宿主模型按 skill 读取、解释、实现。
+
+```mermaid
+flowchart TD
+  I[初始化：源/目标/范围/环境] --> S[a2h-spec：原生源事实与规格]
+  K[固定上游 skill 与可选源 MCP 证据] --> S
+  S --> G{source-check --harness 与覆盖检查}
+  G -->|通过| P[a2h-plan：责任/依赖/冻结任务]
+  G -->|缺项| S
+  P --> E[a2h-execute：资源/UI/Base/功能/组装]
+  E --> V[a2h-verify：独立预期与真实验证]
+  V -->|问题回流| E
+  V --> R[a2h-retrospect：结果/缺口/经验]
+```
+
+### 准备：初始化与范围确认
+
+| 细分步骤 | Skill / MCP / 工具 | 产物及后续用途 |
+|---|---|---|
+| 定位分离的 iOS 源根与鸿蒙目标、确认迁移范围和已有授权 | a2h-init、a2h-run | `.migbot/config.json` 的 source_platform/ios/harmonyos；所有阶段从这里取路径 |
+| 核验 DevEco/SDK/Node/JDK/ohpm/hvigor/hdc 等实际环境 | hmos-env-doctor；源端 Xcode/设备能力可选 | 环境检查结果、可执行/不可执行项；环境缺口不能写成运行通过 |
+| 新项目初始化；旧 baseline 保留 ID 与历史后导入/复核 | harness-init/import-legacy；原 findings 工具 | harness 标记、旧记录 history、`spec/.a2h/open-findings.json`；新初始化启用外部专业审阅门禁 |
+
+### 第一阶段：a2h-spec——源理解与规格
+
+**输入：**真实 iOS 源码、配置、范围、既有 decisions/findings。**本阶段不写鸿蒙生产代码。**
+
+| 细分步骤 | Skill / MCP / 工具 | 主要产物 |
+|---|---|---|
+| 1.1 建快照、提取源信号/义务和字面量 | ios-source-analysis；source-index、facts、literals；按需 SwiftSyntax/Clang/IB/资源 provider | `spec/baseline/ios-source-index.json`、`ios-facts.json`、`ios-obligations.json`、`literal-ledger.json`；provider 原始产物在 `spec/ref/provider-runs/` |
+| 1.2 确定本轮专业资料；读取实际文件并分配分析 owner | expertise-plan；AvdLee/Axiom 固定资料 | `spec/ref/ios-expertise-plan.json`，给出上游文件摘要、源范围、事实 ID 和 UI/功能主题 |
+| 1.3 识别工程/target/scheme/configuration、依赖与语言边界 | ios-project-inspector；Concurrency 工程配置规程；可选 Xcode/SourceKit MCP | `spec/ref/ios-project.md`、`module-index.md`、`ios-project-signals.json`；有效构建成员未确认则保留 unresolved |
+| 1.4 沿入口分析 SwiftUI/UIKit/IB、状态、事件、导航和布局 | ios-ui-analyzer；AvdLee SwiftUI、Axiom UIKit/内存资料；可选源 MCP | `spec/ref/ios-ui-facts.md`、`ios-ui-signals.json`；页面/状态矩阵、source anchors、原生语义候选 |
+| 1.5 沿行为链分析规则、错误/取消、任务/Actor、数据流和恢复 | ios-feature-analyzer；Swift Concurrency、适用 Axiom 资料；可选定义/引用查询 | `spec/ref/ios-feature-facts.md`、`ios-feature-signals.json`；输入→处理→状态/副作用→观察、源端独立预期 |
+| 1.6 核对网络、系统 API、权限、entitlements、三方接缝 | ios-api-inventory；适用系统/三方目标技能；可选源 MCP | `spec/baseline/api-inventory/`、`ios-api-signals.json`；原服务契约和平台差异候选 |
+| 1.7 保存专业审阅与实际工具使用证据 | expertise-review、mcp-query；源分析 owner | `spec/ref/ios-expertise-reviews.json`；可选 `ios-mcp-index.json`、`mcp-runs/MCP-ID/`；`ios-analysis-provenance.json` 由分析 owner 记录实际来源与使用状态 |
+| 1.8 合并 UI/功能规格、稳定 ID、AC 与批准的差异 | a2h-spec；a2h-functional-registry/merge、arkts-ui-alignment；decision-ledger | `spec/baseline/ui-manifest.md`、`ui/page_*.md`、`feature-index.md`、`feature-base.md`、`features/F*.md`、`ios-semantics.json`、`ios-coverage.json`；复杂细节放 addendum，截图仅在实际采集后登记 |
+| 1.9 检查范围、义务→AC、原生语义、源证据和依赖项 | source-check --harness；arkts-ui-coverage-auditor、arkts-feature-coverage-auditor；原 addenda/divergence/literals/traceability 校验 | `spec/baseline/ios-source-check.json`、`spec/reports/ios-harness-check.json`、`spec/ui-coverage-report.md`、`spec/baseline/source-coverage-report.md`、`spec/.a2h/requirements-index.json`、共享 findings |
+
+**交给 plan：**baseline、源语义、稳定 AC、decisions、已审阅外部资料与工具证据、覆盖报告。
+源门禁及计划要求的覆盖检查通过后排期；unknown 阻断受影响实现，未解释调用/源版本变化回本阶段。
+专业审阅记录不能替代源语义、义务覆盖或独立 oracle。
+
+### 第二阶段：a2h-plan——责任、依赖与执行计划
+
+| 细分步骤 | Skill / MCP / 工具 | 产物及衔接 |
+|---|---|---|
+| 2.1 回读 baseline、覆盖和 findings，确认未决替代已处理 | a2h-plan；source-check --harness；原覆盖消费者 | 待排范围与已批准 decisions；失败回 spec，保留稳定 ID |
+| 2.2 规划 UI、公共 Base 和功能切片 | a2h-plan；按需项目/状态/数据/导航/系统/三方目标技能 | `spec/baseline/plans/ui-plan.md`、`base-plan.md`、`feature-plan.md` 索引、同目录 `slices/*.md` |
+| 2.3 指定具体文件 owner、依赖、共享接线与占位解决者 | a2h-plan 原 indexed 规程 | `spec/baseline/plans/coverage-matrix.md`、`spec/placeholder-registry.md`；共享文件单一 owner，依赖形成 DAG |
+| 2.4 对账全部 AC 的任务归属与源语义约束 | 原 lint_plan_coverage、UI/Base/Slice 校验 | `spec/.a2h/plan-coverage.json` 和检查结果；不得遗漏检测义务或降低验收强度 |
+| 2.5 将可读计划转为冻结机器计划 | plan-ir；原调度器初始化 | `spec/blueprint/`、`spec/waves/plan-domains.json`、`prompts/domains/*.txt`；冻结 baseline、专业审阅和 MCP 证据摘要 |
+
+**交给 execute：**冻结任务书、ownership/DAG、fact/AC 引用、目标契约和 decisions。
+已有授权直接沿用；只有新的产品取舍需要具体决定。本阶段通常不查询 MCP，发现新源事实缺口回 spec。
+
+### 第三阶段：a2h-execute——鸿蒙实现与编译收口
+
+| 细分步骤 | Skill / MCP / 工具 | 主要产物 |
+|---|---|---|
+| 3.0 派发、等待、回执、落账，持续核对冻结输入 | a2h-execute；next-batch/receipt/land-results；支持角色按任务使用，不能派发时按同任务书串行 | 原三份状态账本、`spec/waves/results/`、任务真实文件摘要；done 只表示生成任务落账 |
+| 3.1 Stage 0：目标骨架、应用身份与资源 | arkts-project-scaffolder、arkts-app-identity、ios-resources-convert、arkts-i18n | Harmony 配置、resources、资源映射与缺口；不猜图片逻辑尺寸或字体/颜色变体 |
+| 3.2 Stage 1：分页 ArkUI 转换、状态接口、导航接线 | ios-ui-to-arkui；arkts-component-builder/state-manager/navigation-builder/ui-alignment/animation 等按页面计划使用 | `.ets` 页面/组件、接口、UI batch brief；状态与 task 语义来自 spec，不能机械套目标装饰器 |
+| 3.3 Stage 2：公共基础设施 | 原 Base worker/closer；arkts-data-layer、state-manager、system-capabilities、library-migration 等按计划使用 | 模型/服务/存储/共享组件、`spec/execution/base-contracts.md`、Base brief |
+| 3.4 Stage 3：功能切片、ViewModel/Repository 与副作用 | 原功能 worker/closer；目标系统/登录/支付/媒体/WebView 等领域技能 | UI←VM←Repository←API/DB 真实闭环；复杂切片 `spec/execution/source-understanding/*-source-notes.md`、slice brief |
+| 3.5 组装、结构/接线/占位收敛、真实终态构建 | arkts-structural-closure/router-verify、hmos-fix-build-errors/hmos-builder、a2h-build；实际 hvigor | 结构/接线检查、构建日志/退出码/HAP、`spec/migration-report.md`；编译失败回实现，行为仍待验证 |
+
+**交给 verify：**当前源码与摘要、真实编译证据、实现/接线 brief、AC 实现指针和未关闭 findings。
+通常使用冻结源证据；新增源查询要回 spec 复核并显式 replan，不能在执行中改 baseline/任务书。
+MobileBuildMCP 可辅助源端构建核验，但不能替代鸿蒙 hvigor 或目标行为测试。
+
+### 第四阶段：a2h-verify——独立预期与真实验证
+
+| 细分步骤 | Skill / MCP / 工具 | 主要产物与判定 |
+|---|---|---|
+| 4.1 确定已授权验证范围，核对本轮源/目标版本和设备 | a2h-verify；按原协议采用已选择项 | 执行范围与未选择/环境不足项；不重复询问已明确授权的验证 |
+| 4.2 固定 CHECK-1 静态分析、CHECK-2 身份检查 | a2h-verify、arkts-app-identity；原检查资源 | 静态/身份结果、WARN/FAIL；结构通过不表示功能一致 |
+| 4.3 构建事件/存储行为链、核对独立源 oracle | behavior-check；ios-feature-analyzer/source anchors | `spec/baseline/ios-behavior.json` 及链路检查；未运行或未覆盖为 UNVERIFIED |
+| 4.4 按已选范围运行逻辑、UI、视觉与设备场景 | arkts-ut-verifier、arkts-ui-verifier、arkts-visual-verify、arkts-scenario-runner；实际设备工具；可选 MobileBuildMCP 源观察 | UT/UI/视觉/设备测试记录、截图/日志、真实动作与结果；`behavior-check --run` 保存实际进程输出和独立 expected 比较 |
+| 4.5 修复、复测、对账覆盖与当前摘要 | 原 verifier/fixer 闭环；跨层问题回 a2h-execute，源预期问题回 a2h-spec | 原 `spec/fix/` 与 verifier 轮次、共享 findings；修改后旧结果不覆盖当前代码 |
+| 4.6 汇总约定范围的真实状态 | a2h-verify、原 AC 追踪消费者 | `spec/verify-report.md`、verification/impl claims；分别列生成、编译、行为观察、设备验证及未覆盖项 |
+
+**交给 retrospect：**本轮验证报告、执行报告、计划/brief、源工具实际证据和未决清单。
+报告已形成即可复盘失败/待验原因；不能因为进入第五阶段而把失败或缺设备标成完成。
+
+### 第五阶段：a2h-retrospect——复盘与经验反馈
+
+| 细分步骤 | Skill / MCP / 工具 | 主要产物与反馈 |
+|---|---|---|
+| 5.1 对照 UI/Base/Slice 计划、实际 skill 使用、brief 与验证 | a2h-retrospect | `docs/retrospect-report-YYYY-MM-DD.md` 的计划/实际差异、漏迁/错误来源；稳定 ID 保留 |
+| 5.2 分析外部资料/MCP 是否改善理解，区分源事实与最佳实践误用 | a2h-retrospect；expertise/mcp 原始记录 | 同一复盘报告的 skill 来源/版本/主题、工具实际执行、未知项与误判；不从 Stars 推断准确率 |
+| 5.3 提炼已验证的映射、规则修正与候选补丁 | 原 retrospect references、目标领域技能 | `spec/memory/*.md`、`spec/retrospect-counter.json`、满足原条件的自有 reference 更新或 staged `.patch` |
+| 5.4 保留 findings 与下一轮输入，审阅后升级固定资料 | a2h-retrospect；source-refresh/replan；bundle audit | 复盘报告中的恢复步骤、`spec/.a2h/open-findings.json` 与 history；升级重核许可/摘要与回归，不改原快照或继承旧 PASS |
+
+**回到下一轮：**新增需求/源变化先更新源事实和规格；实现问题回 owner；资料/路由问题修改工具后验证。
+全程共享 `spec/.a2h/open-findings.json`；只有产生该问题的检查复跑通过才能关闭。
+
+### 最小操作顺序与恢复
+
+```text
+init → harness-init（旧版按实际情况 import-legacy）→ source-index
+facts → literals → expertise-plan → 四类 facts-view + 读取完整源实现/上游资料
+可选 mcp-query → 源语义/AC/覆盖 + expertise-review
+source-check --harness + 原规格/覆盖检查
+原 indexed 计划 + plan coverage → plan-ir
+next-batch → 按冻结任务书实施 → receipt → land-results（重复到任务落账）
+原构建/静态/所选 UT/UI/视觉/设备验证 + behavior-check（实际执行用 --run）
+verify-report → retrospect
+```
+
+`source-index` 首次创建；源码变更重提 facts，运行 `source-refresh --review`，重跑
+expertise-plan、复核语义/AC/工具证据并过源门禁。冻结计划用 `replan --input`，先处理
+在途任务；history 保存旧记录，旧成功不继承。外部证据具体字段与失败恢复见
+[接入规程](skills/ios-source-analysis/references/external-expertise.md)和
+[Harness 协议](skills/ios-source-analysis/references/harness-v2.md)。
 
 ## iOS 理解能力
 
@@ -106,8 +264,8 @@ python -X utf8 scripts/sync_skill_catalog.py
 python -X utf8 -m unittest discover -s tests -v
 python -X utf8 scripts/audit_native_surface.py
 python -X utf8 scripts/validate_release.py --output work/release-check
-python scripts/package_plugin.py --output dist/hmigbot-ios-0.5.0.zip
-python scripts/smoke_package.py --package dist/hmigbot-ios-0.5.0.zip --output work/package-check.json
+python scripts/package_plugin.py --output dist/hmigbot-ios-0.7.0.zip
+python scripts/smoke_package.py --package dist/hmigbot-ios-0.7.0.zip --output work/package-check.json
 ```
 
 技能正文、参考和模板直接维护，同步脚本只更新目录。旧实验 CLI 与 provider 用于按需机械任务，

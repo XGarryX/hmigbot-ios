@@ -3,6 +3,15 @@ name: ios-source-analysis
 description: "原生 iOS 仓理解的统一入口：组织工程、UI、功能、API 四类分析，把 Swift、Objective-C、SwiftUI、UIKit、Interface Builder 的真实证据交给 a2h-spec。不是 iOS 应用生成器。"
 ---
 
+## 0.7.0 外部专业资料与工具证据
+
+先读 [外部 skill/MCP 接入规程](references/external-expertise.md)。facts 后运行 expertise-plan，按本轮主题清单读取实际上游资料，再用 expertise-review 提交源观察。需要符号证据时用 mcp-query；未连接工具保持 unknown/unavailable。结果继续进入现有 semantics/coverage/AC，不采用上游重构建议改写源行为。
+
+## 0.6.0 可执行协议
+
+本技能先加载 [Harness v2 协议](references/harness-v2.md)。事实、义务、计划和回执由随包脚本检查；本正文的分析责任继续适用，v2 协议决定机器产物和状态，旧版 source-check 不能代替新版门禁。
+
+
 
 # iOS 源仓理解与证据收口
 

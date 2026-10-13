@@ -1,4 +1,8 @@
-# iOS 原生事实契约 v1
+# iOS 原生事实契约与必需维度
+
+0.6.0 实施使用 `schema_version: 2`，结构化 known、机器 fact_ids、状态字段与义务覆盖以
+[harness v2](harness-v2.md) 为准。下文 v1 的自由 value 示例只说明 0.5.0 导入格式，
+不得用作新 baseline 或新版实现放行。各条件下的必需维度保持共用。
 
 共用产物名称、稳定 page/F/AC ID 和计划布局保留；源字段使用 `source_anchors`、
 `source_anchors_ref`。每个源锚点有 path、role；推荐 symbol、line、end_line。

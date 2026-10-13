@@ -3,6 +3,17 @@ name: ios-ui-analyzer
 description: "按 SwiftUI、UIKit、Interface Builder 和桥接场景提取 iOS UI 与交互事实；保留状态所有权、Binding、视图身份、modifier 顺序、控制器生命周期、约束、事件和导航，供 a2h-spec 使用。"
 ---
 
+## 0.7.0 外部专业资料与工具证据
+
+先读 [外部 skill/MCP 接入规程](../ios-source-analysis/references/external-expertise.md)。facts 后运行 expertise-plan，按本轮主题清单读取实际上游资料，再用 expertise-review 提交源观察。需要符号证据时用 mcp-query；未连接工具保持 unknown/unavailable。结果继续进入现有 semantics/coverage/AC，不采用上游重构建议改写源行为。
+
+## 0.6.0 可执行协议
+
+本技能先加载 [Harness v2 协议](../ios-source-analysis/references/harness-v2.md)。事实、义务、计划和回执由随包脚本检查；本正文的分析责任继续适用，v2 协议决定机器产物和状态，旧版 source-check 不能代替新版门禁。
+
+执行 `python <runtime>/scripts/a2h_ios.py facts-view --project <target> --scope ui`，读取生成的 `spec/ref/ios-ui-signals.json`，再沿事实片段阅读实际调用链。不得手写或篡改机器信号。具体填录与失败恢复见 [专业规程](references/analysis-v2.md)。
+
+
 
 # iOS 界面、状态与导航事实
 

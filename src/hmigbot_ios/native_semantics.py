@@ -40,8 +40,8 @@ def validate_native_facts(source, project, documents, known, fail):
         fail('IOS.NATIVE_FACTS_MISSING', path.name, 'Read native-facts.md and retain framework/language semantics')
         return
     data = read_json(path)
-    if not isinstance(data, dict) or data.get('schema_version') != 1 or data.get('source_platform') != 'ios' or not isinstance(data.get('documents'), list):
-        fail('IOS.NATIVE_FACTS_SCHEMA', path.name, 'Expected native facts v1 with source_platform=ios and documents list')
+    if not isinstance(data, dict) or data.get('schema_version') not in {1, 2} or data.get('source_platform') != 'ios' or not isinstance(data.get('documents'), list):
+        fail('IOS.NATIVE_FACTS_SCHEMA', path.name, 'Expected native facts v1/v2 with source_platform=ios and documents list')
         return
     seen = set()
     for item in data['documents']:

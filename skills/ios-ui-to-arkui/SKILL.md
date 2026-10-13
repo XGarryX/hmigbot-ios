@@ -3,6 +3,13 @@ name: ios-ui-to-arkui
 description: "在 a2h-execute Stage 1 按 iOS 页面 spec 实现 ArkUI；保留 SwiftUI 状态/Binding/身份/任务语义或 UIKit 生命周期/委托/约束，复用包内 ArkTS 组件、状态和导航技能及 batch 收口协议。"
 ---
 
+## 0.6.0 可执行协议
+
+本技能先加载 [Harness v2 协议](../ios-source-analysis/references/harness-v2.md)。事实、义务、计划和回执由随包脚本检查；本正文的分析责任继续适用，v2 协议决定机器产物和状态，旧版 source-check 不能代替新版门禁。
+
+读取 [语义映射与验收](references/semantic-mapping-v2.md)。按冻结任务书写 owned files，以源 fact/AC 为依据实现完整状态和反馈，再产真实摘要回执；生成不等于行为通过。
+
+
 
 # iOS 页面到 ArkUI 的实现
 

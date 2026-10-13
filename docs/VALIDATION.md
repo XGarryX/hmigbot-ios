@@ -1,13 +1,29 @@
-# 0.5.0 验证范围与复现
+# 0.7.0 验证范围与复现
 
-0.5.0 交付验证在 Windows x64 完成：82 项自动化测试、19 项真实原流水线消费者与负例检查、96 个技能及 29 个角色结构检查通过；官方插件/技能校验器通过。3,516 个随包原资源文件的 SHA256 与导入清单一致。完整 ZIP 的 10 项安装、升级、卸载及独立使用检查通过。
+新增固定资源完整性、主题路由、缺审阅/越界锚点阻断，及真实隔离 stdio 服务的协议交互、
+错误/超时/白名单/过期/无关/篡改证据测试。原调度、回执、源义务与行为检查继续回归。
+release 检查增加 expertise-audit；ZIP 安装副本独立运行 expertise audit 和新测试。
+真实 Serena/SourceKit/Xcode 和完整 App 双端行为未实测，不能用隔离服务结果代替。
+
+## 2026-10-12 本地验证
+
+- Windows x64 完整测试 116 项通过，其中 12 项覆盖外部资料/审阅/MCP 的正反例。
+- 原流水线消费者与负例检查 19 项通过；原 1.6.1 的 3,516 个资源、选定 1.7.0 的 314 个资源，以及新导入的 87 个资料文件摘要核验通过。
+- 96 个启用技能、29 个角色、版本/目录/文档链接检查通过；官方 skill quick validator 检查 96 个技能通过。
+- 独立 ZIP 安装、升级、卸载、安装副本执行的最终结果与包 SHA256 记录在交付目录的 `package-check.json`。测试服务仅为协议夹具，未代替真实 MCP 或设备。
+
+本轮没有执行官方插件校验器；本仓插件清单及版本由 release 检查核验。包校验报告保存在包外，避免把某个 ZIP 的自引用摘要写入 ZIP 内。
+
+历史 0.5.0 交付验证在 Windows x64 完成：82 项自动化测试、19 项真实原流水线消费者与负例检查、96 个技能及 29 个角色结构检查通过；官方插件/技能校验器通过。3,516 个随包原资源文件的 SHA256 与导入清单一致。完整 ZIP 的 10 项安装、升级、卸载及独立使用检查通过。
+
+0.6.0 新增事实/义务/回执/原调度循环/行为链/恢复的正反例、原 1.7.0 资源摘要核验和独立使用评估。0.7.0 在此基础上增加专业审阅与 MCP 证据边界。最终测试数与结果以本轮 release-checks.json、package-check.json 和日志为准，旧版数字不作为新版验收。
 
 原始报告和运行日志保留在本地交付资料中，不纳入 Git 历史。仓库保留测试源码、必要夹具、资源校验清单与以下复现入口。每次执行必须使用新的输出目录。
 
 ```powershell
 python -X utf8 scripts/validate_release.py --output work/release-check
-python scripts/package_plugin.py --output dist/hmigbot-ios-0.5.0.zip
-python scripts/smoke_package.py --package dist/hmigbot-ios-0.5.0.zip --output work/package-check.json
+python scripts/package_plugin.py --output dist/hmigbot-ios-0.7.0.zip
+python scripts/smoke_package.py --package dist/hmigbot-ios-0.7.0.zip --output work/package-check.json
 ```
 
 `validate_release.py` 默认运行单元测试、原资源审计、启用规程扫描、原流水线兼容、版本、目录、角色和文档链接检查。官方插件/技能校验器需通过 `--plugin-validator` / `--skill-validator` 指定本机脚本路径；未提供时不会冒充已执行。上述输出均为本机生成，不应提交。

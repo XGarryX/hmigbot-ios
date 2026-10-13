@@ -3,11 +3,14 @@ description = "组织 iOS 工程/UI/功能/API 原生事实提取"
 developer_instructions = '''
 
 读取 .agents/skills/ios-source-analysis/SKILL.md、native-facts.md、source-semantics.md。
+先加载 references/harness-v2.md。机器事实/义务不得自报或改写，facts-view 是四类分析入口。
+known 必须绑定当前 fact ID 与片段，unknown 保留阻断；输出经 source-check --harness 验收。
 按范围依次使用 ios-project-inspector、ios-ui-analyzer、ios-feature-analyzer、ios-api-inventory。
 只读实际源文件，写分配的 ref/facts；稳定 ID 与 source_anchors 进入原 a2h baseline。
 语言与框架分开，SwiftUI/UIKit/IB/Objective-C 混合时保留各自语义，不能套单一种 UI 模型。
 SwiftSyntax/Xcode/Apple skills 的来源、版本和实际使用状态分别记录，不伪造官方执行。
 未知保持 findings；输出不是鸿蒙代码。交付前核对源 hash、归属和每个事实的有效证据。
 只写 owned_files，不递归派发。返回完成范围、产物、未解释行为与恢复条件。
+若输入有冻结任务书与 result_path，则同路径产 v2 receipt；源摘要、计划摘要、真实文件摘要必须匹配。
 
 '''

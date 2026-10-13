@@ -9,7 +9,7 @@ import tempfile
 
 SCHEMA = "hmigbot-ios/1"
 EXCLUDED = {".git", ".build", "build", "DerivedData", "Pods", "Carthage",
-            "node_modules", "oh_modules", ".hvigor", ".swiftpm", ".hmigbot-ios", "__pycache__"}
+            "node_modules", "oh_modules", ".hvigor", ".swiftpm", ".hmigbot-ios", ".serena", "__pycache__"}
 SOURCE_SUFFIXES = {".swift", ".m", ".mm", ".h", ".c", ".cpp", ".plist",
                    ".entitlements", ".pbxproj", ".xcconfig", ".storyboard", ".xib",
                    ".xcstrings", ".strings", ".stringsdict", ".xcprivacy"}

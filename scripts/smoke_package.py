@@ -30,7 +30,7 @@ def main():
         raise SystemExit('Package checksum mismatch')
     report = {'package': package.name, 'sha256': checksum, 'status': 'failed', 'checks': [],
               'platform': platform.platform(), 'architecture': platform.machine(),
-              'scope': 'Complete standalone installation on the reported host and original consumer compatibility; no device behavior acceptance'}
+              'scope': 'Standalone installation, original consumers and installed iOS harness adversarial/four-beat contracts on this host; no device behavior acceptance'}
     evidence = args.output.resolve().parent / (args.output.stem + '-evidence')
     if evidence.exists(): raise SystemExit('Evidence directory already exists')
     evidence.mkdir(parents=True)
@@ -82,7 +82,15 @@ def main():
             execute('installed-native-pipeline', [sys.executable, '-X', 'utf8', str(runtime / 'scripts/validate_native_pipeline.py'),
                     '--fixtures', str(fixtures), '--output', str(evidence / 'native-pipeline')])
             execute('installed-upstream-audit', [sys.executable, '-X', 'utf8', str(runtime / 'scripts/audit_upstream.py')])
+            execute('installed-scheduler-audit', [sys.executable, '-X', 'utf8', str(runtime / 'scripts/audit_scheduler.py')])
+            execute('installed-expertise-audit', [sys.executable, '-X', 'utf8', str(runtime / 'scripts/a2h_ios.py'), 'expertise-audit'])
             execute('installed-native-surface', [sys.executable, '-X', 'utf8', str(runtime / 'scripts/audit_native_surface.py')])
+            env['HMIGBOT_TEST_RUNTIME'] = str(runtime)
+            execute('installed-ios-harness', [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover',
+                    '-s', str(plugin / 'tests'), '-p', 'test_ios_harness.py', '-v'])
+            execute('installed-expertise-mcp', [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover',
+                    '-s', str(plugin / 'tests'), '-p', 'test_expertise_mcp.py', '-v'])
+            del env['HMIGBOT_TEST_RUNTIME']
             fixture_project = evidence / 'native-pipeline/harmony'
             native = workspace / '.migbot/bin' / ('a2h.exe' if os.name == 'nt' else 'a2h')
             execute('offline-runtime-init', [str(native), 'init-run', '--consent', 'denied'], cwd=fixture_project)

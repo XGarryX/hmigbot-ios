@@ -36,7 +36,7 @@ HARD-DIV 的替代数据流引用 PD-ID，显式给跨边界转换责任。
 引用 api-inventory 端点 ID、静态 method/path/protocol 和公共 auth。未知字段不猜。
 
 ## 实现映射（Source→ArkTS）
-| 源机制 | 目标实现 | 数据/生命周期契约及依据 | HARD/HARD-DIV | 决策 |
+| 源机制 | 目标实现 | 数据/生命周期契约及依据 | 迁移分类 | 决策 |
 |---|---|---|---|---|
 
 ## 状态管理

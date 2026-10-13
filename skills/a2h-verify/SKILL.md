@@ -9,6 +9,13 @@ metadata:
   - migration
 ---
 
+## 0.6.0 控制面入口
+
+先读取 [iOS Harness v2](../ios-source-analysis/references/harness-v2.md)，以该协议决定输入、机器门禁和状态写者。以下原领域规程继续用于规格内容、indexed 计划、接线和真实验证；不得再手工调度或写入三份控制账本。
+
+原真实验证继续执行。另运行 behavior-check 校验事件/持久化效果链；只有已有授权的实际用例才用 --run，保留独立源 oracle。未运行、未覆盖和环境不足仍为 UNVERIFIED，不受旧 PASS 或 task done 影响。
+
+
 
 # a2h-verify
 

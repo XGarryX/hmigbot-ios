@@ -3,6 +3,13 @@ name: ios-resources-convert
 description: "在 a2h-execute Stage 0 转换 iOS Asset Catalog、图片/颜色变体、字符串/复数、字体与应用身份输入；复用鸿蒙资源、国际化和身份校验，并记录不可直接转换资源。"
 ---
 
+## 0.6.0 可执行协议
+
+本技能先加载 [Harness v2 协议](../ios-source-analysis/references/harness-v2.md)。事实、义务、计划和回执由随包脚本检查；本正文的分析责任继续适用，v2 协议决定机器产物和状态，旧版 source-check 不能代替新版门禁。
+
+资源转换产物也必须进入 typed plan 的 ownership 和哈希回执；variants/scale/颜色/复数未知保留 finding。禁止绕过原 Stage 0 的资源审计。
+
+
 
 # iOS 资源、国际化与身份输入
 

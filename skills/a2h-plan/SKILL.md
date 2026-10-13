@@ -9,6 +9,17 @@ metadata:
   - migration
 ---
 
+## 0.6.0 控制面入口
+
+先读取 [iOS Harness v2](../ios-source-analysis/references/harness-v2.md)，以该协议决定输入、机器门禁和状态写者。以下原领域规程继续用于规格内容、indexed 计划、接线和真实验证；不得再手工调度或写入三份控制账本。
+
+原计划覆盖检查后，将具体任务、所有权、依赖、fact/AC 和决策交给 plan-ir。生成的 blueprint/plan/prompts 冻结，不将执行态写回计划。审批沿用已有授权，不重复要求阶段批准。
+
+0.7.0 的 domains 计划还冻结 spec/ref 下的 expertise-plan/reviews、provenance 和 MCP
+采集索引/原始产物。任务引用已审阅源语义与 tool_evidence_ids；新增或修正源结论先回
+spec 过门，再显式 replan，不在执行任务中应用上游现代化建议。
+
+
 
 ## 宿主执行与收口
 
@@ -154,7 +165,7 @@ UI 计划负责调度所有页面的 UI 转换工作，按优先级和 confidenc
 1. 同一优先级内，confidence: high 的页面排在前面（confidence 是**分批输入**，读 ui-manifest，**不输出成列**）；low 页行内标 ⚠️ 需人工补充数据（异常才显性）
 2. P0 → P1 → P2 顺序编排批次；**批内页数无上限**（批 = 优先级的自然分组，批内全并行派发、并发由 runtime 自然限流；若 Stage 1 收口编译修复负载过重，可项目级重引软上限）
 3. **页面依赖不约束分批**——导航 / 嵌入目标未建一律由 FWD-REF 机制兜底，且批内无编译（统一编译在 execute §3d 收口），跨批依赖零编译代价，无需依赖排序（**不输出逐页可并行列**——批内默认全并行，单写者纪律保证）
-4. **size-1 Batch 禁止**——孤页批并入**前一批**末尾（行内保留其原优先级标注；此并批不视为违反优先级单调性）
+4. **单页 Batch**——真实范围仅 1 页或首批无前批可合并时允许 size-1，记录真实页数及原因；其他孤页并入前批，保留原优先级。禁止凑造页面。
 
 **Step 3/4/5 已并入上表**（无 per-page agent 估算——每页恒 1 converter；结算检查点每 Batch 末尾注入，批内无编译——统一编译在 execute §3d 收口）。
 
@@ -405,7 +416,7 @@ Plan 生成完毕后，必须执行覆盖率校验，确保所有 V1 功能都�
 | 组件嵌入归属率 | = 100% | 阻断（ui-manifest 子组件表 ∪ page_NNNN.md 嵌入关系未在 Slice `wires:` embed 条目中体现） |
 | 数据链路层扇出完整率（chain-auth 存在时） | = 100% | 阻断（§5.1 某层无 `data_chain_refs:` 落点） |
 | 分层校验 5 项（校验算法第 11 项） | 全部 PASS | 阻断（索引对应 / spec_refs 存在 / 快照 / 零复述 / 状态交叉任一失败） |
-| Batch 优先级单调性 + 无 size-1 批 | 批序 P0→P1→P2 单调，每页只入其优先级（ui-manifest 权威）对应批段；**size-1 批 = 0**（孤页并入前一批、行内保留原优先级，此并批不算违规） | 阻断 |
+| Batch 优先级单调性 + 无 size-1 批 | 批序 P0→P1→P2 单调，每页对应真实优先级；单页范围/首批无前批的 size-1 有明确原因，其余孤页并前批，禁止虚构页面 | 阻断 |
 </HARD-GATE>
 
 输出文件：`spec/baseline/plans/coverage-matrix.md`

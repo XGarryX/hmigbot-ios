@@ -1,4 +1,4 @@
-# 安装、升级和卸载 0.5.0
+# 安装、升级和卸载 0.7.0
 
 从发行 ZIP 解压，在 hmigbot-ios 目录执行 `install.ps1 -Workspace <现有工作区>`；macOS 使用 `PYTHON=python3 sh install.sh <工作区>`。Windows 可用 `-Python` 指定解释器。要求 Python 3.11+，无需原 HMigBot 地址。若当前 PowerShell 策略拒绝未签名脚本，用 `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Workspace <工作区>` 启动本次安装进程；这不修改系统执行策略。卸载可用同样方式调用 uninstall.ps1。
 
@@ -36,3 +36,18 @@ python .hmigbot-ios/plugin/scripts/a2h_ios.py init --source 'D:/Projects/NativeA
 Windows x64 是本次实测环境。原校验器的 macOS arm64 资产已复制，但缺少 Mac，未实测。Linux 缺少原发行的多个编译校验器，安装成功仅代表资料可用。原二进制运行时报缺失或平台不符时不能略过对应检查并标通过。
 
 鸿蒙编译需要用户本机 SDK，真机安装还需要对应签名/设备。源 iOS 静态理解无需 Mac；云 Xcode 和 iPhone 是另行记录的证据来源。安装不上传源码或使用账号凭证。
+
+## 0.6.0 baseline 升级
+
+工具安装升级不会把 App 的旧 PASS 转为新 PASS。旧 baseline 先 import-legacy，再重提取和复核 v2 事实/覆盖。保留稳定 ID 和旧原始记录，存在外来状态写者时拒绝混用。详见 [Harness](HARNESS-0.6.md)。
+
+## 0.7.0 专业资料和 MCP
+
+三个固定 MIT 资料快照位于 `.hmigbot-ios/plugin/vendor/ios-expertise`，不会作为独立开发
+入口自动替代迁移技能；由本轮 expertise-plan 输出绝对资源根与相对清单，分析 owner 按需读取。
+0.6.0 的 v2 baseline 无须再次 import-legacy；先 expertise-plan，补源审阅、重跑 source-check --harness，
+旧事实/AC 保持，冻结计划通过显式 replan 更新，不自动继承旧 PASS。
+
+安装器不安装或自动启动 MCP 服务，不下载 Apple SDK，不改全局 MCP 配置。源 MCP 服务
+按项目显式配置并固定版本，stdio 读客户端通过 mcp-query 调用；本机未连接 Mac/Xcode。
+本版没有 HTTP transport。详见 [接入规程](../skills/ios-source-analysis/references/external-expertise.md)。

@@ -3,6 +3,13 @@ name: a2h-spec
 description: "原生 iOS→HarmonyOS 流水线第一步：读取 Swift/Objective-C 工程与 SwiftUI/UIKit 行为，生成保留 iOS 原生语义的 HMigBot baseline、稳定 AC 和源证据；不生成目标代码。"
 ---
 
+## 0.6.0 控制面入口
+
+先读取 [iOS Harness v2](../ios-source-analysis/references/harness-v2.md)，以该协议决定输入、机器门禁和状态写者。以下原领域规程继续用于规格内容、indexed 计划、接线和真实验证；不得再手工调度或写入三份控制账本。
+
+先 harness-init/import-legacy → source-index（仅首次）→ facts → literals → expertise-plan → 四类 facts-view。完成所需上游资料审阅并经 expertise-review 记录；MCP 查询证据按外部协议采集。完成 ios-semantics v2 与 ios-coverage 后以 source-check --harness 收口；所有检测义务必须有稳定 AC。
+
+
 
 # a2h-spec：从 iOS 源事实生成迁移规格
 
@@ -106,7 +113,7 @@ HARD-DIV 按四件套：decision ID、替代数据流、supersedes 源 AC、新�
 在目标根执行本包工具，所有 exit code 和报告路径保留：
 
 ```text
-python <runtime>/scripts/a2h_ios.py source-check --project <target>
+python <runtime>/scripts/a2h_ios.py source-check --harness --project <target>
 python <skills>/a2h-spec/scripts/lint_addenda_closure.py --spec <target>/spec/baseline
 python <skills>/a2h-spec/scripts/lint_divergence.py --spec-dir <target>/spec/baseline/features --gate
 python <skills>/a2h-spec/scripts/extract_literals.py --spec-dir <target>/spec/baseline --out <target>/spec/baseline/literal-ledger.json

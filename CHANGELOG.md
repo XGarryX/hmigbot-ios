@@ -1,3 +1,21 @@
+# 0.7.0 — 2026-10-12
+
+- 固定并随包导入 AvdLee SwiftUI、Swift Concurrency 和 Axiom UIKit/内存主题，3 个 MIT 快照、87 个真实文件；逐文件来源和 SHA256 审计。
+- 增加 expertise-plan/review：按真实源 token 路由、固定资料摘要、逐源文件观察与审阅记录；接入 source-check --harness 和 domains 计划冻结。旧 0.6.0 项目续跑需补审阅，保持原 ID。
+- 增加 stdio MCP 源读客户端：初始化/发现/白名单查询、分页、超时与错误证据、原始响应和 transcript 摘要；语义以 tool_evidence_ids 关联，失败/过期/无关证据拒绝。
+- README 明确初始化及五阶段细分步骤、skill/MCP、产物路径、门禁和前后衔接；恢复/复盘继续复用原账本。
+- 本机实际验证为源审阅合同、隔离 MCP 协议进程及原消费者/安装；未实测真实 Serena/SourceKit/Xcode 服务或完整 App 双端行为。
+
+# 0.6.0 — 2026-10-09
+
+- 新增机器 iOS 事实图和规则派生义务，四类分析视图与实际 provider 接入；保留解析层级、源码片段、摘要和未知。
+- v2 事实门禁阻断 NA 矛盾、错误初值、无关锚点、漏义务及弱 oracle；七技能补可执行入口、专业规程、模板和 ArkUI 语义映射。
+- 接入字节不变的 CodeX 1.7.0 四拍核心；typed task/所有权/DAG/fact/AC、任务书和 baseline 冻结，真实回执及文件差异检查。
+- 增加事件/存储效果链和显式进程观察；默认未运行为 UNVERIFIED，不继承旧版 PASS。
+- 显式旧版导入、源刷新、重排与历史留存；Windows 冻结核心的宿主解释器适配；发行检查失败/超时保留报告。
+- 独立使用发现并修复单页 Batch 规则冲突、差异表头误报与字面量零扫描；原字面量入口改为真实 iOS 源提取。
+- 验收范围为工具与隔离样本，真实 App/Apple 构建/鸿蒙 HAP/双端设备验收仍未验证。
+
 # 0.5.0
 
 - 原生重写 spec 前端；工程/UI/功能/API 四分析规程，保留 SwiftUI/UIKit/语言语义与独立行为真值。
