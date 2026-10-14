@@ -88,6 +88,8 @@ def main():
             env['HMIGBOT_TEST_RUNTIME'] = str(runtime)
             execute('installed-ios-harness', [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover',
                     '-s', str(plugin / 'tests'), '-p', 'test_ios_harness.py', '-v'])
+            execute('installed-spec-contract', [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover',
+                    '-s', str(plugin / 'tests'), '-p', 'test_spec_contract.py', '-v'])
             execute('installed-expertise-mcp', [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover',
                     '-s', str(plugin / 'tests'), '-p', 'test_expertise_mcp.py', '-v'])
             del env['HMIGBOT_TEST_RUNTIME']

@@ -1,16 +1,24 @@
-<!-- when: Phase B Step B1 生成 ui-manifest.md 时加载 -->
-<!-- topics: ui-manifest, 页面清单, 全局约定, 页面状态生命周期, 转换批次, 共享组件 -->
+# UI Manifest
 
-# ui-manifest.md 模板
+## 全局约定
+统一目标导航、状态所有权、主题/安全区/资源/组件。源事实与目标设计分段。
 
-必填字段：全局约定（导航架构 / 设计令牌 / 命名规范 / 图标方案 / **沉浸式 + 安全区四件套**）、页面清单表（序号 / iOS / ArkTS 产出 / 优先级 / confidence / 状态）、页面状态生命周期、转换批次、共享组件表。
+## 页面与覆盖层
+| page_id | 源文件/入口/框架 | 类型 | ArkTS 目标文件/组件 | 功能归属 | 优先级 | confidence | 状态 | spec |
+|---|---|---|---|---|---|---|---|---|
 
+优先级填写P0/P1/P2，分别对应核心路径、次级功能、辅助页面；confidence填写high/medium/low，依据源码与运行证据判断。目标文件写相对鸿蒙工程的明确路径，不能只给页面别名。初始状态为pending，范围外页面写skipped并引用skip-list；转换批次由plan生成。
 
-全局约定的推导逻辑：
-- **设计令牌**：从 `styles.xml` / `themes.xml` / `colors.xml` 提取主色、文字色、背景色
-- **图标方案**：扫描 `res/drawable*` 目录，确定图标格式（SVG/PNG/VectorDrawable）
-- **沉浸式 + 安全区**：本节展示全工程统一的标准方案（4 Layer）；**每页是否需要产出对应配置由 `meta.json` 的 `page_type` / `needs_immersive_safearea` 字段自动决定**（由 ios-ui-analyzer 按实际呈现与生命周期证据填写）—— 本段无需再做词汇判定
+## 页面内部显示态
+| 页面 | 前态/条件 | 显示结果 | 事件/转移 | 源依据 |
+|---|---|---|---|---|
 
-优先级分配规则：
-- P1：次级功能页面（设置、搜索、下载管理等）
-- P2：辅助页面（关于、许可证、同步设置等）
+## 页面状态生命周期
+pending→converted→verified；converted表示生成已收口，verified由独立验证产生。把源码推断置信度、生成状态与运行证据分开。具体任务批次由plan排定。
+
+## 共享组件与嵌入（子组件表）
+| 定义方 | 组件/目标接口 | 父页面/slot | 输入/事件 | feature |
+|---|---|---|---|---|
+
+## 范围与证据
+范围外入口引用skip-list。无截图记录screenshot=null/runtime=not_run。源码推断置信度与设备验证分开。

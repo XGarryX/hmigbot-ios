@@ -17,6 +17,8 @@ description: "按 SwiftUI、UIKit、Interface Builder 和桥接场景提取 iOS 
 
 # iOS 界面、状态与导航事实
 
+事实进入 baseline 前按 [规格交付合同](../a2h-spec/references/spec-delivery-contract.md) 转为页面行为与目标状态接口。保持生产/Preview/平台条件边界，明确状态身份和持有/借用、事件回写、资源/生命周期，不把每个语法信号都变成 AC。
+
 ## 输入与产物
 
 输入工程地图、具体 target/configuration、页面候选与真实源码。

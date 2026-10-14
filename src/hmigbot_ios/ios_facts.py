@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 
 from .core import MigrationError, digest, json_bytes, read_json, snapshot, write_json
 from .swiftui import tokenize
+from .source_scope import import_token_lines
 from .xcode import project_inventory, dependency_inventory
 from .resources import asset_inventory
 
@@ -62,6 +63,7 @@ def extract(source: Path, variant: dict | None = None):
         if path.suffix in SOURCE_KINDS:
             text = path.read_text(encoding='utf-8-sig')
             tokens = tokenize(text)
+            import_lines = import_token_lines(tokens)
             values = [t.value for t in tokens]
             owner, pending_owner, depth, stack, wrapper_vars = 'file', None, 0, [], set()
             storage = {'State', 'StateObject', 'ObservedObject', 'EnvironmentObject', 'Environment', 'Binding', 'AppStorage', 'SceneStorage'}
@@ -80,6 +82,10 @@ def extract(source: Path, variant: dict | None = None):
                 # No comment/string scans: only syntax tokens can activate a rule.
                 if token.kind == 'string':
                     continue
+                if token.line in import_lines:
+                    if v == ';':
+                        import_lines.remove(token.line)
+                    continue  # A dependency import is not an executable persistence/event operation.
                 after = values[i + 1:i + 24]
                 window = ' '.join(after)
                 if v == '@' and after and after[0] in storage:

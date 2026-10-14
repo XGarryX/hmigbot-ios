@@ -271,7 +271,7 @@ def main(argv=None):
     init.add_argument('--source', required=True, type=Path)
     init.add_argument('--project', required=True, type=Path)
     commands.add_parser('expertise-audit')
-    for name in ('source-index', 'source-refresh', 'source-check', 'validate', 'build', 'literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-ir', 'replan', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query'):
+    for name in ('source-index', 'source-refresh', 'source-check', 'spec-check', 'validate', 'build', 'literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-ir', 'replan', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query'):
         p = commands.add_parser(name)
         p.add_argument('--project', required=True, type=Path)
         if name == 'source-check':
@@ -323,6 +323,9 @@ def main(argv=None):
         elif args.command == 'literals':
             from .ios_literals import run
             result = run(args.project, args.output)
+        elif args.command == 'spec-check':
+            from .spec_contract import check as check_contract
+            result, code = check_contract(args.project)
         elif args.command == 'source-check':
             if args.harness:
                 from .ios_harness import check

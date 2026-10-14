@@ -17,6 +17,8 @@ description: "读取 iOS 功能行为与业务规则：沿 Swift/Objective-C 的
 
 # iOS 功能行为与验收事实
 
+输出规格时按 [交付合同](../a2h-spec/references/spec-delivery-contract.md) 形成前态/事件/处理/后态/副作用/失败恢复、目标公开接口和对接点。信号是待审线索；先沿源码解释行为，再发行有具体期望的 AC。源测试仅作为独立 oracle，不计为目标产品实现或测试通过。
+
 ## 范围
 
 输入工程地图、页面事件、后台/扩展入口与服务调用；输出 `spec/ref/ios-feature-facts.md`、

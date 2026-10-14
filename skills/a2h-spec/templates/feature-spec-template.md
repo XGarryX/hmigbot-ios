@@ -7,6 +7,8 @@ depth: full
 source_platform: ios
 source_languages: [swift]
 ios_frameworks: [nonvisual]
+contract_refs:
+  - spec/baseline/feature-base.md#数据模型
 source_anchors:
   - role: service
     path: Services/ExampleService.swift
@@ -30,7 +32,10 @@ HARD-DIV 的替代数据流引用 PD-ID，显式给跨边界转换责任。
 |---|---|---|---|---|---|
 
 ## 服务层（ArkTS 目标接口）
-写目标类型与方法签名，包含异步、错误、取消和生命周期契约；源签名仍保留在源语义节。
+| 目标接口 | 输入/输出/值域 | 错误/取消 | 状态/线程/生命周期 |
+|---|---|---|---|
+
+写明确的 Owner.method 签名，或通过 contract_refs 引用已定义接口。公共目标合同在 spec 确定，plan 分配实施与接线责任。源签名留在源语义节。
 
 ## API 接口
 引用 api-inventory 端点 ID、静态 method/path/protocol 和公共 auth。未知字段不猜。

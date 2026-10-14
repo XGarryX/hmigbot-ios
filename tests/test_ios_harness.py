@@ -19,7 +19,7 @@ from hmigbot_ios.behavior import verify
 from hmigbot_ios.ios_literals import run as literal_index
 
 
-def fixture(root):
+def fixture(root, source_suffix=''):
     source, project = root / 'source', root / 'target'
     source.mkdir(); project.mkdir()
     (source / 'Counter.swift').write_text('''import SwiftUI
@@ -32,7 +32,7 @@ struct Counter: View {
         }
     }
 }
-''', encoding='utf-8')
+''' + source_suffix, encoding='utf-8')
     configure(source, project); initialize(project); index_source(project)
     base = project / 'spec/baseline'
     for folder, name, ident in [('features', 'F001-counter.md', 'F001'), ('ui', 'page_0001_Counter.md', 'page_0001')]:
@@ -41,6 +41,8 @@ struct Counter: View {
         if folder == 'features':
             text += '- [ ] F001-AC01 从初值0点击递增后可见Count:1 `判:ui | 真:src:Counter.swift:7`\n'
         (base / folder / name).write_text(text, encoding='utf-8')
+    from spec_contract_fixture import complete_contract
+    complete_contract(project)
     graph = refresh(project, source)
     literal_index(project)
     docs = []

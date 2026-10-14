@@ -2,6 +2,8 @@
 
 本规程是七个 iOS 技能共同的控制协议。程序检查范围是确定性合同和已检测信号；业务解释、动态绑定与设备行为需要独立复核。不得把 token_signal 写成 compiler_binding 或 runtime。
 
+规格交付按 [公共合同](../../a2h-spec/references/spec-delivery-contract.md) 形成。0.8.0 的只读 spec-check 校验正文、目标锚点、状态映射和显式共享引用，source-check --harness 内置同一检查；字段齐全仍不证明语义正确。精确 Preview 义务的哈希审阅排除、旧 baseline 升级及共享引用写法见该合同。import 仅为依赖线索，不产生持久化行为义务。
+
 0.7.0 增加 [外部专业 skill/MCP 规程](external-expertise.md)：facts 后运行 expertise-plan，
 由对应分析 owner 读取固定原文并用 expertise-review 保存源观察。source-check --harness
 要求此清单/审阅通过，包括 0.6.0 项目升级。可选 mcp-query 保存实际响应，known claim

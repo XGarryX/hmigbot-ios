@@ -61,6 +61,8 @@ def check(project: Path):
     source, project = context(project)
     queue = findings_module()
     issues = []
+    excluded_obligations = set()
+    preview_cache = {}
 
     def fail(rule, subject, detail):
         issues.append(queue.make(rule, 'spec', subject, detail))
@@ -128,6 +130,30 @@ def check(project: Path):
                 fail('IOS.OBLIGATION_ID', str(ident), 'Unknown or duplicate obligation mapping'); continue
             seen.add(ident)
             ids = mapping.get('ac_ids', [])
+            from .source_scope import preview_lines
+            source_fact = facts[expected[ident]['fact_id']]
+            anchor = source_fact['anchor']
+            if anchor['path'] not in preview_cache:
+                preview_cache[anchor['path']] = preview_lines(safe_child(source, anchor['path']).read_text(encoding='utf-8-sig'))
+            preview = preview_cache[anchor['path']]
+            is_preview = set(range(anchor['line'], anchor['end_line'] + 1)) <= preview
+            if is_preview or mapping.get('disposition') == 'preview-only':
+                from .spec_contract import sections
+                review = mapping.get('source_review', {})
+                skip_ref = mapping.get('skip_ref', '')
+                skip_path, _, heading = skip_ref.partition('#')
+                skip_text = (project / 'spec/baseline/skip-list.md').read_text(encoding='utf-8-sig')
+                reviewed = (is_preview and not ids and mapping.get('disposition') == 'preview-only'
+                    and mapping.get('source_sha256') == anchor['file_sha256']
+                    and skip_path == 'spec/baseline/skip-list.md' and heading in sections(skip_text)
+                    and anchor['path'] in sections(skip_text).get(heading, '')
+                    and isinstance(review, dict) and review.get('status') == 'reviewed'
+                    and all(isinstance(review.get(k), str) and review[k].strip() for k in ('input', 'processing', 'observable', 'reviewer')))
+                if reviewed:
+                    excluded_obligations.add(ident)
+                else:
+                    fail('IOS.PREVIEW_REVIEW_REQUIRED', ident, 'Keep the original obligation; exclude only exact Preview spans with current file hash, source review and skip-list heading, without product ACs')
+                continue
             if not ids or any(a not in acs for a in ids):
                 fail('IOS.OBLIGATION_AC_MISSING', ident, 'Bind obligation to real stable acceptance criteria'); continue
             if not any(acs[a]['judgment'] in expected[ident]['judgments'] for a in ids):
@@ -138,11 +164,15 @@ def check(project: Path):
                 fail('IOS.SOURCE_REVIEW_MISSING', ident, 'Review input -> processing -> observable outcome against source')
         for ident in sorted(expected.keys() - seen):
             fail('IOS.OBLIGATION_UNCOVERED', ident, expected[ident]['obligation'])
+        from .spec_contract import check as check_contract
+        content, _ = check_contract(project)
+        issues.extend(content['findings'])
     except (MigrationError, OSError, ValueError, TypeError, AttributeError) as exc:
         fail('IOS.HARNESS_CONTRACT', 'harness', str(exc))
     queue.replace_section(str(project), 'spec.ios-harness', issues)
     report = {'schema_version': 2, 'status': 'FAIL' if issues else 'PASS', 'findings': issues,
-              'scope': 'source contract and obligation coverage', 'behavior_verified': False}
+              'scope': 'source contract and obligation coverage', 'behavior_verified': False,
+              'excluded_obligation_ids': sorted(excluded_obligations)}
     write_json(project / 'spec/reports/ios-harness-check.json', report)
     return report, 2 if issues else 0
 

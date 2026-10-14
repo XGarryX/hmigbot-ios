@@ -11,6 +11,8 @@ metadata:
 
 ## 0.6.0 控制面入口
 
+目标公共接口与业务行为以 [规格交付合同](../a2h-spec/references/spec-delivery-contract.md) 为准；按已声明的标锚与对接点实施。复杂功能继续定向回读 source_anchors，并记录 Spec Gap；公开合同冲突回流 spec/plan，不在执行中改变业务预期。进度索引和真实资源映射是执行记录，不能替代规格合同。
+
 先读取 [iOS Harness v2](../ios-source-analysis/references/harness-v2.md)，以该协议决定输入、机器门禁和状态写者。以下原领域规程继续用于规格内容、indexed 计划、接线和真实验证；不得再手工调度或写入三份控制账本。
 
 v2 项目执行 next-batch → 按返回任务书执行 → 同路径 v2 receipt → land-results 的四拍。旧正文 Stage 0/1/2/3 是任务内实施细则，不再作为第二调度循环。done 仅表示任务落账；源错误不能记债务放行，随后继续真实结构与编译门。

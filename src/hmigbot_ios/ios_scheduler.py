@@ -22,11 +22,17 @@ UPSTREAM = ROOT / 'vendor/hmigbot-1.7.0/skills/a2h-execute/scripts'
 
 
 def baseline_inputs(project, wave):
-    mutable = {'ui-manifest.md', 'feature-index.md', 'verification.json', 'impl-claims.json', 'ios-source-check.json'}
-    return {f['path']: f['sha256'] for f in snapshot(project)['files']
-            if (f['path'].startswith('spec/baseline/') and Path(f['path']).name not in mutable
+    mutable = {'spec/baseline/' + name for name in ('ui-manifest.md', 'feature-index.md', 'verification.json', 'impl-claims.json', 'ios-source-check.json')}
+    inputs = {f['path']: f['sha256'] for f in snapshot(project)['files']
+            if (f['path'].startswith('spec/baseline/') and f['path'] not in mutable
                 or f['path'].startswith(('spec/ref/ios-expertise-', 'spec/ref/ios-mcp-', 'spec/ref/mcp-runs/', 'spec/ref/ios-analysis-provenance.json')))
             and (wave != 'understand' or Path(f['path']).name in {'ios-facts.json', 'ios-obligations.json', 'ios-source-index.json'})}
+    if wave == 'domains':
+        from .spec_contract import dependency_inputs
+        inputs.update({path: value for path, value in dependency_inputs(project).items()
+                       if path not in mutable})
+        inputs.pop('spec/baseline/plans/resource-mapping.md', None)
+    return inputs
 
 
 def execution_files(project):
@@ -136,6 +142,8 @@ def generate(project, input_path, *, validate_only=False):
         obs = read_json(project / 'spec/baseline/ios-obligations.json')['obligations']
         by_obligation = {o['id']: o for o in obs}
         for row in mapping:
+            if row['obligation_id'] in report.get('excluded_obligation_ids', []):
+                continue  # Only source-harness-validated Preview reviews are non-product obligations.
             fact_id = by_obligation[row['obligation_id']]['fact_id']
             if not any(fact_id in t['fact_ids'] and set(t['ac_ids']) & set(row['ac_ids']) for t in tasks):
                 raise MigrationError('Obligation has no implementation owner: ' + row['obligation_id'])

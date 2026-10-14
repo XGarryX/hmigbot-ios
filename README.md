@@ -1,4 +1,4 @@
-# HMigBot-iOS 0.7.0
+# HMigBot-iOS 0.8.0
 
 读取原生 iOS 源码与功能特征，按原 HMigBot 五阶段生成 spec、计划和原生鸿蒙代码。
 本工具保留独立 HMigBot CodeX 1.6.1 的实施/验证资源，并接入 1.7.0 调度核心；所需资源随包提供，无需原插件目录。
@@ -6,6 +6,12 @@
 **主入口：`$a2h-run`。主线：a2h-spec → a2h-plan → a2h-execute → a2h-verify → a2h-retrospect。**
 由宿主模型执行技能规程完成理解、设计、编码和修复；脚本负责索引、检查、构建与证据记录。
 `bin/a2h` 是原运行支持程序，不能单独完成语义迁移。
+
+## 规格内容与消费合同
+
+a2h-spec 交付源行为、目标公共接口、状态/接线、批准差异与独立 AC，plan 分配施工，execute 按合同实现并定向回读源码。新增只读 `spec-check --project <target>`；`source-check --harness` 内置同一内容门禁，薄规格、未定义目标、源属性代替目标状态、import/Preview 真值及延迟断言会被阻断。
+
+共享接口在主规格通过 `contract_refs` 引用精确文档/标题，domains 冻结传递引用及决策账本。真实 Preview 义务保留，经当前文件哈希、精确区间、源审阅与 skip-list 验证后才可排除产品实现；未知条件编译仍不放行。详见 [规格合同与升级](skills/a2h-spec/references/spec-delivery-contract.md) 和 [实现/验证边界](docs/SPEC-CONTRACT-0.8.md)。程序门禁不证明模型的全部语义正确或 App 已验收。
 
 ## 0.6.0 可执行 Harness
 
@@ -264,8 +270,8 @@ python -X utf8 scripts/sync_skill_catalog.py
 python -X utf8 -m unittest discover -s tests -v
 python -X utf8 scripts/audit_native_surface.py
 python -X utf8 scripts/validate_release.py --output work/release-check
-python scripts/package_plugin.py --output dist/hmigbot-ios-0.7.0.zip
-python scripts/smoke_package.py --package dist/hmigbot-ios-0.7.0.zip --output work/package-check.json
+python scripts/package_plugin.py --output dist/hmigbot-ios-0.8.0.zip
+python scripts/smoke_package.py --package dist/hmigbot-ios-0.8.0.zip --output work/package-check.json
 ```
 
 技能正文、参考和模板直接维护，同步脚本只更新目录。旧实验 CLI 与 provider 用于按需机械任务，

@@ -11,6 +11,8 @@ metadata:
 
 ## 0.6.0 控制面入口
 
+实施计划须消费已通过 spec-check 与 source-check --harness 的规格。公开目标接口、状态、值域和平台差异依据 [规格交付合同](../a2h-spec/references/spec-delivery-contract.md)；plan 逐条提取对接点并分配文件/handler写权，不临场补造业务合同。contract_refs 的共享接口与决策账本进入 domains 冻结输入。
+
 先读取 [iOS Harness v2](../ios-source-analysis/references/harness-v2.md)，以该协议决定输入、机器门禁和状态写者。以下原领域规程继续用于规格内容、indexed 计划、接线和真实验证；不得再手工调度或写入三份控制账本。
 
 原计划覆盖检查后，将具体任务、所有权、依赖、fact/AC 和决策交给 plan-ir。生成的 blueprint/plan/prompts 冻结，不将执行态写回计划。审批沿用已有授权，不重复要求阶段批准。
