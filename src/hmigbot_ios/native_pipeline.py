@@ -271,7 +271,7 @@ def main(argv=None):
     init.add_argument('--source', required=True, type=Path)
     init.add_argument('--project', required=True, type=Path)
     commands.add_parser('expertise-audit')
-    for name in ('source-index', 'source-refresh', 'source-check', 'spec-check', 'validate', 'build', 'literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-ir', 'replan', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query'):
+    for name in ('source-index', 'source-refresh', 'source-check', 'spec-check', 'spec-summary', 'validate', 'build', 'literals', 'product-literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-check', 'plan-ir', 'replan', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query'):
         p = commands.add_parser(name)
         p.add_argument('--project', required=True, type=Path)
         if name == 'source-check':
@@ -285,7 +285,7 @@ def main(argv=None):
             p.add_argument('--scope', choices=['project', 'ui', 'feature', 'api'], required=True)
         if name == 'behavior-check':
             p.add_argument('--run', action='store_true')
-        if name in {'plan-ir', 'replan'}:
+        if name in {'plan-check', 'plan-ir', 'replan'}:
             p.add_argument('--input', type=Path, required=True)
         if name == 'expertise-review':
             p.add_argument('--input', type=Path, required=True)
@@ -294,8 +294,10 @@ def main(argv=None):
             p.add_argument('--request', type=Path, required=True)
         if name == 'source-refresh':
             p.add_argument('--review', type=Path, required=True)
-        if name == 'literals':
+        if name in {'literals', 'product-literals', 'spec-summary'}:
             p.add_argument('--output', type=Path)
+        if name == 'spec-summary':
+            p.add_argument('--build-evidence', type=Path)
         if name in {'next-batch', 'land-results'}:
             p.add_argument('--wave', default='domains')
     resolver = commands.add_parser('resolve')
@@ -323,6 +325,16 @@ def main(argv=None):
         elif args.command == 'literals':
             from .ios_literals import run
             result = run(args.project, args.output)
+        elif args.command in {'product-literals', 'spec-summary'}:
+            from .quality_views import product_literals, summary
+            result = (product_literals(args.project) if args.command == 'product-literals'
+                      else summary(args.project, build_evidence=args.build_evidence))
+            if args.output:
+                output = args.output.resolve()
+                allowed = (args.project / 'spec/reports').resolve()
+                if not output.is_relative_to(allowed) or output == allowed:
+                    raise MigrationError('Derived views may only be saved below spec/reports; never overwrite source contracts or control ledgers')
+                write_json(output, result)
         elif args.command == 'spec-check':
             from .spec_contract import check as check_contract
             result, code = check_contract(args.project)
@@ -355,9 +367,9 @@ def main(argv=None):
             source, project = context(args.project)
             graph, _ = validate_graph(source, project)
             result, code = verify(project, source, graph, ac_inventory(project), run=args.run)
-        elif args.command == 'plan-ir':
+        elif args.command in {'plan-check', 'plan-ir'}:
             from .ios_scheduler import generate
-            result = generate(args.project, args.input)
+            result = generate(args.project, args.input, validate_only=args.command == 'plan-check')
         elif args.command == 'replan':
             from .ios_scheduler import replan
             result = replan(args.project, args.input)

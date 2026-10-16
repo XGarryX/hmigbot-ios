@@ -107,8 +107,16 @@ Stage 3 一律以 parallel_group 为粒度执行，`5-step3b-vm.md` / `6-step3c-
 feature spec `## 验收标准` 的 `###` 组标题（或单条 AC）尾部 `impl: <addendum>.md §<节>` = 该组实现细节的权威归宿（组级默认、单条覆盖、多目标逗号分隔；addendum 位于 feature spec 同目录）。worker 实现某 AC 组前：
 
 - 该组带 `impl:` 且目标 addendum 的 `consumed_at`（frontmatter，缺省按 a2h-spec C4-pre 第 5 项 slug 默认表：state-machine/races/lifecycle→3b，api/persistence→3c，mapping→随组）匹配本步骤 → **按标题 grep 目标 §节精读**（`grep -A 40 "<节标题>" <addendum 路径>`），随 spec / 源码一并纳入理解
-- **禁止整目录扫读 addenda**；每次派发精读 **≤3 节 / 总量 ≤150 行**，超出按 AC 组顺序取前 3、其余写入返回报告 `deferred_addenda` 字段
+- **禁止整目录扫读 addenda**；单次精读预算 **≤3 节 / 总量 ≤150 行**。预算用于分批读取：超过则继续下一批精确节，或按AC/独占文件拆 task。`deferred_addenda` 记录未消费引用与受影响AC，并使这些AC保持未完成；不能只读前3节便关闭整个任务。closer 按该清单阻止受影响单元完成，不必为确认清单而整读所有业务spec。
 - AC 断言本身以主文件为准（指针不转移断言）；无指针的组照旧只依据主文件
+
+## profile 2 实施输入与冲突回流
+
+冻结任务包含 `plan_item_refs/ac_ids/spec_refs/contract_refs`；实施worker按精确标题/动作ID读取本任务合同传递闭包（共享接口、状态/值域、立即效果与完成事件、范围决定及相关addenda），只读索引或页摘要不算消费。每次返回记录 `consumed_refs` 与 `unread_refs`（包含AC归属）；未读、过期、unknown或冲突影响的AC不能报完成。此记录进入原结果/brief，不新增控制账本写者。
+
+遇到 page/feature/共享合同/AC 对同一动作不一致，返回 `contract_conflicts`：两端路径#标题/ID、冲突点、source_anchor/fact ID、受影响AC及 `owner_stage: spec`。例如页面写“取消即清空”，服务写“回调后移除”，需要回源裁定；不能因页面更方便或合同文件更长就选一端。已批准ledger若明确覆盖该动作且输入版本一致，引用其D-ID执行；否则回Spec修正并重过门/replan。closer仍按finding指针定点读，不承担全量源行为重判。
+
+`generated/compile/structural/behavior/visual` 分开报告。沿用的 `verified/pages_verified` 字段只表示旧结构/编译流程完成，不能据此把 behavior/visual 标PASS；未执行为not_run，旧证据过期为stale。
 
 
 ## 策略决策 ≠ 免除装配义务（压舱条款，两次实录后 HARD）

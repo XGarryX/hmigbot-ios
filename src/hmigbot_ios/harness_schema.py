@@ -12,12 +12,14 @@ def validate(value, name):
             walk(value, SCHEMA['$defs'][rule['$ref'].split('/')[-1]], path)
         kind = rule.get('type')
         valid = {'object': lambda: isinstance(value, dict), 'array': lambda: isinstance(value, list),
-                 'string': lambda: isinstance(value, str), 'integer': lambda: type(value) is int}
-        if kind and not valid[kind]():
+                 'string': lambda: isinstance(value, str), 'integer': lambda: type(value) is int,
+                 'boolean': lambda: type(value) is bool, 'null': lambda: value is None,
+                 'number': lambda: type(value) in {int, float}}
+        if kind and (kind not in valid or not valid[kind]()):
             raise MigrationError(path + ': expected ' + kind)
         if 'const' in rule and (type(value) is not type(rule['const']) or value != rule['const']):
             raise MigrationError(path + ': invalid constant')
-        if 'enum' in rule and value not in rule['enum']:
+        if 'enum' in rule and not any(type(value) is type(item) and value == item for item in rule['enum']):
             raise MigrationError(path + ': invalid enumeration')
         if isinstance(value, str):
             if len(value.strip()) < rule.get('minLength', 0) or 'pattern' in rule and not re.search(rule['pattern'], value):
@@ -35,6 +37,8 @@ def validate(value, name):
             if set(rule.get('required', [])) - value.keys():
                 raise MigrationError(path + ': missing required fields ' + ','.join(sorted(set(rule['required']) - value.keys())))
             for key, item in value.items():
+                if key not in rule.get('properties', {}) and rule.get('additionalProperties') is False:
+                    raise MigrationError(path + ': unknown field ' + key)
                 child = rule.get('properties', {}).get(key, rule.get('additionalProperties'))
                 if isinstance(child, dict): walk(item, child, path + '.' + key)
     walk(value, SCHEMA['$defs'][name], name)

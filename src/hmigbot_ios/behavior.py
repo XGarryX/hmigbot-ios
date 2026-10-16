@@ -9,8 +9,12 @@ from .core import MigrationError, digest, json_bytes, read_json, safe_child, sna
 
 
 def verify(project, source, graph, acs, *, run=False):
+    from .quality_views import spec_inputs, target_inputs
+    contract_hashes, product_hashes = spec_inputs(project), target_inputs(project)
     failures, observations = [], []
-    spec = read_json(project / 'spec/verification/ios-behavior.json')
+    verification_path = project / 'spec/verification/ios-behavior.json'
+    verification_sha = digest(verification_path.read_bytes())
+    spec = read_json(verification_path)
     if spec.get('schema_version') != 2 or spec.get('source_sha256') != graph['source_sha256']:
         raise MigrationError('Behavior cases must pin the current independent source snapshot')
     facts = {f['id']: f for f in graph['facts']}
@@ -106,8 +110,13 @@ def verify(project, source, graph, acs, *, run=False):
     # Report whether invoked processes changed source/target rather than silently accepting side effects.
     if snapshot(source)['sha256'] != graph['source_sha256']:
         failures.append({'rule': 'IOS.BEHAVIOR_SOURCE_CHANGED', 'subject': 'source'})
+    if (digest(verification_path.read_bytes()) != verification_sha
+            or spec_inputs(project) != contract_hashes or target_inputs(project) != product_hashes):
+        failures.append({'rule': 'IOS.BEHAVIOR_INPUT_CHANGED', 'subject': 'verification/spec/target'})
     pending = sorted(set(acs) - covered)
     report = {'schema_version': 2, 'status': 'FAIL' if failures else 'UNVERIFIED' if pending else 'PASS',
+              'verification_sha256': verification_sha,
+              'spec_input_hashes': contract_hashes, 'target_input_hashes': product_hashes,
               'source_sha256': graph['source_sha256'], 'target_before_sha256': target_before,
               'failures': failures, 'observations': observations, 'unverified_ac_ids': pending,
               'behavior_verified': not failures and not pending,

@@ -2,6 +2,7 @@
 
 派发 a2h-ios-converter，输入 page_id/source_root/page_spec/ui_info/target、
 ios-semantics 对应事实、owning_slice、wiring_ownership_map、registered_placeholders、owned_files。
+profile 2 同带 plan_item_refs、ac_ids、页面精确spec_refs与contract_refs闭包，按_common.md读取并报告consumed_refs/unread_refs/contract_conflicts。
 读取 ios-ui-to-arkui 与 arkts-component-builder 及当前相关目标参考。
 保存源状态/Binding/约束/事件语义，实际生成归属页面与组件；共享装配由 batch closer 完成。
 读取 ui-manifest 全局 design tokens，不硬编码替代已有 token。

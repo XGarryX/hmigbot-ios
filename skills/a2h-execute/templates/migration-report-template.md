@@ -5,6 +5,8 @@
 
 > 由 `a2h-execute/SKILL.md` §10 引用。所有 Stage 执行完毕后，按本模板生成 `spec/migration-report.md`。
 
+所有计数从当轮任务/AC/回执/brief明细推导，附输入摘要和证据路径；不复制旧固定总数。旧verified仅表示结构/编译兼容状态。profile 2 分开列生成、编译、结构、行为、视觉轴，未跑为not_run、证据过期为stale。
+
 ```markdown
 # 迁移报告
 
@@ -16,7 +18,7 @@
 | 阶段 | 任务数 | 成功 | 失败 | 编译状态 |
 |------|--------|------|------|---------|
 | Stage 1: UI Pipeline | X pages | a | a' | PASS/PARTIAL |
-| Stage 2: Feature Base | 7 tasks | b | b' | PASS/FAIL |
+| Stage 2: Feature Base | B tasks（从计划派生） | b | b' | PASS/FAIL |
 | Stage 3: Feature Slices | N slices × 4 steps | c | c' | PASS/PARTIAL |
 | **总计** | **M** | **S** | **F** | |
 
@@ -45,8 +47,8 @@
 
 | Slice | 功能 | Step 3a | Step 3b | Step 3c | Step 3d/3e | 状态 |
 |-------|------|---------|---------|---------|------------|------|
-| Slice 1 | 播放功能 | SUCCESS | SUCCESS | SUCCESS | WIRED+VERIFIED | PASS |
-| Slice 2 | 订阅功能 | SUCCESS | SUCCESS | SUCCESS | WIRED | VERIFIED | PASS |
+| Slice 1 | 播放功能 | SUCCESS | SUCCESS | SUCCESS | WIRED+STRUCTURAL_PASS | PASS |
+| Slice 2 | 订阅功能 | SUCCESS | SUCCESS | SUCCESS | WIRED+STRUCTURAL_PASS | PASS |
 | Slice 3 | 搜索功能 | SUCCESS | SUCCESS | FAILED | - | - | FAIL |
 
 ## Skill 使用统计
@@ -80,6 +82,13 @@
 | Stage 3 | Slice 3 Step 3c | API 不存在 | 手动排查 API 兼容性 |
 
 ## 页面状态汇总
+
+### 独立验证轴
+| 范围/ID | 生成 | 编译 | 结构 | 行为 | 视觉 | 证据/输入摘要 |
+|---------|------|------|------|------|------|---------------|
+| <实际任务/页面/AC> | <真实结论> | <真实结论> | <真实结论> | not_run | not_run | <报告路径> |
+
+### 旧进度兼容状态
 
 | 状态 | 数量 |
 |------|------|

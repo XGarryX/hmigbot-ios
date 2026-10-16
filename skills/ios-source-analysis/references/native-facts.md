@@ -1,15 +1,15 @@
 # iOS 原生事实契约与必需维度
 
-0.6.0 实施使用 `schema_version: 2`，结构化 known、机器 fact_ids、状态字段与义务覆盖以
-[harness v2](harness-v2.md) 为准。下文 v1 的自由 value 示例只说明 0.5.0 导入格式，
-不得用作新 baseline 或新版实现放行。各条件下的必需维度保持共用。
+新生成与0.6.0以后实施使用 `schema_version: 2`，结构化known、机器fact_ids、状态字段与义务覆盖以
+[harness v2](harness-v2.md) 为准。项目spec_contract_version只决定内容profile，不修改本载荷版本。
+v1自由value只可作为0.5.0历史导入输入，不能用于新baseline或新版门禁。
 
 共用产物名称、稳定 page/F/AC ID 和计划布局保留；源字段使用 `source_anchors`、
 `source_anchors_ref`。每个源锚点有 path、role；推荐 symbol、line、end_line。
 路径相对源根，禁止越界，行号从 1 起，不能用只存在于目标仓的 .ets 作源真值。
 
 `spec/baseline/ios-semantics.json` 是源特征的结构化伴随文件，不取代 Markdown spec。
-顶层：`schema_version: 1`、`source_platform: "ios"`、`documents: []`。
+顶层：`schema_version: 2`、`source_platform: "ios"`、`documents: []`。
 每项：`id`（page_NNNN 或 FNNN）、`kind`（page/feature）、`languages`、`frameworks`、`facts`。
 languages 用 swift/objc/objcxx/c/cpp；frameworks 用 swiftui/uikit/ib/other/nonvisual。
 
@@ -18,15 +18,20 @@ languages 用 swift/objc/objcxx/c/cpp；frameworks 用 swiftui/uikit/ib/other/no
 ```json
 {
   "status": "known",
-  "value": {"owner": "CounterView", "storage": "State", "initial": 0},
+  "value": {"input": "真实输入", "processing": "从当前源片段解释实际处理", "observable": "该源行为的具体结果"},
+  "fact_ids": ["从当前ios-facts复制的真实ID"],
   "evidence": [{"path": "CounterView.swift", "line": 4}],
   "reason": ""
 }
 ```
 
-known 需要非空 value 和至少一处有效源证据；not_applicable 需要具体 reason；
+示例只说明字段形态，必须替换真实内容/机器ID/源行，不可原样发行。known需要非空对象value、当前机器fact_ids和至少一处有效源证据；not_applicable需要具体reason；
 unknown 需要 reason，保持 source finding，不用空对象伪装已完成。
-各维度允许对象/数组/文字，保存真实语义而非套固定组件枚举。
+v2中value固定为对象，数组/源表达式放对象内部；保存真实语义而非套固定组件枚举。
+
+`state_ownership.value`有更严格结构：`{"states":[{"fact_id":"实际状态fact ID","owner":"实际owner","storage":"State","type":"Int","initializer":"0"}]}`。owner/storage/type/initializer逐字匹配当前机器状态事实；initializer保留源表达式文本，不能把false/nil/0互换。其它维度的value对象按语义展开，不借状态示例捏造所有页面都含计数器。
+
+历史导入的schema_version 1可含自由value；import-legacy将旧声明归档并转unknown，重新关联当前fact_ids和源复核后才成为v2 known。只改schema_version或摘要不能继承旧PASS。
 
 | 条件 | 必须逐项交代的维度 |
 |---|---|

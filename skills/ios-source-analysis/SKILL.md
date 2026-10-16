@@ -73,6 +73,8 @@ Clang AST 与 SourceKit-LSP 的输出也不能冒充运行行为。
 宿主不支持分工时按同规程顺序执行。结束前回读交付文件、核对证据和范围，
 文件存在不代表分析已完成；不得用占位 Markdown 填平缺项。
 
+新生成产物先按 [Spec产物目录](../a2h-spec/references/artifact-contracts.md) 确认profile、格式、作者与消费者。UI/功能/API作者分别加载自己的analysis-v2执行步骤和正反例；异步/取消/分层清理的即时、完成与最终效果由唯一作者定义，各方精确引用。提交前按 [独立跨文档复核](../a2h-spec/references/spec-content-review.md) 完成finding→原owner返修→独立复查，结构PASS不能代替该源语义审阅。
+
 源码变化时按快照差异重读受影响调用链，再更新相关事实；保留旧版本和变更原因。
 只刷新 hash 不能关闭过期 source finding。路径歧义必须回到真实目录消歧。
 最终返回已分析范围、语言/框架、证据来源、未知项和待决策项。

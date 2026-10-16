@@ -1,4 +1,8 @@
-# 0.7.0 实施与验证边界
+# 0.9.0 实施与验证边界
+
+本轮以MD规程/模板/角色为主，配套Spec产物catalog/schema、Plan三层对账、合同输入冻结及只读资源/证据视图。新增内容profile 2默认用于新项目；历史项目兼容、升级和运行边界见[0.9.0合同说明](SPEC-PLAN-CONTRACT-0.9.md)。实际模型生成样本保留首轮失败与独立反馈，不以结构完整宣称语义或整App成功；[样本记录](../tests/evaluations/spec-plan-v2/README.md)说明范围。
+
+以下保留此前能力及限制。最终工具与发行验证结果以[本版验证说明](VALIDATION.md)及当轮报告为准。
 
 新增真实上游资料快照、expertise-plan/review、源门禁与冻结计划接线、stdio 源查询 MCP
 证据采集与引用校验。完整阶段、细分步骤、skill/MCP、产物和交接写在 [README](../README.md)。

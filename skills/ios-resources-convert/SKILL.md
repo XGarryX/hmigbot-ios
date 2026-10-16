@@ -22,6 +22,12 @@ xcstrings、字体、Info.plist 和权限说明；只对计划认领的资源写
 
 ## Stage 0
 
+profile 2 在 raw `literal-ledger.json` 之外运行 `product-literals --project <target>`，按
+[产品消费视图协议](../../docs/SPEC-PLAN-CONTRACT-0.9.md)联读源归属、当前覆盖与精确Preview区间。
+同一文本的产品/Preview/测试来源分别保留；只有明确使用场景和源证据的项进入目标资源转换。
+`usage: unresolved` 需回读源调用，不能因 raw `page_level: true` 把协议键或测试断言当 UI 文案。
+raw 保持完整；投影视图不能豁免源义务、不能按目录名自动排除，不能把其 source point 当 vp 自动换算。
+
 1. 建立源引用 → 实际文件 → variant → 目标资源名的唯一映射。
    名称按目标规则归一化，并检查大小写/标点碰撞；不同原资源不能被同名覆盖。
 2. 图片记录 idiom、scale、尺寸、方向、rendering mode、resizing、capInsets、

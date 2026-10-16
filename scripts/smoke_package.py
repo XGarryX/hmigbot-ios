@@ -90,6 +90,9 @@ def main():
                     '-s', str(plugin / 'tests'), '-p', 'test_ios_harness.py', '-v'])
             execute('installed-spec-contract', [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover',
                     '-s', str(plugin / 'tests'), '-p', 'test_spec_contract.py', '-v'])
+            for pattern in ('test_artifact_contract.py', 'test_plan_contract.py', 'test_quality_views.py'):
+                execute('installed-' + pattern.removesuffix('.py'), [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover',
+                        '-s', str(plugin / 'tests'), '-p', pattern, '-v'])
             execute('installed-expertise-mcp', [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover',
                     '-s', str(plugin / 'tests'), '-p', 'test_expertise_mcp.py', '-v'])
             del env['HMIGBOT_TEST_RUNTIME']

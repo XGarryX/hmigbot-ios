@@ -4,6 +4,8 @@
 
 规格交付按 [公共合同](../../a2h-spec/references/spec-delivery-contract.md) 形成。0.8.0 的只读 spec-check 校验正文、目标锚点、状态映射和显式共享引用，source-check --harness 内置同一检查；字段齐全仍不证明语义正确。精确 Preview 义务的哈希审阅排除、旧 baseline 升级及共享引用写法见该合同。import 仅为依赖线索，不产生持久化行为义务。
 
+内容profile与harness载荷分别版本化：新项目 `ios_harness.spec_contract_version=2`，旧profile 1按兼容路径；升级补齐 [产物合同](../../a2h-spec/references/artifact-contracts.md)、独立复核并重跑门禁，不继承旧PASS，已冻结profile 2不得降级绕过。核心MD提纲/表头、页面meta、动作定义/引用与按需附件格式由随包catalog/schema及实际校验器限定；自然语言语义仍按 [独立联读](../../a2h-spec/references/spec-content-review.md) 裁定。
+
 0.7.0 增加 [外部专业 skill/MCP 规程](external-expertise.md)：facts 后运行 expertise-plan，
 由对应分析 owner 读取固定原文并用 expertise-review 保存源观察。source-check --harness
 要求此清单/审阅通过，包括 0.6.0 项目升级。可选 mcp-query 保存实际响应，known claim

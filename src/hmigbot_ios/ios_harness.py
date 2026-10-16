@@ -14,6 +14,9 @@ def initialize(project: Path, *, import_legacy=False):
     cfg_path = project / '.migbot/config.json'
     cfg = read_json(cfg_path)
     marker = cfg.get('ios_harness')
+    contract_version = marker.get('spec_contract_version', 1) if isinstance(marker, dict) else 2
+    if type(contract_version) is not int or contract_version not in (1, 2):
+        raise MigrationError('Unsupported spec contract version; preserve the current baseline')
     if marker and marker.get('version') != 2:
         raise MigrationError('Unsupported harness version; do not overwrite state')
     if (project / 'spec/state/state.json').exists() and not marker:
@@ -33,7 +36,8 @@ def initialize(project: Path, *, import_legacy=False):
             for field, value in doc.get('facts', {}).items():
                 doc['facts'][field] = {'status': 'unknown', 'reason': 'Imported v1 claim requires typed facts and independent review', 'legacy_claim': value}
         write_json(legacy, migrated)
-    cfg['ios_harness'] = {'version': 2, 'scheduler': 'hmigbot-codex-1.7.0',
+    cfg['ios_harness'] = {'version': 2, 'spec_contract_version': contract_version,
+                          'scheduler': 'hmigbot-codex-1.7.0',
                           'state_writer': 'state_update.py', 'journal_writer': 'land_results.py',
                           'dispatch_writer': 'next_batch.py', 'legacy_pass_inherited': False}
     cfg['ios_expertise'] = {'version': 1, 'required': True}
@@ -56,7 +60,7 @@ def ac_inventory(project):
     return acs
 
 
-def check(project: Path):
+def check(project: Path, *, report_only=False):
     from .native_pipeline import context, check_source, source_paths, findings_module
     source, project = context(project)
     queue = findings_module()
@@ -169,11 +173,13 @@ def check(project: Path):
         issues.extend(content['findings'])
     except (MigrationError, OSError, ValueError, TypeError, AttributeError) as exc:
         fail('IOS.HARNESS_CONTRACT', 'harness', str(exc))
-    queue.replace_section(str(project), 'spec.ios-harness', issues)
+    if not report_only:
+        queue.replace_section(str(project), 'spec.ios-harness', issues)
     report = {'schema_version': 2, 'status': 'FAIL' if issues else 'PASS', 'findings': issues,
               'scope': 'source contract and obligation coverage', 'behavior_verified': False,
               'excluded_obligation_ids': sorted(excluded_obligations)}
-    write_json(project / 'spec/reports/ios-harness-check.json', report)
+    if not report_only:
+        write_json(project / 'spec/reports/ios-harness-check.json', report)
     return report, 2 if issues else 0
 
 

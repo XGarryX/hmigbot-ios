@@ -10,12 +10,16 @@ a2h-execute 三阶段各产一类 brief，统一落 `spec/execution/briefs/`：
 | brief | 产出时机 | SKILL.md 章节 |
 |---|---|---|
 | Batch brief | Stage 1 每个 Batch 结算后（批内无编译，统一编译在 execute §3d 收口） | §3b |
-| Base Task brief | Stage 2 每个 Base 任务（Base-1..7）完成后 | §4e |
+| Base Task brief | Stage 2每个实际Base任务完成后（含非整数编号） | §4e |
 | Group brief | Stage 3 每个 parallel_group 收尾（§5e）后——组粒度单文件，per-slice 小节 | §5e |
 
 ---
 
 ## 0. 跨 brief 通用：`loops` 段 + `final_state`（Phase 2 引入）
+
+profile 2 补充结构化小节 `input_consumption`（plan_item_refs、consumed_refs、unread_refs及受影响AC）、`contract_conflicts`（两端指针、源证据、AC）与 `validation_axes`（generated/compile/structural/behavior/visual的真实结论及证据路径）。worker返回值供closer汇总；未读/冲突影响AC不得记impl_claims或PASS。原writeback schema字段不扩写这些内容，放入brief.content即可，控制账本作者与落盘手不变。
+
+旧 `verified/pages_verified/ui_manifest.verified/feature verified` 是编译与结构流程兼容状态，不能推导独立行为或视觉通过。`validation_axes` 未执行项填not_run，输入/代码已变的旧证据填stale；PASS只覆盖本模式真实履行的义务。Batch不跑loops，不套用下一段双loop条件。
 
 每个 brief 必含 `final_state` + `loops` 两个 top-level 字段，由 [`arkts-structural-closure`](../../arkts-structural-closure/SKILL.md) skill 的运行结果填入（含 compile_loop + structural_loop 两部分）。
 
@@ -163,7 +167,7 @@ escalation:
 - step_3d_wiring: wired_files / integration_points_done: n/n / resolved_fwd_refs（本 slice）
 - cross_slice_edits: | file | handler | 原 owning_slice | 落地 evidence | 表（有则填）
 - unresolved_placeholders: [...]（本 slice 前缀 grep registry 的残余）
-- pages_verified: [...]（供 a2h-verify CHECK-5 核验）
+- pages_verified: [...]（旧字段，表示结构收口页，供 CHECK-5；行为/视觉见validation_axes）
 
 ### deferred_items
 | 描述 | owner_skill | 闭环条件 | status |

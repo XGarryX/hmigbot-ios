@@ -90,6 +90,19 @@ class HarnessTests(unittest.TestCase):
     def rules(self):
         return [f['rule'] for f in check(self.project)[0]['findings']]
 
+    def test_report_only_harness_preserves_existing_findings_and_creates_no_report(self):
+        from hmigbot_ios.native_pipeline import findings_module
+        queue = findings_module()
+        marker = queue.make('IOS.SENTINEL', 'spec', 'preserve', 'Pending prior evidence')
+        queue.replace_section(str(self.project), 'spec.ios-harness', [marker])
+        before = {p.relative_to(self.project).as_posix(): p.read_bytes()
+                  for p in self.project.rglob('*') if p.is_file()}
+        report, code = check(self.project, report_only=True)
+        self.assertEqual(code, 0, report)
+        after = {p.relative_to(self.project).as_posix(): p.read_bytes()
+                 for p in self.project.rglob('*') if p.is_file()}
+        self.assertEqual(before, after)
+
     def test_reviewed_contract_is_not_behavior_pass(self):
         report, code = check(self.project)
         self.assertEqual(code, 0, report)
@@ -307,6 +320,9 @@ class HarnessTests(unittest.TestCase):
         report, code = verify(self.project, self.source, self.graph, acs, run=True)
         self.assertEqual(code, 0, report)
         self.assertEqual(report['observations'][0]['actual'], {'count': 2})
+        self.assertEqual(report['verification_sha256'], digest(path.read_bytes()))
+        self.assertEqual(report['target_input_hashes']['counter.py'], digest(target.read_bytes()))
+        self.assertTrue(report['spec_input_hashes'])
         case['oracle']['expected'] = {'count': 999}; write_json(path, spec)
         report, code = verify(self.project, self.source, self.graph, acs, run=True)
         self.assertEqual(code, 2, report)

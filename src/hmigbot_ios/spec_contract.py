@@ -23,17 +23,8 @@ DEFERRED = re.compile(r'其余\s*\d+\s*处.*(?:见|审阅)|\(详见.*\.md|对源
 
 def sections(text):
     """Return headings and bodies, without treating headings in code as sections."""
-    lines, found, current, fenced = text.splitlines(), [], None, False
-    for line in lines:
-        if re.match(r'^\s*(```|~~~)', line):
-            fenced = not fenced
-        match = None if fenced else re.match(r'^#{1,6}\s+(.+?)\s*$', line)
-        if match:
-            current = [match[1], []]
-            found.append(current)
-        elif current is not None:
-            current[1].append(line)
-    return {heading: '\n'.join(body).strip() for heading, body in found}
+    from .artifact_contract import markdown_sections
+    return {section['title']: section['body'] for section in markdown_sections(text)}
 
 
 def contract_refs(text):
@@ -75,7 +66,8 @@ def references(project, document, text):
                 or target.suffix != '.md' or not target.is_file()):
             raise MigrationError('Contract reference must be an existing baseline/ref Markdown file: ' + ref)
         contents = target.read_text(encoding='utf-8-sig')
-        if not heading or heading not in sections(contents):
+        from .artifact_contract import markdown_sections
+        if not heading or sum(s['title'] == heading for s in markdown_sections(contents)) != 1:
             raise MigrationError('Contract reference needs an exact existing heading: ' + ref)
         resolved.append((target, heading, sections(contents)[heading]))
     return resolved
@@ -87,6 +79,8 @@ def dependency_inputs(project):
     pending = [base / name for name in COMMON]
     pending += list((base / 'features').glob('*.md')) + list((base / 'ui').glob('*.md'))
     pending.append(project / 'spec/decision-ledger.md')
+    from .artifact_contract import external_contracts
+    pending.extend(external_contracts(project))
     seen, hashes = set(), {}
     while pending:
         path = pending.pop()
@@ -96,6 +90,8 @@ def dependency_inputs(project):
         hashes[path.relative_to(project).as_posix()] = digest(path.read_bytes())
         for target, _, _ in references(project, path, path.read_text(encoding='utf-8-sig')):
             pending.append(target)
+    from .artifact_contract import authored_inputs
+    hashes.update(authored_inputs(project))
     return hashes
 
 
@@ -140,6 +136,15 @@ def check(project):
             return ''
         inputs[path.relative_to(project).as_posix()] = digest(path.read_bytes())
         return path.read_text(encoding='utf-8-sig')
+
+    from .artifact_contract import check_artifacts, contract_version, revision
+    try:
+        profile = contract_version(project)
+        if profile == 2:
+            check_artifacts(project, source, fail, inputs)
+    except (MigrationError, OSError, UnicodeError) as exc:
+        profile = None
+        fail('ARTIFACT_PROFILE', 'ios_harness.spec_contract_version', str(exc))
 
     for name in COMMON:
         contents = read(base / name)
@@ -233,7 +238,9 @@ def check(project):
                     fail('TRUTH_INVALID', ident, str(exc))
     report = {'schema_version': 1, 'status': 'FAIL' if findings else 'PASS',
               'scope': 'Markdown migration content and consumer contracts; not semantic or runtime equivalence',
-              'behavior_verified': False, 'findings': findings, 'inputs': inputs,
+              'behavior_verified': False, 'spec_contract_version': profile,
+              'artifact_contract_revision': revision(project) if profile else None,
+              'findings': findings, 'inputs': inputs,
               'counts': {'features': sum(k == 'feature' for _, k in documents),
                          'pages': sum(k == 'page' for _, k in documents), 'acceptance': acceptance}}
     return report, 2 if findings else 0

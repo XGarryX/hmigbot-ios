@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from hmigbot_ios.analyze import analyze
 from hmigbot_ios.build import build_target
 from hmigbot_ios.contracts import validate_facts, validate_generation
-from hmigbot_ios.core import MigrationError, read_json, write_json
+from hmigbot_ios.core import MigrationError, digest, read_json, write_json
 from hmigbot_ios.generate import sdk_api
 from hmigbot_ios.swiftui import parse_view
 
@@ -95,6 +95,10 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(result["exit_code"], 7)
         self.assertFalse(run.call_args.kwargs["shell"])
         self.assertEqual((self.root / "evidence/stdout.log").read_bytes(), b"compile error")
+        self.assertEqual(result['target_project'], config['target']['root'])
+        self.assertEqual(result['target_input_hashes']['build-profile.json5'],
+                         digest((Path(config['target']['root']) / 'build-profile.json5').read_bytes()))
+        self.assertEqual(result['spec_input_hashes'], {})
 
     def test_zero_exit_without_hap_is_not_success(self):
         with patch("hmigbot_ios.build.subprocess.run", return_value=subprocess.CompletedProcess([], 0, b"", b"")):

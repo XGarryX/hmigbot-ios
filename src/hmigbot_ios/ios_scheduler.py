@@ -23,6 +23,9 @@ UPSTREAM = ROOT / 'vendor/hmigbot-1.7.0/skills/a2h-execute/scripts'
 
 def baseline_inputs(project, wave):
     mutable = {'spec/baseline/' + name for name in ('ui-manifest.md', 'feature-index.md', 'verification.json', 'impl-claims.json', 'ios-source-check.json')}
+    from .plan_contract import profile, structural_digest
+    projected = {'spec/baseline/ui-manifest.md', 'spec/baseline/feature-index.md'} if profile(project) >= 2 else set()
+    mutable -= projected
     inputs = {f['path']: f['sha256'] for f in snapshot(project)['files']
             if (f['path'].startswith('spec/baseline/') and f['path'] not in mutable
                 or f['path'].startswith(('spec/ref/ios-expertise-', 'spec/ref/ios-mcp-', 'spec/ref/mcp-runs/', 'spec/ref/ios-analysis-provenance.json')))
@@ -32,6 +35,13 @@ def baseline_inputs(project, wave):
         inputs.update({path: value for path, value in dependency_inputs(project).items()
                        if path not in mutable})
         inputs.pop('spec/baseline/plans/resource-mapping.md', None)
+        if profile(project) >= 2:
+            from .plan_contract import indexed_contract_inputs
+            inputs.update(indexed_contract_inputs(project))
+    for path in projected:
+        target = safe_child(project, path)
+        if path in inputs and target.is_file():
+            inputs[path] = structural_digest(target.read_text(encoding='utf-8-sig'))
     return inputs
 
 
@@ -89,12 +99,18 @@ def generate(project, input_path, *, validate_only=False):
     from .native_pipeline import context
     source, project = context(project)
     request = validate(read_json(input_path), 'planRequest')
+    from .plan_contract import profile, contract_revision, validate_plan
+    contract_profile = profile(project)
+    existing_contract = project / 'spec/blueprint/contracts.json'
+    if existing_contract.is_file() and read_json(existing_contract).get('spec_contract_version', 1) > contract_profile:
+        raise MigrationError('Cannot downgrade a frozen spec contract profile to bypass planning gates')
     if request.get('schema_version') != 2 or request.get('wave') not in {'understand', 'domains'}:
         raise MigrationError('Expected typed v2 plan for understand or domains wave')
     wave = request['wave']
+    plan_contract = validate_plan(project, request)
     graph, _ = validate_graph(source, project)
     if wave == 'domains':
-        report, code = check(project)
+        report, code = check(project, report_only=validate_only)
         if code:
             raise MigrationError('Source harness gate failed; resolve findings before planning implementation')
     graph_hash = digest(json_bytes(graph))
@@ -115,7 +131,8 @@ def generate(project, input_path, *, validate_only=False):
         if not isinstance(role, str) or not (ROOT / 'agents-codex' / (role + '.toml')).is_file():
             raise MigrationError('Role is not bundled: ' + str(role))
         own = task.get('ownership')
-        if not isinstance(own, list) or not own:
+        readonly_verification = contract_profile >= 2 and task.get('verification') in {'compile', 'behavior', 'visual'} and not own
+        if not isinstance(own, list) or not own and not readonly_verification:
             raise MigrationError('Tasks need explicit file ownership; wildcards are not allowed')
         for path in own:
             safe_child(project, path)
@@ -127,7 +144,7 @@ def generate(project, input_path, *, validate_only=False):
             owned.add(portable)
         ac_ids = task.get('ac_ids', [])
         fact_ids = task.get('fact_ids')
-        if not isinstance(ac_ids, list) or any(a not in all_acs for a in ac_ids) or wave == 'domains' and not ac_ids:
+        if not isinstance(ac_ids, list) or any(a not in all_acs for a in ac_ids) or wave == 'domains' and not ac_ids and contract_profile < 2:
             raise MigrationError('Implementation task must bind real acceptance criteria')
         if not isinstance(fact_ids, list) or not fact_ids or not set(fact_ids) <= all_facts:
             raise MigrationError('Task must bind current machine facts')
@@ -157,7 +174,7 @@ def generate(project, input_path, *, validate_only=False):
     if type(parallel) is not int or not 1 <= parallel <= 8:
         raise MigrationError('max_parallel must be 1..8; serial is the default')
     if validate_only:
-        return {'status': 'request_validated', 'source_sha256': graph['source_sha256']}
+        return {'status': 'request_validated', 'source_sha256': graph['source_sha256'], 'plan_contract': plan_contract}
     plan_path = project / f'spec/waves/plan-{wave}.json'
     if plan_path.exists():
         raise MigrationError('Existing plan is immutable; use a new project or explicit reviewed replan')
@@ -171,7 +188,9 @@ def generate(project, input_path, *, validate_only=False):
         'domain-map.json': {'version': 1, 'domains': [{'key': t['id'], 'title': t['goal'], 'pages': []} for t in planned]},
         'ownership.json': {'version': 1, 'owners': {t['id']: t['ownership'] for t in planned}, 'mainloop_owned': []},
         'contracts.json': {'version': 1, 'ios_adapter_version': 2, 'source_sha256': graph['source_sha256'],
-                           'graph_sha256': graph_hash, 'input_hashes': input_hashes, 'ios_tasks': tasks, 'modules': [], 'wires': []},
+                           'graph_sha256': graph_hash, 'input_hashes': input_hashes, 'ios_tasks': tasks, 'modules': [], 'wires': [],
+                           'spec_contract_version': contract_profile, 'contract_revision': contract_revision(project),
+                           'task_inputs': plan_contract['task_inputs']},
         'decisions.json': {'version': 1, 'decisions': request.get('decisions', [])},
         'workflow-params.json': {'ios_adapter_version': 2, 'project': {'root': str(project), 'ios_src': str(source)}, 'gates': {'unattended': False}}
     }.items():
@@ -184,12 +203,19 @@ def generate(project, input_path, *, validate_only=False):
         prompt = f'spec/waves/prompts/{wave}/{t["id"]}.txt'
         receipt = f'spec/waves/results/{wave}/{t["id"]}.json'
         facts = [f for f in graph['facts'] if f['id'] in t['fact_ids']]
+        consumer_inputs = plan_contract['task_inputs'].get(t['id'], [])
         body = ('Use the assigned bundled role and iOS skill protocol. You share the codebase; preserve others\' edits.\n'
                 'Read spec/ref/ios-expertise-plan.json and ios-expertise-reviews.json when present.\n'
                 'Use frozen source semantics, ACs and linked tool_evidence_ids; do not replace source behavior with upstream best practices.\n'
                 'Only write the explicitly owned files. Shared wiring requires its designated owner.\n'
                 'Return generated/blocked; generation is not compilation or behavior verification.\n'
                 f'Goal: {t["goal"]}\nRole: {t["role"]}\nOwnership: {t["ownership"]}\nACs: {t.get("ac_ids", [])}\n'
+                f'Spec contract profile: {contract_profile}; revision: {contract_revision(project)}\n'
+                f'Markdown plan items: {t.get("plan_item_refs", [])}\nVerification obligation: {t.get("verification", "generated")} (not an achieved result)\n'
+                'Read each mapped item and preserve all its verification duties; the highest enum does not replace independent behavior/visual evidence.\n'
+                'Required inputs: read every exact heading below at the pinned file hash. If missing/conflicting, return blocked and identify the conflicting references.\n'
+                + json_bytes(consumer_inputs).decode() + '\n'
+                +
                 f'Receipt path: {receipt}\nUse ios-receipt v2 with source_sha256, plan_sha256, task_id, files hashes, ac_ids and findings.\n'
                 'Facts:\n' + json_bytes(facts).decode() + '\nDecisions:\n' + json_bytes(request.get('decisions', [])).decode())
         atomic_write(safe_child(project, prompt), body.encode())
@@ -221,6 +247,12 @@ def step(project, wave, *, landing=False):
     if plan.get('ios_adapter_version') != 2:
         raise MigrationError('Do not mix original and iOS state consumers')
     contract = read_json(project / 'spec/blueprint/contracts.json')
+    from .plan_contract import assert_pinned
+    assert_pinned(project, contract)
+    for refs in contract.get('task_inputs', {}).values():
+        for ref in refs:
+            if digest(safe_child(project, ref['path']).read_bytes()) != ref['sha256']:
+                raise MigrationError('Pinned task contract input changed: ' + ref['path'] + '#' + ref['heading'])
     if digest(json_bytes({k: v for k, v in plan.items() if k != 'contract_hash'})) != contract.get('plan_identity_sha256'):
         raise MigrationError('Plan IR changed after generation; do not dispatch edited tasks')
     for path, expected in contract.get('prompt_hashes', {}).items():
@@ -260,7 +292,8 @@ def step(project, wave, *, landing=False):
             if receipt.get('final_state') != ('PASS' if receipt['status'] == 'generated' else 'BLOCKED'):
                 raise MigrationError('Receipt generation status and original final_state disagree')
             files = receipt.get('file_hashes')
-            if not isinstance(files, dict) or receipt.get('status') == 'generated' and not files:
+            readonly_verification = contract.get('spec_contract_version', 1) >= 2 and not task_def['ownership'] and task_def.get('verification') in {'compile', 'behavior', 'visual'}
+            if not isinstance(files, dict) or receipt.get('status') == 'generated' and not files and not readonly_verification:
                 raise MigrationError('Receipt must pin actual generated files')
             for name, expected in files.items():
                 if name not in task_def['ownership'] or digest(safe_child(project, name).read_bytes()) != expected:

@@ -3,17 +3,11 @@ name: ios-api-inventory
 description: "提取原生 iOS 服务 API、系统框架、权限、entitlements、隐私与三方 SDK 接缝；保存调用和数据契约证据，并向 HMigBot 目标领域技能提供可核验输入。"
 ---
 
-## 0.7.0 外部专业资料与工具证据
+## 执行前加载
 
-先读 [外部 skill/MCP 接入规程](../ios-source-analysis/references/external-expertise.md)。facts 后运行 expertise-plan，按本轮主题清单读取实际上游资料，再用 expertise-review 提交源观察。需要符号证据时用 mcp-query；未连接工具保持 unknown/unavailable。结果继续进入现有 semantics/coverage/AC，不采用上游重构建议改写源行为。
+按 [Harness v2](../ios-source-analysis/references/harness-v2.md) 确定机器产物/状态写者；按 [外部资料规程](../ios-source-analysis/references/external-expertise.md) 执行expertise-plan/review，未连接工具保持unknown/unavailable。
 
-## 0.6.0 可执行协议
-
-本技能先加载 [Harness v2 协议](../ios-source-analysis/references/harness-v2.md)。事实、义务、计划和回执由随包脚本检查；本正文的分析责任继续适用，v2 协议决定机器产物和状态，旧版 source-check 不能代替新版门禁。
-
-执行 `python <runtime>/scripts/a2h_ios.py facts-view --project <target> --scope api`，读取生成的 `spec/ref/ios-api-signals.json`，再沿事实片段阅读实际调用链。不得手写或篡改机器信号。具体填录与失败恢复见 [专业规程](references/analysis-v2.md)。
-
-
+执行 `python <runtime>/scripts/a2h_ios.py facts-view --project <target> --scope api`，读取真实 `spec/ref/ios-api-signals.json` 后继续读调用链。加载 [接缝分析与跨作者交接](references/analysis-v2.md)；不得手改机器信号，也不采用上游重构建议改写源行为。
 
 # iOS API、平台能力与依赖接缝
 

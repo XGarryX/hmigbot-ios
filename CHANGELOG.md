@@ -1,3 +1,12 @@
+# 0.9.0 — 2026-10-16
+
+- 以 MD 为主完善源分析步骤、正反例、页面组件/布局/ArkUI映射/资源表、共享动作单源、逐动作联读和原作者返修/独立复查；同步 Spec/Plan 模板、派发协议与角色。
+- 新项目启用 spec_contract_version=2；catalog/schema 与实际只读检查器共同限定核心章节、表头、页面 meta、动作定义/消费及按需 JSON 引用视图；原 API inventory 服务协议保留。
+- Plan 的 indexed MD、plan_items 投影与 typed task 对账 AC、页面、依赖、写权、范围及验证义务；冻结传递输入与工具合同版本，索引仅精确进度可变，禁止降级绕过。
+- 执行任务注入精确合同闭包，未读 addenda 阻断受影响 AC；独立 FV 无全工程写权，修复回原责任任务；统一既有六种 placeholder kind。
+- 新增 product-literals/spec-summary/plan-check；不覆盖 raw 字面量或三控制账本，不把历史 verified/brief PASS 当运行证据。编译和行为报告绑定当前源码、目标及规格摘要。
+- 增加正反例回归、实际模型生成的旧/新规则样本及独立源复核。发行检查验证工具合同和安装使用；不宣称真实 App 双端设备验收。
+
 # 0.8.0 — 2026-10-14
 
 - 从原spec原则、下游plan/execute消费者和软件设计实践完善主规格、目标公共接口、状态/对接点与独立AC合同；保留原五阶段和三账本写者。

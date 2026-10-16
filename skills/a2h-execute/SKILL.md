@@ -13,6 +13,8 @@ metadata:
 
 目标公共接口与业务行为以 [规格交付合同](../a2h-spec/references/spec-delivery-contract.md) 为准；按已声明的标锚与对接点实施。复杂功能继续定向回读 source_anchors，并记录 Spec Gap；公开合同冲突回流 spec/plan，不在执行中改变业务预期。进度索引和真实资源映射是执行记录，不能替代规格合同。
 
+profile 2 任务输入、Plan items→typed task映射、冻结进度豁免与状态解释见 [Plan 交付合同](../a2h-plan/references/plan-delivery-contract.md)。派发携带plan_item_refs/ac_ids、精确spec_refs与contract_refs传递闭包；worker消费与冲突回流遵循[_common.md](references/agent-prompts/_common.md)，预算超出分批读或拆任务，受影响AC未读不得完成。closer继续按结构投影定点读取，不整读业务spec。
+
 先读取 [iOS Harness v2](../ios-source-analysis/references/harness-v2.md)，以该协议决定输入、机器门禁和状态写者。以下原领域规程继续用于规格内容、indexed 计划、接线和真实验证；不得再手工调度或写入三份控制账本。
 
 v2 项目执行 next-batch → 按返回任务书执行 → 同路径 v2 receipt → land-results 的四拍。旧正文 Stage 0/1/2/3 是任务内实施细则，不再作为第二调度循环。done 仅表示任务落账；源错误不能记债务放行，随后继续真实结构与编译门。
@@ -48,9 +50,9 @@ v2 项目执行 next-batch → 按返回任务书执行 → 同路径 v2 receipt
 
 ## 关键约束（Critical）
 
-- **执行铁律**：execute 按 `spec/decision-ledger.md` 查表推进、**不交互式追问**；未命中 → fail-fast 写「决策缺口」段并阻断，由下一轮 grill 补齐。启动先 Read 项目指令文件（宿主别名 `PROJECT_INSTRUCTIONS_FILE`：Codex=项目根 `AGENTS.md` / Codex=项目根 `AGENTS.md`）+ ledger 顶部「决策索引」段（status 须 `approved`；正文按需 grep D-编号，不整份吞全文）。
+- **执行铁律**：按已批准且与冻结输入一致的decision-ledger决策推进；未命中/冲突回流由references/execution-discipline.md规定。启动读项目根AGENTS.md与ledger决策索引，正文按D-ID定点读。
 - **Stage 0 资源前置最先跑**（§3.0，HARD-GATE）：全部 `$r(...)` 引用可解析或显式 MISSING_xxx 才进 Stage 1。
-- **合法占位 = 已登记的 5 类 kind 占位**（§2.1）：命中规范 marker（`// FWD-REF:` / `// PLACEHOLDER:` / 已登记 `// TODO:` / 资源 `[TODO: translate]`）**且** registry 6 字段齐全；未登记 / 自由文本（裸 `// TODO`、空回调、空 try-catch、假 `console.info('TODO')`、prose defer）一律 FAIL。§2.1 列 4 大延迟**归属**类，其中 placeholder 一类内部再细分 5 类 kind。
+- **合法占位**按registry模板既有6类kind及_common.md §2.1，包括带机械断言的HANDOFF；marker必须与登记配对。未登记TODO/空回调/假日志/自由散文延后均FAIL，不能靠修改文案新增kind。
 - **共享文件单写者纪律**（Stage 1 §3b / Stage 3 §5a）：并发 converter / slice worker **只写自身 page/VM/repository 文件**，共享文件禁碰（`feature-plan.md` 等 plan 产物、跨文件接线），**仅两项 append-only 例外**——① `placeholder-registry.md` 登记行 append（§2.1c 发号协议）② 共享资源 JSON 直写（写前 Read + 只 append 缺失键，纪律见 `_common.md`）；跨文件接线与状态账本回写一律由 **Batch 收尾 subagent** / **group-closer** 唯一作者（账本变更经 **writeback manifest** 由主线程 `apply_writeback.py` 落盘，§3b 协议），收尾者对资源只做**残量兜底 + 只读校验**（冲突由编译门自曝）。
 - **编译闭环**：Stage 3 group 的组编译在**收尾 subagent 内部**调 `hmos-fix-build-errors`；**Stage 1 批内无编译**（页面间零编译依赖，统一 single-pass 在 §3d 收口，真编译门 = Base-7）；Stage 2 Base-7（§4d）/ Stage 3 Step 3a 建页 / §3d 收口 / FV-2 终态全量编译（§6 之后）派发 Codex 子代理 `hmos-builder`（定义于 `.codex/agents/hmos-builder.toml`），Base-7 失败阻断后续全部 Slice。**主线程禁止直接调底层 build skill**（Batch/group 收尾是 subagent，不算主线程）。
 - **结构性验证 = `$arkts-structural-closure` skill（参数：`mode=<stage|group|pipeline> target=<...>`）**（§3c stage / §5e group（含 size-1 组）/ §6 pipeline）：**禁止 grep / 自跑 scripts 替代**。中间步骤看 skill 返回的 verdict 即可；**§6 收尾 evidence 必产 brief 文件**，缺失不允许进 a2h-verify。
@@ -82,7 +84,7 @@ a2h-spec → a2h-plan → a2h-execute（本 skill）
 
 ## 1.1 执行铁律 — 决策来源与禁止交互
 
-execute 期歧义已清零，本阶段只**按决策推进、不再交互式追问**。事实源 = `spec/decision-ledger.md`。遇范围 / 技术替代 / UX 行为差异 / 工程配置 / 数据策略类判断、或与 plan/spec 冲突、或既有段落写有「提示用户三选一 / 除非用户指定 blocking / 要求人工补 plan」等交互动作时，**必先 grep ledger 对应类目**：命中 → 按之执行**严禁询问**；**未命中 → fail-fast**，把缺口写入 `spec/migration-report.md`「决策缺口」段、**严禁交互式追问**；ledger 与他文档冲突 → ledger 优先。
+execute按已批准决策推进。遇范围、替代、行为或plan/spec冲突，先查ledger精确D-ID；只有明确覆盖同一动作且输入版本一致的决策可执行，否则记录两端、源依据与受影响AC回Spec/Plan修复，阻断受影响任务，不临场选择一种语义。
 完整 HARD-GATE 规则 + **启动必读**（先 Read 项目指令文件 `PROJECT_INSTRUCTIONS_FILE` + `decision-ledger.md` 决策索引段，校验 `status=approved`，正文按需 grep）+ 决策缺口 schema + 与各段落关系表 → **MUST READ** [references/execution-discipline.md](./references/execution-discipline.md)。
 
 ---
@@ -126,7 +128,7 @@ execute 期歧义已清零，本阶段只**按决策推进、不再交互式追�
 | 类别 | 适用                                                           | 归属机制                                                             | 闭环 gate                                                                 |
 |---|--------------------------------------------------------------|------------------------------------------------------------------|-------------------------------------------------------------------------|
 | ① **owned task** | 接线 / 集成工作（**首选**）                                            | 某 Slice 的 Step 3d/3e 页面接线                                        | Step 3d/3e 接线闭环维度（§5e）                                                  |
-| ② **placeholder** | 指定后续 Slice 的代码桩 / 三方 SDK / 资源占位 / 不确定区域                      | placeholder-registry 5 类 `kind` 枚举                               | trigger_condition 满足 → resolved（§5e / §6） |
+| ② **placeholder** | 指定后续 Slice 的代码桩 / 三方 SDK / 资源占位 / 不确定区域 / 机械移交 | placeholder-registry 既有6类 `kind` 枚举 | trigger_condition/verify满足 → resolved（§5e / §6） |
 | ③ **deferred_item** | 既非 owned task 又非占位的**残余**（如 `module.json5` 配置、需另一 skill 的工作） | brief `deferred_items` 结构化字段 `{描述, owner_skill, 闭环条件, status}` | 非空且无 owner → Slice `BLOCKED`（§5e）                                       |
 | ④ **自由文本「已知不完整」** | ——                                                           | ——                                                               | **禁止**——§3c 骨架审计扫到「由 verify / fixer / 后续接通 / a2h-fixer 完成」等措辞即 FAIL |
 
@@ -135,6 +137,7 @@ execute 期歧义已清零，本阶段只**按决策推进、不再交互式追�
 - `// FWD-REF: <P-ID> resolve_by=...` — `kind ∈ {forward-ref, resource-pending-asset}`；`// PLACEHOLDER: <P-ID> trigger=...` — `kind = thirdparty-sdk`（两者**不含 `TODO` 字样**）
 - `// TODO: <description>` — `kind = forward-ref-uncertain`；`console.info('TODO:<ACTION>:<COMPONENT>')` — component-builder L3 签名占位专用
 - 资源 JSON `"value": "[TODO: translate] ..."` — `kind=resource-pending-translation`
+- `// HANDOFF: owner=... what=... verify=...` — `kind=handoff`；断言与登记按_common.md §2.1b，不能用散文移交。
 - 未登记 TODO / 空回调 / 空 try-catch / 未注册 `[TODO: ...]` → FAIL
 
 ---
@@ -215,17 +218,17 @@ Stage 3 末尾自动启用 L4.dangling-fwd-ref 检测。
 
 > **前置依赖**：Stage 0 资源前置已完成。Base-0 已上移至 §3.0 Stage 0，本阶段直接从 Base-1 开始。
 
-Stage 2 读取 `plans/base-plan.md`（索引 Base 层 stub 的 `detail:` 指向处）的 Base 层任务（Base-1..Base-7），按顺序执行公共基础设施建设。旧 plan 无 base-plan.md → 回退读 feature-plan.md 旧 Phase 0 段（兼容层）。
+Stage 2读取base-plan.md实际Base任务及依赖执行公共基础设施，包含计划声明的组装根等非整数编号任务；不根据固定编号范围裁剪。旧plan无base-plan.md时回退旧Phase 0段。
 
 ### 4a. 执行流程
 
-读 `plans/base-plan.md`，按顺序串行派发 `a2h-migration-worker`：Base-1 Models → Base-2 Database → Base-3 Network → Base-4 Events → Base-5 Preferences → Base-6 公共组件库 → Base-7 编译验证。Base-0 已在 Stage 0 完成，跳过。
+按base-plan的实际item_id/parents派发worker，依赖先行；Stage 0已完成的资源项依据真实receipt跳过。Base-7为原默认阻断编译项，按计划实际验证任务执行，不能遗漏Base-6.5等组装任务。
 
 ### 4b. 子代理派发方式（Stage 2/3 通用）
 
 Stage 2 和 Stage 3 的 **codegen worker** 统一使用 `a2h-migration-worker`；各级**收尾**统一使用 `a2h-closer`（mode=batch/base/group/final，§3b/§4e/§5a/§6）：
 
-完整通用 worker prompt **MUST 加载** [references/agent-prompts/3-worker.md](./references/agent-prompts/3-worker.md) + [_common.md](./references/agent-prompts/_common.md) 作为派发模板（占位禁令 / FWD-REF marker 规则等**不得简化为 body 摘要**）。**派发 prompt 禁复述** agent 定义 / _common.md 已载纪律（单写者 / 占位禁令 / 信封等）——一行指针即可、稳定内容走 MUST-Read 通道；但**任务专属 scope（锚点 / 契约差异 / 文件清单）不得省略**——瘦身只砍跨派发不变内容。占位 / 前向引用规则：合法占位遵循 §2.1（已登记的 5 类 kind）；worker 阶段常用——Base signature 桩登记 `kind=forward-ref` + `resolve_by=Slice {N} Step 3c`；**skill 库未覆盖的三方 SDK** 登记 `kind=thirdparty-sdk` + `trigger=<业务类别> SDK 入仓`（已有适配 skill 的 SDK 直接走 task suggested_skills，不进 registry）；fallback 资产登记 `kind=resource-pending-asset`。每个占位 6 字段齐全；未登记 TODO / 假 console.info / 空回调一律禁止。
+完整通用 worker prompt **MUST 加载** [references/agent-prompts/3-worker.md](./references/agent-prompts/3-worker.md) + [_common.md](./references/agent-prompts/_common.md) 作为派发模板（占位禁令 / FWD-REF marker 规则等**不得简化为 body 摘要**）。**派发 prompt 禁复述** agent 定义 / _common.md 已载纪律（单写者 / 占位禁令 / 信封等）——一行指针即可、稳定内容走 MUST-Read 通道；但**任务专属 scope（锚点 / 契约差异 / 文件清单）不得省略**——瘦身只砍跨派发不变内容。占位 / 前向引用规则：合法占位遵循 §2.1（registry模板既有6类kind）；worker 阶段常用——Base signature 桩登记 `kind=forward-ref` + `resolve_by=Slice {N} Step 3c`；**skill 库未覆盖的三方 SDK** 登记 `kind=thirdparty-sdk` + `trigger=<业务类别> SDK 入仓`（已有适配 skill 的 SDK 直接走 task suggested_skills，不进 registry）；fallback 资产登记 `kind=resource-pending-asset`。每个占位 6 字段齐全；未登记 TODO / 假 console.info / 空回调一律禁止。
 
 ### 4c. Base 层任务详情
 
@@ -244,9 +247,9 @@ Base 层所有任务完成后（Base-7）：
 
 ### 4e. Base Task brief（HARD-GATE）
 
-> Stage 2 各 Base 任务（Base-1..Base-7）完成后也强制产 brief（与 §3b Batch brief 对称），便于跨 session 中断恢复与 placeholder 状态追溯。
+> Stage 2每个实际Base任务完成后产brief，便于跨session恢复与占位追溯。
 
-每个 Base 任务（Base-1..Base-7）完成后，派 **`a2h-closer`（mode=base）** 核对产出并**强制**产 writeback manifest（brief 全文在内，主线程 apply 落盘 `spec/execution/briefs/base_NN_brief.md`——writeback 协议同 §3b）。
+每个实际Base任务完成后，派a2h-closer（mode=base）核对并产writeback manifest（brief全文在内，经主线程apply；原路径/单写者协议不变）。
 
 <HARD-GATE>
 manifest 不产 / apply 未过 → 不允许进入下一个 Base 任务；Base-7 (编译验证) brief 未 PASS → 阻断 Stage 3 启动。
@@ -256,7 +259,7 @@ manifest 不产 / apply 未过 → 不允许进入下一个 Base 任务；Base-7
 
 ### 4f. Stage 2 完成标志
 
-输出 Stage 2 统计（Base 任务 7 项成功/失败计数 / 公共组件库组件数 / 编译状态——FAIL 阻断）。
+输出Stage 2统计（从实际任务与receipt计算总数/成功/失败、公共组件数、编译状态；FAIL阻断）。
 
 **产 `spec/execution/base-contracts.md`（as-built 接口摘要，一页内）**：主线程从各 base brief `generated_files` + 关键导出汇总——Base 各任务实际落盘的类名 / 公开 API / 常量 / 组件名。Stage 3 全部 worker 派发**传此指针、禁内联 Base 契约正文**（agent 读一次即前缀缓存命中；Base 冻结后基本不 stale）。
 
@@ -295,7 +298,7 @@ Stage 3 读取 `feature-plan.md` 的 Slice 任务，按拓扑排序逐功能执�
 |---|---|
 | `converted` | 确认 .ets 存在，**不跳过 Slice**（接线移交 Step 3d——整体跳过是孤儿 VM 根因之一） |
 | `pending` / 不在 ui-plan | ui-snapshots 存在 → 调 a2h-ios-converter；缺失 → 触发 §7 Phase A 按需模式；转换后 status→converted + 派 hmos-builder（STAGE_HINT=stage-3-slice-{name}）验证 |
-| `verified` | 跳过 |
+| `verified` | 兼容旧结构收口，跳过重复建页；仍消费本slice的接口与接线义务，不代表行为/视觉通过 |
 
 UI 补充必须引用 Base-6 公共组件库（Design Tokens + 共享组件）。worker 同时承担 `forward-ref-uncertain` 二次审视（返回 `uncertain_regions_resolved[]/retained[]`，主线程据此更新 registry）——完整流程与占位禁令 **MUST 加载** [references/agent-prompts/4-step3a-ui.md](./references/agent-prompts/4-step3a-ui.md) + [_common.md](./references/agent-prompts/_common.md) 作为派发模板，不得简化为 body 摘要。
 
@@ -334,6 +337,8 @@ Stage 3 所有 Slice 执行完毕 + §3c 一次性骨架审计通过后，输出
 ---
 
 ## 6. Final Structural Closure（Stage 3 全部完成后 HARD-GATE）
+
+profile 2的独立FV任务ownership=[]，只检查、报告和重检；结构或编译finding回冻结任务中原文件owner修复，不再授予FV全工程写权。下述closer自修流程仅适用于原Stage/owner任务内部已授权的owned_files；不得以收尾角色绕过全生命周期唯一写者。独立FV保留结构/编译义务，行为/视觉仍各凭真实验证。
 
 <HARD-GATE>
 Stage 3 全部 group brief 落地 + §5f 统计输出后，派 **`a2h-closer`（mode=final）**——其内部**调用 `$arkts-structural-closure` skill（参数：`mode=pipeline target=final`）** 跑整工程兜底（与 Stage 3 解耦，独立一次性 loop），CONVERGED 后产 `writeback-final.json`（收尾 brief 全文 + defer 末组补翻集合，主线程 apply 落盘，协议同 §3b）。
@@ -389,8 +394,8 @@ Stage 3 Step 3a 发现目标页面 ui-snapshots 数据缺失（status 非 conver
 | 状态 | 含义 | 更新时机 |
 |------|------|---------|
 | `pending` | 待转换 | Spec 生成时 |
-| `converted` | UI 转换产出完成（编译验证在 verified 轴） | Stage 1 批结算 / Stage 3 Step 3a 后 |
-| `verified` | 功能验证通过（ViewModel + 数据层 + 接线闭环） | Stage 3 Step 3d/3e 通过后 |
+| `converted` | UI代码已生成；编译、结构、行为和视觉各凭证据报告 | Stage 1 批结算 / Stage 3 Step 3a 后 |
+| `verified` | 旧流程兼容值：编译与结构接线收口，不能推导独立行为/视觉通过 | Stage 3 Step 3d/3e 通过后 |
 
 ### 9c. feature 状态生命周期（feature-index.md 状态列——feature 级产物状态唯一账本）
 
@@ -400,7 +405,7 @@ Stage 3 Step 3a 发现目标页面 ui-snapshots 数据缺失（status 非 conver
 |------|------|---------|
 | `pending` | slice 未完成 | Spec 生成时初始值 |
 | `implemented` | slice brief `final_state: PASS` | **group-closer 记入 writeback manifest，主线程 apply 翻**（与 ui-manifest 页面回写同 manifest，§5e） |
-| `verified` | FV-1 + FV-2 通过 | FV 收尾时批量翻（a2h-verify 逐 feature 细化为开放项） |
+| `verified` | 旧流程兼容值：FV-1结构 + FV-2编译通过；行为/视觉另记 | FV 收尾时批量翻（a2h-verify按真实范围产独立证据） |
 
 **读者**：§11 部分执行 / resume 按它判断哪些 slice 已完成（slice:feature 1:1）；gate 摘要与 a2h-verify 范围选择按它分支。**交叉护栏**：feature=implemented 时其 owned 页不得仍 pending（structural closure / a2h-plan §7 校验）。
 
@@ -425,6 +430,8 @@ Stage 3 Step 3a 发现目标页面 ui-snapshots 数据缺失（status 非 conver
 
 自然语言触发时，a2h-execute 会列出待执行的 Stage 和任务数量，确认后开始执行。
 
+已有“开始执行/继续施工”等当前授权时列出范围后直接推进，不重复索取阶段确认。
+
 ### 11a. 部分执行的实现
 
 | 用户指令 | 行为 |
@@ -439,7 +446,7 @@ Stage 3 Step 3a 发现目标页面 ui-snapshots 数据缺失（status 非 conver
 
 ---
 
-> **Remember**：结构性验证唯一入口 = `$arkts-structural-closure` skill，禁止 grep / 自跑 scripts 替代；中间步骤看 verdict 即可，§6 收尾必产 `loops-final-structural-closure.json` (PASS) + brief md；Stage 0 资源前置最先跑；plan 产物只读、接线完成性由 verify_slice_wiring 机械判定；跨文件接线与状态账本由 Batch 收尾 / group-closer 单写；资源 JSON / registry 是 worker 的两项 append-only 例外（直写纪律 + 发号协议见 `_common.md`），收尾者只做资源残量兜底；合法占位 = 已登记的 5 类 kind 占位（§2.1），未登记 / 自由文本一律 FAIL；execute 按 §1.1 铁律查 decision-ledger 推进、不交互式追问（未命中写「决策缺口」阻断）。
+> **Remember**：结构性验证唯一入口 = `$arkts-structural-closure` skill，禁止 grep / 自跑 scripts 替代；中间步骤看 verdict 即可，§6 收尾必产 `loops-final-structural-closure.json` (PASS) + brief md；Stage 0 资源前置最先跑；plan 产物只读、接线完成性由 verify_slice_wiring 机械判定；跨文件接线与状态账本由 Batch 收尾 / group-closer 单写；资源 JSON / registry 是 worker 的两项 append-only 例外（直写纪律 + 发号协议见 `_common.md`），收尾者只做资源残量兜底；合法占位 = registry模板既有6类kind占位（§2.1），未登记 / 自由文本一律 FAIL；execute 按 §1.1 铁律查 decision-ledger 推进、不交互式追问（未命中写「决策缺口」阻断）。
 
 ---
 

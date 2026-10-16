@@ -3,7 +3,7 @@ name: a2h-spec
 description: "原生 iOS→HarmonyOS 规格生成：从 Swift/Objective-C、SwiftUI/UIKit 源行为交付可实施的 HMigBot baseline、目标公共合同与稳定 AC。用于初次迁移规格分析；不要用于排期、目标代码生成或已有规格的增量修改。"
 ---
 
-## 0.6.0 控制面入口
+## 控制面入口
 
 先读取 [iOS Harness v2](../ios-source-analysis/references/harness-v2.md)，以该协议决定输入、机器门禁和状态写者。以下原领域规程继续用于规格内容、indexed 计划、接线和真实验证；不得再手工调度或写入三份控制账本。
 
@@ -11,9 +11,11 @@ description: "原生 iOS→HarmonyOS 规格生成：从 Swift/Objective-C、Swif
 
 ## 规格交付与内容门禁
 
-生成 baseline 前读取 [交付合同](references/spec-delivery-contract.md)：源事实、目标设计、批准差异分段，先形成行为模型和公共目标接口，再生成文档与具体 AC。不要从源码信号直接套通用句式。
+生成baseline前读取 [产物目录](references/artifact-contracts.md) 与 [交付合同](references/spec-delivery-contract.md)：先确定profile/适用产物/唯一作者，源事实、目标设计、批准差异分段，先形成行为模型和公共目标接口，再按模板生成文档与具体AC。不要从源码信号直接套通用句式。
 
 公共设施和全局 UI 分别使用 [基础合同模板](templates/feature-base-template.md)、[UI 索引模板](templates/ui-manifest-template.md)。页面状态接口给明确目标 Owner.state；功能对接点给真实 handler→VM/Service→反馈，供 plan 逐条分配任务。
+
+生成共享/异步/取消/跨层副作用动作时加载 [动作合同](references/action-contracts.md)；页面生成加载页面模板的组件/布局/映射/资源四核心表。核心字段以随包catalog/schema为准，领域步骤在references按需加载，不向每个派发prompt复制整套规则。
 
 Gate C 前按 [独立内容复核](references/spec-content-review.md) 核对实际源行为，并使用 [交接摘要模板](templates/gate-c-summary-template.md)。共享合同通过 contract_refs 精确引用，domains 冻结其传递依赖和决策账本。文档/结构 PASS 不代表已编译或行为等价。
 
@@ -64,7 +66,7 @@ Preview、mock 数据与实际入口分开；没有 iPhone 录制不生成运行
 
 1. 按真实入口发稳定 page ID，写 `ui-manifest.md`：page_id、iOS 源符号、
    framework、目标页、功能归属、优先级、状态、spec 路径与证据置信度。
-2. 写 `ui/page_NNNN_Name.md`，保持公共段落：页面结构、视觉、状态接口、
+2. 写 `ui/page_NNNN_Name.md`，按模板填写组件层级、布局约束、具体ArkUI映射、资源引用，保持公共段落：页面结构、视觉、状态接口、
    交互、导航、资源、验收、目标接线责任；同时完整保留 `ios` 原生语义部分。
 3. `ui-snapshots/<page_id>/meta.json` 存 source_platform、框架、source refs、
    状态条件与真实截图路径（若有）。没有运行截图时 screenshot=null、runtime=not_run。
@@ -95,6 +97,7 @@ delegate/block/selector 等影响行为的语义写在“iOS 源语义”，不�
 ### C3 行为和目标契约
 
 源事实写状态转移、数据变换、错误/取消、并发、持久化恢复、平台条件。
+适用动作先由唯一owner定义即时效果、完成事件、最终效果与错误/取消；页面和AC引用，不各自重新解释完成时点。无适用动作给有据N/A，unknown继续回流。
 目标服务层写 ArkTS 接口；对接点写 page.handler ← ViewModel/Service，保留数据域、
 单位、线程与资源生命周期约束。平台能力实际对应哪一 Kit/API 必须查目标版本证据。
 服务清单复用 api-inventory 公共契约；业务常量/字面量必须保留实际值。

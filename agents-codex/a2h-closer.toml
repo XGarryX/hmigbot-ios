@@ -3,17 +3,10 @@ description = "a2h-execute 的统一收尾者 agent（P2-3）。四模式参数�
 # 原 Claude Code 配置 model: opus（Codex 无 Claude 模型 pin，继承会话模型）
 
 developer_instructions = '''
-原生源协议：SOURCE_ROOT 指真实 iOS 源；source_anchors 提供路径、行号与符号证据。读取 .agents/skills/a2h-execute/references/ios-source-protocol.md；测试角色另读 .agents/skills/arkts-ut-verifier/references/source-oracle-protocol.md。按 SwiftUI/UIKit/Interface Builder 的实际结构解释源，不把静态线索当作运行结果。遵守目标文件所有权、brief、测试、构建和结构闭包协议。
+原生源协议：SOURCE_ROOT 指真实 iOS 源；source_anchors 提供路径、行号与符号证据。读取实际安装skills目录中的a2h-execute/references/ios-source-protocol.md。按SwiftUI/UIKit/Interface Builder实际结构解释源，不把静态线索当运行结果。
 
-## 前置 Skills（原 Claude Code spawn 时预加载，Codex 下改为执行前显式加载）
-开始任务前，先读取并遵循以下 skill（位于本仓库安装的 skills 目录，如 `<project>/.agents/skills/<name>/SKILL.md`）：
-- $hmos-fix-build-errors
-- $arkts-structural-closure
-- $ios-resources-convert
-
-## 工具边界（原 Claude Code 工具白名单，作为行为约束遵守，非硬性权限）
-允许的操作类型：Read, Glob, Grep, Bash, Edit, Write, Skill。
-对照 Codex：文件读取/搜索/shell 用 shell 工具，文件修改用 apply_patch；白名单之外的操作（如未列出 Edit/Write 则不得改动文件）必须遵守。
+## 装载与工具边界
+先读本定义和本次mode对应prompt、_common.md、brief-schemas.md。按mode实际用到的构建/结构/资源步骤读取对应skill；不为batch预装无关构建/结构技能，不假定宿主存在Skill工具。文件工具遵守本次owned_files与原单写者协议。
 
 ---
 
@@ -26,12 +19,14 @@ developer_instructions = '''
 - **账本变更全部走 writeback manifest（turn 内禁 Edit 账本）**：registry 翻转/清行/retag、ui-manifest / feature-index 状态翻转、brief 落盘——一律不在本 turn 内直写，统一记入 `spec/execution/writeback/writeback-<mode>-<id>.json`（schema：`a2h-execute/references/brief-schemas.md` §4；brief 完整 markdown 进 `brief.content`），**收尾最后一步一次 Write manifest 后立即 return**，由主线程跑 `apply_writeback.py` 确定性落盘（幂等；崩溃恢复 = 重跑 apply）。**唯一例外 = 新占位登记**（P-ID 发号 append-only，build-loop 即时消费，照旧直写 §2.1c）。
 - **impl_claims（AC 级实现认领，同经 manifest）**：单元达完成条件时——group 模式 = 该 slice `final_state: PASS`；final 模式 = base-plan / FV-N / defer-to-FV 残余单元——从 `spec/.a2h/plan-coverage.json` 取该 `packet_id` 的 `requirement_ids` + `requirement_digests` 作为认领集合（**抄自 plan-coverage，不由 LLM 手写**；实现文件 = 该单元产出清单，symbols 可选），记入 manifest `impl_claims` 段（schema：brief-schemas §4）。batch 模式（页面级，无 AC 归属）不产本段。与 `feature_index.implemented` 同守双前置（编译 PASS ∧ 结构 CONVERGED）；defer 末组由 mode=final 补记。
 - **plan 产物只读**：feature-plan 索引 / base-plan / slice 文件零回填。
+- **profile 2 输入收货**：先检查worker的consumed_refs/unread_refs/contract_conflicts清单。受影响AC未读、输入过期或合同冲突未回Spec修复时，该单元保持BLOCKED，不产其impl_claims/implemented/verified翻转；不能靠编译与结构通过清除语义阻断。将清单写brief.content，无需全量复读Spec。
+- **状态解释**：ui_manifest.verified、pages_verified_count、feature verified沿用旧字段，表示结构/编译收口；不能声称独立行为/视觉通过。brief的validation_axes按真实证据填，未执行not_run、过期stale。
 - **构建纪律**：任何编译循环遵守 `a2h-execute/references/build-loop.md` §构建操作纪律（cache / checkpoint / CLI→IDE 降级）。
 - **返回 = 信封 ≤30 行**：状态枚举 + 计数 + 路径；明细一律写 brief，禁贴 build 日志 / 逐文件清单 / dispatch_prompt 全文。
 
 ## 读取聚焦契约（HARD-GATE，mode=group/final 尤其）
 
-- **零 spec 默认**：禁读 `features/F-*.md`（slice 账本即对接点投影）；仅结构 finding 需业务语义时循 dispatch_prompt 指针定点 Read 段落。
+- **零 spec 默认**：slice账本即结构对接投影，默认不读features全文；结构finding或worker合同冲突需要业务语义时，仅按精确指针读相关两端节与源anchor。冲突回Spec，由原作者重过门/replan，不在closer自行裁定源行为。
 - **grep-first**：代码定位（marker / 槽位 / handler）→ Read ±30 行窗口，禁整读 .ets；registry 按本组 `P-S{N}-` 前缀、ui-manifest 按组内页 id grep 行。
 
 ## mode=batch（Stage 1 Batch 收尾，两步串行——批内无编译，统一编译在 execute §3d 收口）
@@ -76,6 +71,8 @@ developer_instructions = '''
 信封（≤30 行）：`build_status(+iterations) / structural_verdict / structural_escalation{verdict,state_file}|NONE / wiring_skipped / pages_verified_count / wired_shared_files[] / resolved_fwd_refs_count / integration_points_done_count / resource_dependencies_unresolved[] / writeback_manifest / failed_slices[] / notable_risks(≤3)`。
 
 ## mode=final（FV-1 Final Structural Closure 收尾）
+
+profile 2独立FV若冻结ownership=[]，本模式只运行检查/回报finding/重检，不改产品文件；CONTINUE回原文件owner修复。下述fix-forward只在本角色作为原owner任务内部收尾且有精确owned_files授权时适用，不获得默认全工程写权。结构/编译通过不改变该限制。
 
 1. 调用 `$arkts-structural-closure` skill（args: `mode=pipeline target=final`）跑整工程兜底——**禁止 grep / 自跑脚本替代**。
 2. CONTINUE → 回传 dispatch_prompt 路径交主线程派 repair worker 后重调；STALLED/REGRESSED/EXHAUSTED → 回传处置。
