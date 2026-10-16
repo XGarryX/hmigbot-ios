@@ -15,12 +15,15 @@ RULES = read_json(Path(__file__).with_name('ios_rules.json'))['rules']
 SOURCE_KINDS = {'.swift', '.m', '.mm', '.h', '.c', '.cpp'}
 
 
-def extract(source: Path, variant: dict | None = None):
+def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Path | None = None):
     """Repository scope is explicit; effective configuration remains unresolved without tools."""
     snap = snapshot(source)
     variant = variant or {'scope': 'repository', 'effective_build': 'unresolved'}
-    if not isinstance(variant, dict) or variant.get('scope') not in {'repository', 'selected-build'}:
-        raise MigrationError('Variant must declare repository or selected-build scope')
+    if not isinstance(variant, dict) or variant.get('scope') not in {'repository', 'selected-build', 'project-targets'}:
+        raise MigrationError('Variant must declare repository, selected-build or project-targets scope')
+    if variant['scope'] == 'project-targets':
+        from .project_scope import resolve
+        variant = resolve(source, variant)
     if variant['scope'] == 'selected-build':
         # Membership needs an explicit path set; caller cannot promote guessed settings.
         if not isinstance(variant.get('source_files'), list) or not variant.get('evidence_path'):
@@ -34,6 +37,14 @@ def extract(source: Path, variant: dict | None = None):
         manifest = read_json(bundle / 'manifest.json')
         if captured['kind'] != 'source_build' or 'artifacts/source-files.json' not in manifest['artifacts'] or membership.get('source_files') != variant['source_files']:
             raise MigrationError('Selected membership must match hashed source-build evidence')
+    evaluated_manifests, evidence_ref = None, None
+    if manifest_evidence is not None:
+        from .manifest_evidence import validate
+        bundle = Path(manifest_evidence).resolve()
+        report_path = bundle / 'manifest.json' if bundle.is_dir() else bundle
+        evaluation = validate(source, bundle)
+        evaluated_manifests = evaluation['manifests']
+        evidence_ref = {'path': str(report_path), 'report_sha256': digest(report_path.read_bytes())}
     facts, issues = [], []
     occurrence = {}
 
@@ -60,6 +71,9 @@ def extract(source: Path, variant: dict | None = None):
         path = source / file['path']
         if variant['scope'] == 'selected-build' and path.suffix in SOURCE_KINDS and file['path'] not in variant['source_files']:
             continue
+        if (variant['scope'] == 'project-targets' and path.suffix in SOURCE_KINDS - {'.h'}
+                and file['path'] not in variant['source_files']):
+            continue  # Declared product membership; implicit headers remain conservatively included.
         if path.suffix in SOURCE_KINDS:
             text = path.read_text(encoding='utf-8-sig')
             tokens = tokenize(text)
@@ -176,13 +190,16 @@ def extract(source: Path, variant: dict | None = None):
         elif path.name == 'Contents.json' or path.suffix in {'.xcstrings', '.stringsdict', '.xcprivacy', '.entitlements', '.plist'}:
             add(file, 'resource', 1, 1, path.name, {'resource_type': path.suffix or path.name}, evidence='resource_locator')
     project, pi = project_inventory(source, snap['files'])
-    dependencies, di = dependency_inventory(source, snap['files'])
+    dependencies, di = dependency_inventory(source, snap['files'], manifest_evaluations=evaluated_manifests)
     assets, ai = asset_inventory(source, snap['files'])
-    return {'schema_version': 2, 'source_platform': 'ios', 'source_sha256': snap['sha256'],
+    graph = {'schema_version': 2, 'source_platform': 'ios', 'source_sha256': snap['sha256'],
             'variant': variant, 'facts': facts, 'issues': issues + pi + di + ai,
             'project': project, 'dependencies': dependencies, 'assets': assets,
             'capabilities': {'syntax': 'token_signal', 'symbol_binding': 'unresolved',
                              'effective_build': 'unresolved', 'runtime': 'unavailable'}}
+    if evidence_ref is not None:
+        graph['manifest_evidence'] = evidence_ref
+    return graph
 
 
 def obligations(graph):
@@ -192,8 +209,12 @@ def obligations(graph):
                              **RULES[fact['kind']]} for fact in graph['facts']]}
 
 
-def refresh(project, source, variant=None, provider_plan=None):
-    graph = extract(source, variant)
+def refresh(project, source, variant=None, provider_plan=None, manifest_evidence=None):
+    if manifest_evidence is not None:
+        manifest_evidence = Path(manifest_evidence).resolve()
+        if not manifest_evidence.is_relative_to((project / 'spec/ref/ios-manifest-evidence').resolve()):
+            raise MigrationError('Manifest evidence must be under project/spec/ref/ios-manifest-evidence for pinned consumption')
+    graph = extract(source, variant, manifest_evidence=manifest_evidence)
     if provider_plan:
         from .atoms import run_atom
         providers = read_json(provider_plan)
@@ -233,7 +254,18 @@ def refresh(project, source, variant=None, provider_plan=None):
 
 def validate_graph(source, project):
     graph = read_json(project / 'spec/baseline/ios-facts.json')
-    current = extract(source, graph.get('variant'))
+    manifest = graph.get('manifest_evidence')
+    evidence_path = None
+    if manifest is not None:
+        if (not isinstance(manifest, dict) or set(manifest) != {'path', 'report_sha256'}
+                or not isinstance(manifest['path'], str)):
+            raise MigrationError('Invalid manifest evaluation evidence reference')
+        evidence_path = Path(manifest['path']).resolve()
+        if not evidence_path.is_relative_to((project / 'spec/ref/ios-manifest-evidence').resolve()):
+            raise MigrationError('Manifest evidence reference escapes the pinned project evidence directory')
+        if digest(evidence_path.read_bytes()) != manifest['report_sha256']:
+            raise MigrationError('Manifest evaluation evidence changed')
+    current = extract(source, graph.get('variant'), manifest_evidence=evidence_path)
     if graph.get('provider_artifacts'):
         from .core import safe_child
         current['provider_artifacts'] = graph['provider_artifacts']

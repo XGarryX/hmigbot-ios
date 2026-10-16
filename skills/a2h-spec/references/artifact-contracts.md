@@ -50,6 +50,7 @@
 | `spec/ref/ios-expertise-plan.json`、`ios-expertise-reviews.json`、`ios-analysis-provenance.json`；schema 1 | expertise-plan；expertise-review保存真实源观察 | 固定专业资料、实际阅读、主题观察与来源；source门禁 | 当前源/资料包摘要；没有实际阅读/工具调用不能标used |
 | `spec/ref/mcp-runs/*/artifact.json`、`ios-mcp-index.json`；schema 1 | mcp-query实际调用时 | 工具响应和源事实关联；声明tool_evidence_ids的claim消费 | 响应只为tool_response；原capture校验、失败/unknown保留 |
 | `spec/ref/provider-runs/**`；provider协议2 | facts --providers实际执行 | SwiftSyntax/Clang/IB/构建等证据包；事实提取消费 | 只提高对应解析层级；失败保留failure，不伪造AST |
+| `spec/ref/ios-manifest-evidence/<capture-id>/manifest.json`、`artifacts/**`；schema 1 | manifest-evaluate实际执行；模型不写报告或原始日志 | [清单证据规程](../../ios-source-analysis/references/source-input-evidence.md)及[清单schema](../../../schemas/source-manifest-evidence.schema.json)；facts --manifest-evidence、依赖盘点、validate_graph消费 | 绑定精确清单路径与当前源，回放原始命令/输出；domains冻结原始证据；失败/过期保留并重采，不代表依赖解析或构建成功 |
 | 原`requirements-index.json`、追踪/literal派生索引 | 原HMigBot helper，从稳定AC派生 | 唯一活动AC身份及源/目标引用；Plan/Verify | 按原命令重建并核对摘要；不另建第二份AC集合 |
 | `baseline/ios-source-check.json`、`spec/reports/ios-harness-check.json`、spec-check报告 | 实际检查命令 | 源归属/格式/义务/内容结果；阶段门禁 | 报告绑定当前输入；spec-check只读，原source-check管理自己的finding节 |
 

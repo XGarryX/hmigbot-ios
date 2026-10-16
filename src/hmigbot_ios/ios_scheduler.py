@@ -28,7 +28,7 @@ def baseline_inputs(project, wave):
     mutable -= projected
     inputs = {f['path']: f['sha256'] for f in snapshot(project)['files']
             if (f['path'].startswith('spec/baseline/') and f['path'] not in mutable
-                or f['path'].startswith(('spec/ref/ios-expertise-', 'spec/ref/ios-mcp-', 'spec/ref/mcp-runs/', 'spec/ref/ios-analysis-provenance.json')))
+                or f['path'].startswith(('spec/ref/ios-expertise-', 'spec/ref/ios-mcp-', 'spec/ref/mcp-runs/', 'spec/ref/ios-analysis-provenance.json', 'spec/ref/ios-manifest-evidence/')))
             and (wave != 'understand' or Path(f['path']).name in {'ios-facts.json', 'ios-obligations.json', 'ios-source-index.json'})}
     if wave == 'domains':
         from .spec_contract import dependency_inputs

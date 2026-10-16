@@ -34,6 +34,8 @@ description: "原生 iOS 仓理解的统一入口：组织工程、UI、功能�
 2. 调用 `ios-project-inspector`，识别 workspace、project、targets、schemes、
    SwiftPM、本地包、Pods、二进制 framework、构建条件和 app/extension 边界。
    在没有 Xcode 的机器上静态读文件；不能声称已解析有效 build settings。
+   遇 `Package.swift` 未求值或需区分产品与测试成员时，按
+   [清单求值与产品成员证据](references/source-input-evidence.md) 采集/推导后重做 facts。
 3. 调用 `ios-ui-analyzer`，按实际框架分别提取视图组合、状态/事件与导航。
    无可视主界面的 target 也要记录入口与平台行为，不能凭没有页面宣告无需迁移。
 4. 调用 `ios-feature-analyzer`，沿用户动作、生命周期和后台入口追至可观察效果，

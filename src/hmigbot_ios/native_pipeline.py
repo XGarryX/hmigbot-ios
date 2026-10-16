@@ -284,7 +284,7 @@ def main(argv=None):
     init.add_argument('--source', required=True, type=Path)
     init.add_argument('--project', required=True, type=Path)
     commands.add_parser('expertise-audit')
-    for name in ('source-index', 'source-refresh', 'source-check', 'spec-check', 'spec-summary', 'migration-report', 'spec-upgrade', 'validate', 'build', 'literals', 'product-literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-check', 'plan-ir', 'replan', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query'):
+    for name in ('source-index', 'source-refresh', 'source-check', 'spec-check', 'spec-summary', 'migration-report', 'spec-upgrade', 'validate', 'build', 'literals', 'product-literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-check', 'plan-ir', 'replan', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query', 'manifest-evaluate'):
         p = commands.add_parser(name)
         p.add_argument('--project', required=True, type=Path)
         if name == 'source-check':
@@ -294,6 +294,10 @@ def main(argv=None):
         if name == 'facts':
             p.add_argument('--variant', type=Path)
             p.add_argument('--providers', type=Path)
+            p.add_argument('--manifest-evidence', type=Path)
+        if name == 'manifest-evaluate':
+            p.add_argument('--config', required=True, type=Path)
+            p.add_argument('--output', required=True, type=Path)
         if name == 'facts-view':
             p.add_argument('--scope', choices=['project', 'ui', 'feature', 'api'], required=True)
         if name == 'behavior-check':
@@ -397,7 +401,17 @@ def main(argv=None):
         elif args.command == 'facts':
             from .ios_facts import refresh
             source, project = context(args.project)
-            result = refresh(project, source, read_json(args.variant) if args.variant else None, args.providers)
+            result = refresh(project, source, read_json(args.variant) if args.variant else None, args.providers,
+                             args.manifest_evidence)
+        elif args.command == 'manifest-evaluate':
+            from .manifest_evidence import capture
+            source, project = context(args.project)
+            output = args.output.resolve()
+            if not output.is_relative_to((project / 'spec/ref/ios-manifest-evidence').resolve()):
+                raise MigrationError('Capture manifest evidence under project/spec/ref/ios-manifest-evidence')
+            result = capture(source, args.config, output)
+            if result.get('status') == 'capture_failed':
+                code = 2
         elif args.command == 'facts-view':
             from .ios_facts import view
             source, project = context(args.project)

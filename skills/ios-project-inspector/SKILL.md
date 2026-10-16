@@ -55,6 +55,10 @@ Swift/Objective-C bridging header、generated Swift header、module map、NS_SWI
 SwiftSyntax provider 可给语法节点与位置；编译条件、宏展开和 overload resolution
 未解析时不能标 resolved。SourceKit-LSP 或 Xcode 数据必须注明工具版本与目标配置。
 
+`Package.swift` 未求值或产品/测试成员混扫时，读取
+[清单求值与产品成员证据](../ios-source-analysis/references/source-input-evidence.md)，
+用真实SwiftPM求值及工程声明推导补输入；在工程地图保留宿主、范围与未知，不把声明标成已构建。
+
 ## 4. 环境可用时提升证据
 
 先确认用户授权范围与实际 Xcode。用只读项目查询核对 targets/schemes/build settings；
