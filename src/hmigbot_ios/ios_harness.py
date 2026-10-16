@@ -46,9 +46,10 @@ def initialize(project: Path, *, import_legacy=False):
 
 
 def ac_inventory(project):
+    from .spec_contract import acceptance
     acs = {}
     for doc in sorted((project / 'spec/baseline/features').glob('F*.md')):
-        for ident, body in re.findall(r'^- \[[ xX]\]\s+(F\d+-AC\d+)\s+(.+)$', doc.read_text(encoding='utf-8-sig'), re.M):
+        for ident, body in acceptance(doc.read_text(encoding='utf-8-sig')):
             if ident in acs:
                 raise MigrationError('Duplicate acceptance ID: ' + ident)
             judgment = re.search(r'判:(static|unit|contract|route|ui|visual|device)\s*\|', body)

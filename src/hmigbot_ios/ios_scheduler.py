@@ -41,7 +41,7 @@ def baseline_inputs(project, wave):
     for path in projected:
         target = safe_child(project, path)
         if path in inputs and target.is_file():
-            inputs[path] = structural_digest(target.read_text(encoding='utf-8-sig'))
+            inputs[path] = structural_digest(target.read_text(encoding='utf-8-sig'), artifact=path)
     return inputs
 
 

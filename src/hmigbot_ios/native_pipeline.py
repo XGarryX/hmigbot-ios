@@ -11,11 +11,23 @@ import shutil
 import uuid
 
 from .analyze import analyze
-from .core import MigrationError, read_json, safe_child, snapshot, write_json, digest, json_bytes, SOURCE_SUFFIXES, SOURCE_NAMES
+from .core import MigrationError, read_json, safe_child, snapshot, write_json, digest, json_bytes, atomic_write, SOURCE_SUFFIXES, SOURCE_NAMES
 from .native_semantics import validate_native_facts
 
 ROOT = Path(__file__).resolve().parents[2]
 CODE = {'.swift', '.m', '.mm', '.h', '.c', '.cpp', '.storyboard', '.xib'}
+
+
+def _derived_output(project, path, name, *, migration=False):
+    """Derived output must not replace execution evidence or become its own input."""
+    root, path = (Path(project) / 'spec/reports').resolve(), Path(path).resolve()
+    allowed = path == root / name or (path.is_relative_to(root / 'derived')
+              and path != root / 'derived' and path.suffix == Path(name).suffix)
+    if migration:
+        allowed = allowed or path == (Path(project) / 'spec/migration-report.md').resolve()
+    if not allowed:
+        raise MigrationError('Use the canonical derived report path or spec/reports/derived; execution evidence cannot be overwritten')
+    return path
 
 
 def configure(source: Path, project: Path):
@@ -165,7 +177,8 @@ def check_source(project: Path, *, after_repair=False, report_only=False):
         if 'source_platform: ios' not in text:
             fail('IOS.PLATFORM_UNDECLARED', doc.name, 'Declare source_platform: ios alongside source_anchors')
         if doc in features:
-            acs = re.findall(r'^- \[[ xX]\]\s+(F\d+-AC\d+)\s+(.+)$', text, re.M)
+            from .spec_contract import acceptance
+            acs = acceptance(text)
             if not acs:
                 fail('IOS.AC_MISSING', doc.name, 'Use the original stable AC IDs and source/judgment/truth syntax')
             for ac_id, body in acs:
@@ -271,7 +284,7 @@ def main(argv=None):
     init.add_argument('--source', required=True, type=Path)
     init.add_argument('--project', required=True, type=Path)
     commands.add_parser('expertise-audit')
-    for name in ('source-index', 'source-refresh', 'source-check', 'spec-check', 'spec-summary', 'validate', 'build', 'literals', 'product-literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-check', 'plan-ir', 'replan', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query'):
+    for name in ('source-index', 'source-refresh', 'source-check', 'spec-check', 'spec-summary', 'migration-report', 'spec-upgrade', 'validate', 'build', 'literals', 'product-literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-check', 'plan-ir', 'replan', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query'):
         p = commands.add_parser(name)
         p.add_argument('--project', required=True, type=Path)
         if name == 'source-check':
@@ -294,10 +307,17 @@ def main(argv=None):
             p.add_argument('--request', type=Path, required=True)
         if name == 'source-refresh':
             p.add_argument('--review', type=Path, required=True)
-        if name in {'literals', 'product-literals', 'spec-summary'}:
+        if name in {'literals', 'product-literals', 'spec-summary', 'migration-report', 'spec-upgrade'}:
             p.add_argument('--output', type=Path)
-        if name == 'spec-summary':
+        if name in {'spec-summary', 'migration-report'}:
             p.add_argument('--build-evidence', type=Path)
+        if name == 'migration-report':
+            p.add_argument('--check', type=Path)
+        if name == 'spec-upgrade':
+            p.add_argument('--apply', type=Path)
+            selection = p.add_mutually_exclusive_group()
+            selection.add_argument('--patch', action='append')
+            selection.add_argument('--all-candidates', action='store_true')
         if name in {'next-batch', 'land-results'}:
             p.add_argument('--wave', default='domains')
     resolver = commands.add_parser('resolve')
@@ -325,15 +345,40 @@ def main(argv=None):
         elif args.command == 'literals':
             from .ios_literals import run
             result = run(args.project, args.output)
+        elif args.command == 'spec-upgrade':
+            from .spec_upgrade import inspect, apply
+            if args.apply:
+                if args.output or not (args.patch or args.all_candidates):
+                    raise MigrationError('Apply needs explicit --patch or --all-candidates and cannot use --output')
+                report = read_json(args.apply)
+                ids = [p['patch_id'] for p in report['patches']] if args.all_candidates else args.patch
+                result = apply(args.project, report, patch_ids=ids)
+            else:
+                if args.patch or args.all_candidates:
+                    raise MigrationError('Patch selection requires --apply REPORT')
+                result = inspect(args.project)
+                if args.output:
+                    write_json(_derived_output(args.project, args.output, 'spec-upgrade.json'), result)
+        elif args.command == 'migration-report':
+            from .quality_views import summary, render_report, validate_report
+            if args.check and args.output:
+                raise MigrationError('Choose report output or report check')
+            if args.check:
+                validate_report(args.project, args.check.read_text(encoding='utf-8'), build_evidence=args.build_evidence)
+                result = {'status': 'current', 'report': str(args.check)}
+            else:
+                report = summary(args.project, build_evidence=args.build_evidence)
+                text = render_report(report)
+                if args.output:
+                    path = _derived_output(args.project, args.output, 'migration-report.md', migration=True)
+                    atomic_write(path, text.encode('utf-8'))
+                result = {'status': 'generated', 'report': str(args.output) if args.output else None, 'markdown': text}
         elif args.command in {'product-literals', 'spec-summary'}:
             from .quality_views import product_literals, summary
             result = (product_literals(args.project) if args.command == 'product-literals'
                       else summary(args.project, build_evidence=args.build_evidence))
             if args.output:
-                output = args.output.resolve()
-                allowed = (args.project / 'spec/reports').resolve()
-                if not output.is_relative_to(allowed) or output == allowed:
-                    raise MigrationError('Derived views may only be saved below spec/reports; never overwrite source contracts or control ledgers')
+                output = _derived_output(args.project, args.output, args.command + '.json')
                 write_json(output, result)
         elif args.command == 'spec-check':
             from .spec_contract import check as check_contract
@@ -341,7 +386,7 @@ def main(argv=None):
         elif args.command == 'source-check':
             if args.harness:
                 from .ios_harness import check
-                result, code = check(args.project)
+                result, code = check(args.project, report_only=args.report_only)
             else:
                 result, code = check_source(args.project, after_repair=args.after_repair, report_only=args.report_only)
                 result['harness_ready'] = False

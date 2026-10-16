@@ -17,7 +17,7 @@ description: "原生 iOS→HarmonyOS 规格生成：从 Swift/Objective-C、Swif
 
 生成共享/异步/取消/跨层副作用动作时加载 [动作合同](references/action-contracts.md)；页面生成加载页面模板的组件/布局/映射/资源四核心表。核心字段以随包catalog/schema为准，领域步骤在references按需加载，不向每个派发prompt复制整套规则。
 
-Gate C 前按 [独立内容复核](references/spec-content-review.md) 核对实际源行为，并使用 [交接摘要模板](templates/gate-c-summary-template.md)。共享合同通过 contract_refs 精确引用，domains 冻结其传递依赖和决策账本。文档/结构 PASS 不代表已编译或行为等价。
+Gate C 前按 [独立内容复核](references/spec-content-review.md) 核对实际源行为，并使用 [交接摘要模板](templates/gate-c-summary-template.md)。核心章节和精确引用标题须唯一；重复或相反行为回原作者消歧，内容完整度按输入/处理/可观察结果及错误/取消复核，不用会话短语禁令代替语义审阅。共享合同通过 contract_refs 精确引用，domains 冻结其传递依赖和决策账本。文档/结构 PASS 不代表已编译或行为等价。
 
 
 
@@ -98,7 +98,7 @@ delegate/block/selector 等影响行为的语义写在“iOS 源语义”，不�
 
 源事实写状态转移、数据变换、错误/取消、并发、持久化恢复、平台条件。
 适用动作先由唯一owner定义即时效果、完成事件、最终效果与错误/取消；页面和AC引用，不各自重新解释完成时点。无适用动作给有据N/A，unknown继续回流。
-目标服务层写 ArkTS 接口；对接点写 page.handler ← ViewModel/Service，保留数据域、
+目标服务层写 ArkTS 接口；实现映射和状态表只在真实表头/分隔行确定的受支持目标列声明 Owner.member，源描述或数据中的“目标/status”等词不声明目标、不改变列映射。对接点写 page.handler ← ViewModel/Service，保留数据域、
 单位、线程与资源生命周期约束。平台能力实际对应哪一 Kit/API 必须查目标版本证据。
 服务清单复用 api-inventory 公共契约；业务常量/字面量必须保留实际值。
 
@@ -133,6 +133,7 @@ python <skills>/a2h-spec/scripts/build_traceability_index.py --project-root <tar
 ```
 
 参数以工具 `--help` 为准；原源语言专用画像检查不用于 iOS。
+审阅或升级诊断可使用 `source-check --harness --report-only`，不更新 findings 或门禁报告；正式 plan/execute 仍需通过实际源门禁。已冻结规格的进度可变区按 [Plan交付合同](../a2h-plan/references/plan-delivery-contract.md#状态解释) 限定到catalog核心索引表与合法稳定ID行，额外业务status表不豁免；范围、owner、依赖、归属及结构变更先复核再显式replan。
 原生 facts checker 检查身份、条件字段和溯源，不声称证明完整语义理解。
 `requirements-index.json` 仍由原 HMigBot helper 从稳定 AC 生成，交 a2h-plan。
 

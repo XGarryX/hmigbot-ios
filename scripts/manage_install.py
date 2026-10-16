@@ -99,7 +99,7 @@ def child(workspace, relative):
 
 def payload():
     files = {}
-    for folder in ('.codex-plugin', 'skills', 'scripts', 'src', 'rules', 'schemas', 'providers', 'docs', 'agents-codex', 'bin', 'policies', 'vendor'):
+    for folder in ('.codex-plugin', 'skills', 'scripts', 'src', 'rules', 'schemas', 'providers', 'docs', 'evaluations', 'agents-codex', 'bin', 'policies', 'vendor'):
         for path in (ROOT / folder).rglob('*'):
             if path.is_file() and not {'__pycache__', '.build', '.swiftpm'}.intersection(path.parts) and path.suffix != '.pyc':
                 if path.is_symlink():

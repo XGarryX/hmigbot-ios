@@ -57,9 +57,23 @@ next-batch --project <target> --wave domains
 land-results --project <target> --wave domains
 ```
 
-以上命令均经 a2h_ios.py 调用。宿主不可派代理时串行执行同一任务书并写同样回执，不另造计划。wait 只等待在途任务；escalate 保留失败并修根因；done 只代表代码任务已落账。原版最多重派一次，源合同错误不能通过欠账放行。
+以上命令均经 a2h_ios.py 调用。宿主不可派代理时串行执行同一任务书并写同样回执，不另造计划。wait 只等待在途任务；escalate 保留失败并修根因；done 只代表代码任务已落账。每次 land-results 成功后、阶段门收口和 verify 结束时，实际执行下节派生报告命令；部分执行也报告当前事实。原版最多重派一次，源合同错误不能通过欠账放行。
 
 回执示例见 [receipt](../assets/receipt.json)。source_sha256、plan_sha256、task_id、ac_ids、file_hashes 必须真实。generated + final_state=PASS 表示生成已完成，behavior_verified=false；blocked + BLOCKED 表示未完成。原版兼容字段 domain、fixed、skipped、files_touched 同时保留。禁止把 blocked 回执改 PASS，缺产物、越权文件、摘要不符和开放 findings 均拒绝落账。
+
+## 派生汇总与可检查报告
+
+通过随包 runtime 依次执行，`<target>` 使用绝对目标路径：
+
+```text
+python <runtime>/scripts/a2h_ios.py spec-summary --project <target> --output <target>/spec/reports/spec-summary.json
+python <runtime>/scripts/a2h_ios.py migration-report --project <target> --output <target>/spec/migration-report.md
+python <runtime>/scripts/a2h_ios.py migration-report --project <target> --check <target>/spec/migration-report.md
+```
+
+有当前真实构建 JSON 报告时，三条均追加同一 `--build-evidence <build-report.json>`。读取产物和实际退出码；`--check` 重算当前证据，拒绝过期或手改结果。目标、规格、回执、落账或验证证据变化后重建报告并重检。缺证据时保留工具返回的未知/未跑/未落账/过期，不用 brief 的 PASS 或旧 verified 替换。Markdown 由生成器完整维护；阶段说明另写并链接，两类派生产物都不改控制账本。
+
+summary 的逐页关联包含 `page_id`、`plan_item_refs`、`task_ids`、`target_paths`、`ac_ids`。生成只认冻结计划、当前 receipt/产物摘要和原内核成功落账；编译只说明当前全工程构建输入覆盖声明页面文件，不证明注册或可达性。行为按该页真实 AC 观测与判定层级计算，不把全局 PASS 分摊到页面，不把 host 逻辑测试称为设备 UI。逐页视觉尚无可校验协议时保持 not_run，旧报告只作 legacy_unclassified；真实视觉与结构仍分别引用对应 verifier 和结构门的证据。
 
 ## 验证与恢复
 

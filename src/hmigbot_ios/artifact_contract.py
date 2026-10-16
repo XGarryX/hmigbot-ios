@@ -53,16 +53,71 @@ def revision(project=None):
 
 
 def _visible_lines(text):
-    """Yield non-code lines with one-based positions, respecting fence kind/size."""
-    fence = None
+    """Yield authored block lines, preserving positions and original text.
+
+    Code indentation is relative to an active list's content indentation, not
+    unconditionally to column zero. This keeps ordinary indented list bodies
+    available while excluding their code examples. Quoted examples are not
+    authoritative declarations. This is a conservative block reader, not a
+    Markdown renderer; all contract consumers share these visibility rules.
+    """
+    def indentation(line):
+        columns = 0
+        for char in line:
+            if char == ' ':
+                columns += 1
+            elif char == '\t':
+                columns += 4 - columns % 4
+            else:
+                break
+        return columns
+
+    def after_indent(line, columns):
+        offset, consumed = 0, 0
+        while offset < len(line) and consumed < columns and line[offset] in ' \t':
+            consumed += 1 if line[offset] == ' ' else 4 - consumed % 4
+            offset += 1
+        return line[offset:]
+
+    fence, lists = None, []
     for number, line in enumerate(text.splitlines(), 1):
-        opening = re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$', line)
+        indent = indentation(line)
         if fence:
-            if re.match(r'^ {0,3}' + re.escape(fence[0]) + '{' + str(fence[1]) + r',}\s*$', line):
+            # Leaving a list container ends the fence contained by that item.
+            if line.strip() and indent < fence[2]:
                 fence = None
+            else:
+                content = after_indent(line, fence[2])
+                if re.match(r'^ {0,3}' + re.escape(fence[0]) + '{' + str(fence[1]) + r',}\s*$', content):
+                    fence = None
+                continue
+        if not line.strip():
+            yield number, line
             continue
+        while lists and indent < lists[-1]:
+            lists.pop()
+        base = lists[-1] if lists else 0
+        content = after_indent(line, base)
+        if re.match(r'^ {0,3}>', content):
+            continue
+        marker = re.match(r'^( {0,3})(?:[-+*]|\d{1,9}[.)])([ \t]+)(.*)$', content)
+        if marker:
+            # Marker indentation/width is part of the list container. Up to
+            # four separating spaces precede ordinary item content; excess
+            # indentation remains available to identify a code block.
+            marker_width = len(content[:marker.start(2)].expandtabs(4))
+            prefix_width = len(content[:marker.start(3)].expandtabs(4))
+            spacing = prefix_width - marker_width
+            width = prefix_width if spacing <= 4 else marker_width + 1
+            lists.append(base + width)
+            base = lists[-1]
+            content = ('' if spacing <= 4 else ' ' * (spacing - 1)) + marker[3]
+            indent = base + indentation(content)
+        if indent - base >= 4:
+            continue
+        opening = re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$', content)
         if opening:
-            fence = (opening[1][0], len(opening[1]))
+            fence = (opening[1][0], len(opening[1]), base)
             continue
         yield number, line
 
@@ -78,18 +133,23 @@ def markdown_sections(text):
     result = []
     for index, heading in enumerate(headings):
         end = next((h['line'] - 1 for h in headings[index + 1:] if h['level'] <= heading['level']), len(lines))
-        result.append({**heading, 'body': '\n'.join(lines[heading['line']:end]).strip()})
+        body = lines[heading['line']:end]
+        while body and not body[0].strip():
+            body.pop(0)
+        while body and not body[-1].strip():
+            body.pop()
+        # Preserve leading indentation: stripping the whole string can turn
+        # an illustrative first code line into a public target declaration.
+        result.append({**heading, 'body': '\n'.join(body)})
     return result
 
 
-def _cells(line):
+def _cells(line, *, with_spans=False):
+    offset = len(line) - len(line.lstrip())
     line = line.strip()
-    if not line.startswith('|'):
+    if '|' not in line:
         return None
-    line = line[1:]
-    if line.endswith('|') and not line.endswith('\\|'):
-        line = line[:-1]
-    cells, current, escaped, ticks = [], [], False, 0
+    cells, current, escaped, ticks, delimiters = [], [], False, 0, []
     index = 0
     while index < len(line):
         char = line[index]
@@ -107,35 +167,63 @@ def _cells(line):
             ticks = 0 if ticks == count else count if not ticks else ticks
             current.append(line[index:stop]); index = stop; continue
         if char == '|' and not ticks:
-            cells.append(''.join(current).strip()); current = []
+            cells.append(''.join(current).strip()); current = []; delimiters.append(index)
         else:
             current.append(char)
         index += 1
     if escaped:
         current.append('\\')
     cells.append(''.join(current).strip())
-    return cells
+    if not delimiters:
+        return None
+    boundaries = [-1] + delimiters + [len(line)]
+    spans = [[offset + begin + 1, offset + end] for begin, end in zip(boundaries, boundaries[1:])]
+    if delimiters[0] == 0:
+        cells.pop(0); spans.pop(0)
+    if delimiters[-1] == len(line) - 1:
+        cells.pop(); spans.pop()
+    return (cells, spans) if with_spans else cells
 
 
 def markdown_tables(text):
+    """Parse actual header/separator pairs with immutable per-table columns.
+
+    Positions are one-based in the supplied text, including fenced/blank lines.
+    Adjacent header/separator pairs start a new table even without a blank line;
+    a word such as ``status`` in a data cell never changes the headers.
+    """
     visible = list(_visible_lines(text))
     found, index = [], 0
-    while index + 1 < len(visible):
-        number, line = visible[index]
-        headers, delimiter = _cells(line), _cells(visible[index + 1][1])
-        if (not headers or not delimiter or visible[index + 1][0] != number + 1
+
+    def header_at(cursor):
+        if cursor + 1 >= len(visible):
+            return None
+        number, line = visible[cursor]
+        headers, delimiter = _cells(line), _cells(visible[cursor + 1][1])
+        if (not headers or not delimiter or visible[cursor + 1][0] != number + 1
                 or len(headers) != len(delimiter)
                 or not all(re.fullmatch(r':?-{3,}:?', cell) for cell in delimiter)):
+            return None
+        return headers
+
+    while index + 1 < len(visible):
+        number, line = visible[index]
+        headers = header_at(index)
+        if headers is None:
             index += 1; continue
-        rows, cursor = [], index + 2
+        rows, row_lines, row_cell_spans, cursor = [], [], [], index + 2
         previous = number + 1
         while cursor < len(visible):
             row_number, row_text = visible[cursor]
             cells = _cells(row_text)
-            if cells is None or row_number != previous + 1:
+            if cells is None or row_number != previous + 1 or header_at(cursor) is not None:
                 break
-            rows.append(cells); previous = row_number; cursor += 1
-        found.append({'headers': headers, 'rows': rows, 'line': number})
+            rows.append(cells); row_lines.append(row_number)
+            row_cell_spans.append(_cells(row_text, with_spans=True)[1])
+            previous = row_number; cursor += 1
+        found.append({'headers': headers, 'rows': rows, 'line': number,
+                      'delimiter_line': number + 1, 'row_lines': row_lines, 'row_cell_spans': row_cell_spans,
+                      'end_line': previous})
         index = cursor
     return found
 
@@ -303,7 +391,7 @@ def external_contracts(project):
 
 def check_artifacts(project, source, fail, inputs):
     """Append findings through the existing caller and record consumed inputs."""
-    from .spec_contract import AC, contract_refs, declared_symbols, references, sections
+    from .spec_contract import acceptance, contract_refs, declared_symbols, references, sections
     project, source = Path(project), Path(source)
     features = {re.match(r'F\d+', p.name)[0]: p for p in (project / 'spec/baseline/features').glob('F*.md') if _primary_feature(p)}
     acs, all_docs = {}, {}
@@ -311,7 +399,7 @@ def check_artifacts(project, source, fail, inputs):
         if 'plans' in path.relative_to(project / 'spec/baseline').parts:
             continue
         all_docs[path] = path.read_text(encoding='utf-8-sig')
-        for ident, _ in AC.findall(all_docs[path]):
+        for ident, _ in acceptance(all_docs[path]):
             acs[ident] = path
     # Shared contracts are active only through the same explicit reference
     # closure used by downstream tasks. A ref/ scratch file is not an input;
@@ -399,7 +487,8 @@ def check_artifacts(project, source, fail, inputs):
             text = all_docs.get(path, path.read_text(encoding='utf-8-sig'))
             parsed = markdown_sections(text)
             titles = [section['title'] for section in parsed]
-            for title in sorted(set(titles)):
+            required_titles = {requirement['title'] for requirement in entry.get('sections', [])}
+            for title in sorted(set(titles) & required_titles):
                 if titles.count(title) > 1:
                     fail('ARTIFACT_HEADING_DUPLICATE', subject + '#' + title, 'Exact headings must resolve uniquely')
             for requirement in entry.get('sections', []):

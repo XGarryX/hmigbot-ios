@@ -81,7 +81,9 @@ domains 的 typed task 使用 `plan_item_refs: ["SLICE:F001:3b"]`，不另造平
 
 Plan 生成后只读。沿用 ui-manifest/feature-index 中旧 `verified` 作为结构与构建流程兼容值；它不代表独立行为或视觉通过。生成、编译、结构、行为、视觉结果分别凭当轮证据呈报；未执行写 `not_run`，输入/代码变化后的旧证据写 stale，不把旧状态文字自动升级为通过。
 
-profile 2 冻结时，feature-index/ui-manifest 仅豁免精确表头 `状态|status|generation_state|compile_state|behavior_state|visual_state` 下的进度枚举，以及 `<!-- hmigbot-progress:begin -->` 到 `<!-- hmigbot-progress:end -->` 之间的受管进度块；`skipped/excluded` 属范围决定，不是可变进度。依赖、owner、创建页面、scope及其它正文变化仍使冻结输入失效，须重过门并 replan。进度豁免不允许在块内隐藏新业务合同。
+profile 2 的单元格进度豁免以随包 `schemas/spec-plan-artifacts.json` 的 `progress` 声明为准：仅 `spec/baseline/feature-index.md` 的“功能清单”和 `spec/baseline/ui-manifest.md` 的“页面与覆盖层”两张核心表，按 catalog 完整表头与真实分隔行识别；核心标题须唯一。功能行的 ID 须匹配 `F[0-9]+`，页面行须匹配 `page_[0-9]{4}`，同表 ID 不重复；当前仅这些行的“状态”单元格可写 `pending|converted|implemented|verified|generated|blocked|not_run|running|passed|failed|stale|PASS|FAIL`。其它单元格保留原文摘要。相邻表、额外业务表、普通 `status` 列及数据中出现“状态/status/目标”等词均无豁免，也不能改变本表列映射；不能复制一张核心表获得第二个可变区。
+
+`skipped/excluded` 是范围决定，不是可变进度；owner、目标文件、依赖、页面归属/创建者、scope、结构及其它正文变化均使冻结输入失效，须由原作者与独立复核者重审、重过门，再显式 replan。另一种豁免仅是 `<!-- hmigbot-progress:begin -->` 到 `<!-- hmigbot-progress:end -->` 间下述白名单进度块，不能在块内隐藏业务合同。
 
 ## 上游索引与受管进度的精确格式
 

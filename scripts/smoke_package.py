@@ -90,7 +90,10 @@ def main():
                     '-s', str(plugin / 'tests'), '-p', 'test_ios_harness.py', '-v'])
             execute('installed-spec-contract', [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover',
                     '-s', str(plugin / 'tests'), '-p', 'test_spec_contract.py', '-v'])
-            for pattern in ('test_artifact_contract.py', 'test_plan_contract.py', 'test_quality_views.py'):
+            for pattern in ('test_artifact_contract.py', 'test_plan_contract.py', 'test_quality_views.py',
+                            'test_markdown_gates.py', 'test_freeze_contract.py', 'test_raw_strings.py',
+                            'test_spec_upgrade.py', 'test_spec_upgrade_cli.py', 'test_page_evidence.py',
+                            'test_evidence_review.py'):
                 execute('installed-' + pattern.removesuffix('.py'), [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover',
                         '-s', str(plugin / 'tests'), '-p', pattern, '-v'])
             execute('installed-expertise-mcp', [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover',

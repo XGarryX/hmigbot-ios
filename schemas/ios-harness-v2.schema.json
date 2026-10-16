@@ -302,6 +302,191 @@
         }
       },
       "type": "object"
+    },
+    "evidenceAxis": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not_run",
+            "stale",
+            "legacy_unclassified",
+            "passed",
+            "failed",
+            "unverified",
+            "unmapped",
+            "unlanded",
+            "generated",
+            "blocked",
+            "partial"
+          ]
+        },
+        "ac_statuses": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "passed",
+              "failed",
+              "unverified"
+            ]
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "evidenceAxes": {
+      "type": "object",
+      "required": [
+        "generation",
+        "compilation",
+        "behavior",
+        "visual"
+      ],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/evidenceAxis"
+        },
+        "compilation": {
+          "$ref": "#/$defs/evidenceAxis"
+        },
+        "behavior": {
+          "$ref": "#/$defs/evidenceAxis"
+        },
+        "visual": {
+          "$ref": "#/$defs/evidenceAxis"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pageEvidence": {
+      "type": "object",
+      "required": [
+        "page_id",
+        "spec",
+        "plan_item_refs",
+        "task_ids",
+        "target_paths",
+        "ac_ids",
+        "axes"
+      ],
+      "properties": {
+        "page_id": {
+          "type": "string",
+          "pattern": "^page_[0-9]{4}$"
+        },
+        "spec": {
+          "type": "string",
+          "minLength": 1
+        },
+        "plan_item_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "task_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "target_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "ac_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "axes": {
+          "$ref": "#/$defs/evidenceAxes"
+        }
+      },
+      "additionalProperties": false
+    },
+    "specSummary": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "source_sha256",
+        "axes",
+        "inputs",
+        "pages",
+        "behavior_verified",
+        "counts",
+        "legacy_progress",
+        "placeholders",
+        "scope"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "axes": {
+          "$ref": "#/$defs/evidenceAxes"
+        },
+        "inputs": {
+          "type": "object"
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pageEvidence"
+          }
+        },
+        "behavior_verified": {
+          "type": "boolean"
+        },
+        "counts": {
+          "type": "object",
+          "required": [
+            "acceptance",
+            "features",
+            "pages"
+          ],
+          "properties": {
+            "acceptance": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "features": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "pages": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "legacy_progress": {
+          "type": "object"
+        },
+        "placeholders": {
+          "type": "object"
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

@@ -32,8 +32,8 @@ class PlanContractTests(unittest.TestCase):
         (self.base / 'ui/page_0001_Counter.md').write_text('# page_0001\n## State\nF001-AC01\n', encoding='utf-8')
         (self.project / 'spec/ref/shared.md').write_text('# Contract\ncontract_refs: ["spec/ref/deeper.md#Cancel"]\n## Public\nCounter.add returns Count:1\n', encoding='utf-8')
         (self.project / 'spec/ref/deeper.md').write_text('# Async\n## Cancel\nWait for completion callback.\n', encoding='utf-8')
-        (self.base / 'feature-index.md').write_text('# Features\n| ID | 排序依赖 | 契约依赖 | 关联页面 | 创建页面 | 状态 |\n|---|---|---|---|---|---|\n| F001 | Base | 无 | page_0001 | page_0001 | pending |\n', encoding='utf-8')
-        (self.base / 'ui-manifest.md').write_text('# UI\n| page_id | ArkTS目标文件 | 状态 | spec |\n|---|---|---|---|\n| page_0001 | entry/Counter.ets | pending | spec/baseline/ui/page_0001_Counter.md |\n', encoding='utf-8')
+        (self.base / 'feature-index.md').write_text('# Features\n## 功能清单\n| ID | 功能 | 优先级 | 排序依赖 | 契约依赖 | 关联页面 | 创建页面 | complexity | tier | depth | 状态 | spec |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n| F001 | Counter | P0 | Base | 无 | page_0001 | page_0001 | simple | standard | full | pending | features/F001-counter.md |\n', encoding='utf-8')
+        (self.base / 'ui-manifest.md').write_text('# UI\n## 页面与覆盖层\n| page_id | 源文件/入口/框架 | 类型 | ArkTS 目标文件/组件 | 功能归属 | 优先级 | confidence | 状态 | spec |\n|---|---|---|---|---|---|---|---|---|\n| page_0001 | Counter.swift:2/entry/swiftui | page | entry/Counter.ets | F001 | P0 | high | pending | spec/baseline/ui/page_0001_Counter.md |\n', encoding='utf-8')
         self.items = [
             {'item_id': 'BASE:Base-0', 'ac_ids': [], 'ownership': ['entry/Base.ets'], 'parents': [], 'page_ids': [], 'scope': 'product', 'verification': 'generated'},
             {'item_id': 'UI:PAGE-0001', 'ac_ids': ['F001-AC01'], 'ownership': ['entry/Counter.ets'], 'parents': ['BASE:Base-0'], 'page_ids': ['page_0001'], 'scope': 'product', 'verification': 'generated'},
@@ -127,10 +127,10 @@ class PlanContractTests(unittest.TestCase):
         with self.assertRaises(MigrationError): validate_plan(self.project, self.request)
 
     def test_progress_projection_preserves_scope_dependencies_owner(self):
-        path = self.base / 'feature-index.md'; original = path.read_text(encoding='utf-8'); before = structural_digest(original)
-        self.assertEqual(before, structural_digest(original.replace('pending', 'implemented')))
+        path = self.base / 'feature-index.md'; original = path.read_text(encoding='utf-8'); before = structural_digest(original, artifact='spec/baseline/feature-index.md')
+        self.assertEqual(before, structural_digest(original.replace('pending', 'implemented'), artifact='spec/baseline/feature-index.md'))
         for old, new in [('Base', 'F002'), ('page_0001', 'page_0002'), ('pending', 'skipped')]:
-            self.assertNotEqual(before, structural_digest(original.replace(old, new)))
+            self.assertNotEqual(before, structural_digest(original.replace(old, new), artifact='spec/baseline/feature-index.md'))
 
     def test_managed_progress_block_only(self):
         original = '# Index\n<!-- hmigbot-progress:begin -->\n0 of 1\n<!-- hmigbot-progress:end -->\nOwner: core\n'
@@ -313,7 +313,7 @@ class PlanContractTests(unittest.TestCase):
 
     def second_feature(self, ordering='无', contract='无', parents=None):
         path = self.base / 'feature-index.md'; text = path.read_text(encoding='utf-8')
-        text += '| F002 | ' + ordering + ' | ' + contract + ' | N/A | 无 | pending |\n'
+        text += '| F002 | Extra | P0 | ' + ordering + ' | ' + contract + ' | N/A | 无 | simple | standard | full | pending | features/F002-extra.md |\n'
         path.write_text(text, encoding='utf-8')
         (self.base / 'features/F002-extra.md').write_text('# F002\n## Public\nExtra public contract.\n- [ ] F002-AC01 Extra `判:unit | Value is ready`\n', encoding='utf-8')
         item = {'item_id': 'SLICE:F002:3a', 'ac_ids': ['F002-AC01'], 'ownership': ['entry/Extra.ets'],
@@ -416,6 +416,65 @@ class PlanContractTests(unittest.TestCase):
                 config['ios_harness']['spec_contract_version'] = 2; write_json(config_path, config)
                 index.write_text(index.read_text(encoding='utf-8').replace('Base', 'F002'), encoding='utf-8')
                 with self.assertRaises(MigrationError): step(target, 'domains')
+
+    def test_real_source_gate_dispatch_allows_core_progress_and_rejects_business_state_drift(self):
+        from test_ios_harness import fixture
+        from spec_contract_fixture import strict_contract
+        from hmigbot_ios.ios_harness import check
+        from hmigbot_ios.ios_scheduler import generate, step
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, target, graph = fixture(root)
+            strict_contract(target)
+            index = target / 'spec/baseline/feature-index.md'
+            text = index.read_text(encoding='utf-8').replace('| base | base |', '| base | 无 |')
+            # This business table is deliberately adjacent and as wide as the
+            # core index. It may never inherit the preceding progress mask.
+            text = text.replace('## 依赖图',
+                '| audit | business | priority | order | contract | page | creator | complexity | tier | depth | result | evidence |\n'
+                '|---|---|---|---|---|---|---|---|---|---|---|---|\n'
+                '| audit-1 | API | P0 | base | none | none | none | simple | standard | full | failed | review |\n'
+                '## 依赖图')
+            index.write_text(text, encoding='utf-8')
+            self.items[1]['ownership'] = ['entry/src/main/ets/pages/CounterPage.ets']
+            self.write_plans()
+            shutil.copytree(self.base / 'plans', target / 'spec/baseline/plans', dirs_exist_ok=True)
+            request = copy.deepcopy(self.request)
+            request['tasks'][1] = self.task('counter', self.items[1:3], parents=['base'], mapping_reason='UI and service share one owner')
+            request['graph_sha256'] = digest(json_bytes(graph))
+            for task in request['tasks']:
+                task['fact_ids'] = [fact['id'] for fact in graph['facts']]
+            request_path = root / 'request.json'
+            write_json(request_path, request)
+            report, code = check(target, report_only=True)
+            self.assertEqual(code, 0, report['findings'])
+            self.assertEqual(generate(target, request_path)['status'], 'plan_generated')
+            index.write_text(text.replace('| pending |', '| implemented |'), encoding='utf-8')
+            manifest = target / 'spec/baseline/ui-manifest.md'
+            manifest.write_text(manifest.read_text(encoding='utf-8').replace('| pending |', '| converted |'), encoding='utf-8')
+            self.assertEqual(step(target, 'domains')[0]['action'], 'dispatch')
+            progress = index.read_text(encoding='utf-8')
+            for old, new in [('| failed |', '| passed |'), ('Counter | P0', 'Counter | P1'),
+                             ('| base | 无 |', '| F002 | 无 |'),
+                             ('| page_0001 | page_0001 |', '| page_0002 | page_0001 |'),
+                             ('| implemented |', '| skipped |'), ('| implemented |', '| excluded |')]:
+                with self.subTest(change=(old, new)):
+                    self.assertIn(old, progress)
+                    index.write_text(progress.replace(old, new), encoding='utf-8')
+                    with self.assertRaisesRegex(MigrationError, 'baseline changed'):
+                        step(target, 'domains')
+                    index.write_text(progress, encoding='utf-8')
+            ui_progress = manifest.read_text(encoding='utf-8')
+            for old, new in [('| F001 | P0 |', '| F002 | P0 |'),
+                             ('entry/src/main/ets/pages/CounterPage.ets', 'entry/OtherPage.ets'),
+                             ('| page_0001 | Counter.swift', '| page_0002 | Counter.swift'),
+                             ('| converted |', '| excluded |')]:
+                with self.subTest(manifest_change=(old, new)):
+                    self.assertIn(old, ui_progress)
+                    manifest.write_text(ui_progress.replace(old, new), encoding='utf-8')
+                    with self.assertRaisesRegex(MigrationError, 'baseline changed'):
+                        step(target, 'domains')
+                    manifest.write_text(ui_progress, encoding='utf-8')
 
     def test_readonly_cli_preserves_findings_without_preexisting_gate_report(self):
         from test_ios_harness import fixture

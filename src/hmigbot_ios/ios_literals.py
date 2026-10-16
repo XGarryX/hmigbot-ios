@@ -21,13 +21,18 @@ def extract(source):
             anchor = {'sources': [file['path'] + ':' + str(token.line)], 'file_sha256': file['sha256']}
             if token.kind == 'string':
                 raw = token.value
-                if '\\(' in raw or raw.startswith('"""'):
-                    ledger['dynamic_texts'].append({'source_expression': raw, **anchor})
+                reason = ('extended_delimiter_requires_swift_semantic_decode' if token.hash_count else
+                          'multiline_requires_swift_semantic_decode' if token.quote_count == 3 else
+                          'interpolation_requires_runtime_evaluation' if '\\(' in raw else None)
+                if reason:
+                    ledger['dynamic_texts'].append({'source_expression': raw, 'decoding_status': 'unresolved',
+                                                   'reason': reason, **anchor})
                     continue
                 try:
                     value = json.loads(raw)
                 except ValueError:
-                    ledger['dynamic_texts'].append({'source_expression': raw, **anchor})
+                    ledger['dynamic_texts'].append({'source_expression': raw, 'decoding_status': 'unresolved',
+                                                   'reason': 'unsupported_swift_string_escape', **anchor})
                     continue
                 if not value:
                     continue

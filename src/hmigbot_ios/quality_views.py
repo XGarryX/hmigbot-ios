@@ -5,6 +5,7 @@ literal classification nor historical progress proves runtime equivalence.
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -194,18 +195,48 @@ def _behavior(project, source_sha, acs):
                and report['target_input_hashes'] == target_inputs(project))
     if not current:
         result['status'] = 'stale'; return result
-    covered = set()
+    covered, ac_statuses, invalid_acs = set(), {}, set()
+    cases = {c['id']: c for c in read_json(verification).get('cases', [])}
     logs_current = True
+    observed_ids = set()
+    semantic_failures = [f for f in report.get('failures', []) if f.get('rule') != 'IOS.BEHAVIOR_OBSERVATION']
     for item in report.get('observations', []):
-        if item.get('status') == 'observed_pass':
-            covered.update(item.get('ac_ids', []))
+        case = cases.get(item.get('id'), {})
+        valid = (item.get('id') not in observed_ids and item.get('ac_ids') == case.get('ac_ids')
+                 and item.get('runner') == case.get('runner') and item.get('command') == case.get('command'))
+        observed_ids.add(item.get('id'))
+        if item.get('status') in {'observed_pass', 'observed_fail'}:
             for stream in ('stdout', 'stderr'):
                 log = safe_child(project, 'spec/reports/behavior/' + item['id'] + '/' + stream + '.log')
-                logs_current = logs_current and log.exists() and digest(log.read_bytes()) == item.get(stream + '_sha256')
+                valid = valid and log.exists() and digest(log.read_bytes()) == item.get(stream + '_sha256')
+            logs_current = logs_current and valid
+            try:
+                stdout = safe_child(project, 'spec/reports/behavior/' + item['id'] + '/stdout.log')
+                actual = json.loads(stdout.read_bytes())
+                valid = valid and actual == item.get('actual')
+                passed = item.get('exit_code') == 0 and actual == case.get('oracle', {}).get('expected')
+                valid = valid and (item['status'] == 'observed_pass') == passed
+            except (OSError, ValueError, UnicodeError):
+                valid = False
+            logs_current = logs_current and valid
+        if not valid or semantic_failures:
+            invalid_acs.update(case.get('ac_ids', []))
+            continue
+        if item.get('status') == 'observed_pass' and item.get('exit_code') == 0 and item.get('actual') == case.get('oracle', {}).get('expected'):
+            covered.update(item.get('ac_ids', []))
+            for ident in item.get('ac_ids', []):
+                if ac_statuses.get(ident) != 'failed': ac_statuses[ident] = 'passed'
+        elif item.get('status') == 'observed_fail':
+            for ident in item.get('ac_ids', []): ac_statuses[ident] = 'failed'
+    for ident, case in cases.items():
+        if ident not in observed_ids: invalid_acs.update(case.get('ac_ids', []))
+    covered -= invalid_acs
+    for ident in invalid_acs: ac_statuses[ident] = 'unverified'
     result['status'] = ('passed' if report.get('behavior_verified') is True and report.get('status') == 'PASS'
                         and not report.get('failures') and covered == set(acs) and logs_current
                         else 'failed' if report.get('failures') else 'unverified')
     result['scope'] = report.get('scope')
+    result['ac_statuses'] = {a: ac_statuses.get(a, 'unverified') for a in sorted(acs)}
     return result
 
 
@@ -217,18 +248,24 @@ def summary(project, *, build_evidence=None):
     acs = ac_inventory(project)
     source_sha = snapshot(source)['sha256']
     base = project / 'spec/baseline'
-    axes = {'generation': {'status': 'not_run'},
+    from .page_evidence import generation, pages
+    generated, tasks, records = generation(project, source_sha)
+    axes = {'generation': generated,
             'compilation': _compilation(project, source_sha, build_evidence),
             'behavior': _behavior(project, source_sha, acs), 'visual': {'status': 'not_run'}}
-    # Receipts report generated files, never runtime correctness or original landing.
-    receipts = list((project / 'spec/waves/results').glob('*/*.json'))
-    if receipts:
-        axes['generation'] = {'status': 'receipts_present', 'count': len(receipts),
-                              'scope': 'Receipt presence only; next-batch/land-results remain the acceptance authority'}
     visual = project / 'spec/reports/visual-verify-report.md'
     if visual.exists():
         axes['visual'] = {'status': 'legacy_unclassified', 'evidence': visual.relative_to(project).as_posix()}
-    return {'schema_version': 1, 'source_sha256': source_sha, 'axes': axes,
+    evidence_files = [p for folder in ('spec/state', 'spec/waves', 'spec/blueprint', 'spec/verification', 'spec/reports/behavior')
+                      for p in (project / folder).rglob('*') if p.is_file()]
+    for name in ('ios-behavior-check.json', 'visual-verify-report.md'):
+        path = project / 'spec/reports' / name
+        if path.exists(): evidence_files.append(path)
+    inputs = {'spec': spec_inputs(project), 'target': target_inputs(project),
+              'evidence': {p.relative_to(project).as_posix(): digest(p.read_bytes()) for p in sorted(evidence_files)}}
+    if build_evidence is not None: inputs['build_evidence_sha256'] = digest(Path(build_evidence).read_bytes())
+    result = {'schema_version': 2, 'source_sha256': source_sha, 'axes': axes, 'inputs': inputs,
+            'pages': pages(project, acs, axes, tasks, records),
             'behavior_verified': axes['behavior']['status'] == 'passed',
             'counts': {'acceptance': len(acs), 'features': sum(_primary_feature(p) for p in (base / 'features').glob('F*.md')),
                        'pages': len(list((base / 'ui').glob('page_*.md')))},
@@ -236,3 +273,34 @@ def summary(project, *, build_evidence=None):
                                 'pages': _legacy_counts(base / 'ui-manifest.md')},
             'placeholders': _placeholders(project),
             'scope': 'Read-only evidence axes; historical verified cells are compatibility progress only'}
+    from .harness_schema import validate
+    return validate(result, 'specSummary')
+
+
+def render_report(report):
+    """Deterministic generated report. Narrative stage details belong in linked reports."""
+    from .harness_schema import validate
+    validate(report, 'specSummary')
+    lines = ['# 迁移证据报告', '', '<!-- hmigbot-derived-report:2 -->', '',
+             '- source_sha256: `' + report['source_sha256'] + '`',
+             '- summary_sha256: `' + digest(json_bytes(report)) + '`', '',
+             '| 范围 | 数量 |', '|---|---|']
+    lines += ['| ' + k + ' | ' + str(v) + ' |' for k, v in report['counts'].items()]
+    lines += ['', '| 证据轴 | 当前状态 |', '|---|---|']
+    lines += ['| ' + k + ' | ' + v['status'] + ' |' for k, v in report['axes'].items()]
+    lines += ['', '| 页面 | 计划项 | 任务 | AC | 生成 | 编译 | 行为 | 视觉 |', '|---|---|---|---|---|---|---|---|']
+    for page in report['pages']:
+        cells = [page['page_id'], ', '.join(page['plan_item_refs']) or '-',
+                 ', '.join(page['task_ids']) or '-', ', '.join(page['ac_ids']) or '-']
+        cells += [page['axes'][axis]['status'] for axis in ('generation', 'compilation', 'behavior', 'visual')]
+        lines.append('| ' + ' | '.join(cells) + ' |')
+    lines += ['', '生成依据原内核落账和当前文件哈希；编译依据绑定当前输入的构建证据。',
+              '行为仅覆盖已执行的独立 AC 观测；宿主逻辑测试不证明设备 UI。视觉与结构检查需各自证据。',
+              'not_run、unverified、unmapped、unlanded、stale 均不等于通过。完整明细见同轮 spec-summary JSON。', '']
+    return '\n'.join(lines)
+
+
+def validate_report(project, text, *, build_evidence=None):
+    if text != render_report(summary(project, build_evidence=build_evidence)):
+        raise MigrationError('Migration report is edited or stale; regenerate it from current evidence')
+    return True

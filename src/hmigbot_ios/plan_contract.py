@@ -13,7 +13,6 @@ from pathlib import Path
 
 from .core import MigrationError, digest, json_bytes, read_json, safe_child
 
-PROGRESS_COLUMNS = {'状态', 'status', 'generation_state', 'compile_state', 'behavior_state', 'visual_state'}
 PROGRESS_VALUES = {'pending', 'converted', 'implemented', 'verified', 'generated', 'blocked',
                    'not_run', 'running', 'passed', 'failed', 'stale', 'PASS', 'FAIL'}
 VERIFICATION = {'generated', 'compile', 'behavior', 'visual'}
@@ -46,8 +45,13 @@ def assert_pinned(project, contract):
         raise MigrationError('Frozen tool contract revision changed; review and explicitly replan')
 
 
-def structural_digest(text):
-    """Ignore only managed progress and enumerated progress cells, never scope."""
+def structural_digest(text, *, artifact=None):
+    """Project only the catalog's core index progress cells, never business state.
+
+    The artifact identity, exact heading/header and stable row ID are all needed
+    before a cell can be mutable. Other tables retain their original lines,
+    including adjacent tables and business tables which happen to use status.
+    """
     begin, end = '<!-- hmigbot-progress:begin -->', '<!-- hmigbot-progress:end -->'
     if text.count(begin) != text.count(end) or text.count(begin) > 1:
         raise MigrationError('Malformed managed progress block')
@@ -62,24 +66,48 @@ def structural_digest(text):
             if entry and not re.fullmatch('(?:' + count + '|' + state + ')', entry):
                 raise MigrationError('Managed progress only permits defined count/axis state lines')
         text = text[:text.index(begin)] + begin + '\n' + end + text[text.index(end) + len(end):]
-    lines, columns, fenced = [], [], False
-    for line in text.splitlines():
-        if re.match(r'^\s*(```|~~~)', line):
-            fenced = not fenced
-        if not fenced and line.lstrip().startswith('|'):
-            cells = re.split(r'(?<!\\)\|', line.strip().strip('|'))
-            stripped = [cell.strip() for cell in cells]
-            if any(cell in PROGRESS_COLUMNS for cell in stripped):
-                columns = [i for i, cell in enumerate(stripped) if cell in PROGRESS_COLUMNS]
-            elif columns:
-                for i in columns:
-                    if i < len(cells) and stripped[i] in PROGRESS_VALUES:
-                        cells[i] = ' <managed-progress> '
-                line = '|' + '|'.join(cells) + '|'
-        else:
-            columns = []
-        lines.append(line)
-    return digest(('\n'.join(lines) + '\n').encode('utf-8'))
+    lines = text.splitlines()
+    from .artifact_contract import catalog, markdown_sections, markdown_tables
+    declarations = [section for entry in catalog()['spec'] if entry.get('path') == artifact
+                    for section in entry.get('sections', []) if section.get('progress')]
+    headings = markdown_sections(text)
+    tables = markdown_tables(text)
+    for section in declarations:
+        matches = []
+        for table in tables:
+            prior = [heading for heading in headings if heading['line'] < table['line']]
+            if (table['headers'] == section['headers'] and prior
+                    and prior[-1]['title'] == section['title']):
+                matches.append(table)
+        if len(matches) > 1:
+            raise MigrationError('Core index progress table must be unique: ' + str(artifact))
+        if not matches:
+            continue
+        table = matches[0]
+        progress = section['progress']
+        id_column = table['headers'].index(progress['id_column'])
+        columns = [table['headers'].index(name) for name in progress['columns']]
+        identities = [row[id_column].strip('` ') for row in table['rows']
+                      if len(row) == len(table['headers'])]
+        for row, number, spans in zip(table['rows'], table['row_lines'], table['row_cell_spans']):
+            if len(row) != len(table['headers']):
+                continue
+            ident = row[id_column].strip('` ')
+            if not re.fullmatch(progress['id_pattern'], ident) or identities.count(ident) != 1:
+                continue
+            line, segments, cursor = lines[number - 1], [], 0
+            for column in sorted(columns):
+                if row[column] in PROGRESS_VALUES:
+                    start, end = spans[column]
+                    segments.extend([line[cursor:start], {'managed_progress': True}])
+                    cursor = end
+            # Replace just the permitted cell span; even whitespace, escaping
+            # and inline code in another core column remain frozen as authored.
+            # A typed marker cannot collide with text authored in an invalid
+            # state cell, unlike a reserved string embedded in the Markdown.
+            if segments:
+                lines[number - 1] = {'progress_projection': segments + [line[cursor:]]}
+    return digest(json_bytes(lines))
 
 
 def _sections(text):
@@ -194,10 +222,11 @@ def _projection(project, path):
 
 
 def _inventory(project):
+    from .spec_contract import acceptance
     base = project / 'spec/baseline'
     features, pages = {}, {}
     for path in sorted((base / 'features').glob('F*.md')):
-        for ac in AC.findall(path.read_text(encoding='utf-8-sig')):
+        for ac, _ in acceptance(path.read_text(encoding='utf-8-sig')):
             if ac in features:
                 raise MigrationError('Duplicate AC: ' + ac)
             features[ac] = path

@@ -14,12 +14,12 @@
     ]},
     {"path": "spec/baseline/feature-index.md", "required": true, "sections": [
       {"title": "领域模型概览"},
-      {"title": "功能清单", "headers": ["ID", "功能", "优先级", "排序依赖", "契约依赖", "关联页面", "创建页面", "complexity", "tier", "depth", "状态", "spec"]},
+      {"title": "功能清单", "headers": ["ID", "功能", "优先级", "排序依赖", "契约依赖", "关联页面", "创建页面", "complexity", "tier", "depth", "状态", "spec"], "progress": {"id_column": "ID", "id_pattern": "F[0-9]+", "columns": ["状态"]}},
       {"title": "依赖图"}, {"title": "执行顺序（拓扑排序）"}
     ]},
     {"path": "spec/baseline/ui-manifest.md", "required": true, "sections": [
       {"title": "全局约定"},
-      {"title": "页面与覆盖层", "headers": ["page_id", "源文件/入口/框架", "类型", "ArkTS 目标文件/组件", "功能归属", "优先级", "confidence", "状态", "spec"]},
+      {"title": "页面与覆盖层", "headers": ["page_id", "源文件/入口/框架", "类型", "ArkTS 目标文件/组件", "功能归属", "优先级", "confidence", "状态", "spec"], "progress": {"id_column": "page_id", "id_pattern": "page_[0-9]{4}", "columns": ["状态"]}},
       {"title": "页面内部显示态", "headers": ["页面", "前态/条件", "显示结果", "事件/转移", "源依据"]},
       {"title": "共享组件与嵌入（子组件表）", "headers": ["定义方", "组件/目标接口", "父页面/slot", "输入/事件", "feature"]},
       {"title": "范围与证据"}

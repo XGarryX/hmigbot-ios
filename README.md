@@ -1,4 +1,6 @@
-# HMigBot-iOS 0.9.0
+# HMigBot-iOS 0.9.1
+
+0.9.1 修复 WorkBuddy 评估中独立复现的解析、冻结和 raw 字符串问题，同步 Spec/Plan/Execute/Verify 的 MD 规则与检查器；增加受控旧规格诊断及真正由当前逐页证据生成、可检查是否过期的报告。见 [整改对应表](docs/WORKBUDDY-0.9.1.md) 与 [旧规格升级步骤](docs/SPEC-UPGRADE.md)。
 
 读取原生 iOS 源码与功能特征，按原 HMigBot 五阶段生成 spec、计划和原生鸿蒙代码。
 本工具保留独立 HMigBot CodeX 1.6.1 的实施/验证资源，并接入 1.7.0 调度核心；所需资源随包提供，无需原插件目录。
@@ -274,8 +276,8 @@ python -X utf8 scripts/sync_skill_catalog.py
 python -X utf8 -m unittest discover -s tests -v
 python -X utf8 scripts/audit_native_surface.py
 python -X utf8 scripts/validate_release.py --output work/release-check
-python scripts/package_plugin.py --output dist/hmigbot-ios-0.9.0.zip
-python scripts/smoke_package.py --package dist/hmigbot-ios-0.9.0.zip --output work/package-check.json
+python scripts/package_plugin.py --output dist/hmigbot-ios-0.9.1.zip
+python scripts/smoke_package.py --package dist/hmigbot-ios-0.9.1.zip --output work/package-check.json
 ```
 
 技能正文、参考和模板直接维护，同步脚本只更新目录。旧实验 CLI 与 provider 用于按需机械任务，

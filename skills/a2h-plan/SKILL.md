@@ -15,6 +15,8 @@ metadata:
 
 新生成的规格与计划使用 `spec_contract_version: 2`。生成或消费计划前读取 [Plan 交付合同](references/plan-delivery-contract.md)：该合同限定全部 indexed-v1 产物、MD 提纲、Plan items JSON 投影、typed task 来源映射、精确输入闭包及状态解释；模板负责形态，harness 检查实际映射，不能分别生成两套合法但不对应的计划。
 
+排查输入可先运行 `source-check --harness --report-only` 只读诊断；正式排期仍须通过源门禁。目标接口和页面状态只消费规格真实表格的受支持目标列，不能从源说明中的“目标”关键词推断声明。核心章节和任务精确标题有歧义时回原作者消歧，不静默选择某一节。
+
 先读取 [iOS Harness v2](../ios-source-analysis/references/harness-v2.md)，以该协议决定输入、机器门禁和状态写者。以下原领域规程继续用于规格内容、indexed 计划、接线和真实验证；不得再手工调度或写入三份控制账本。
 
 原计划覆盖检查后，将具体任务、所有权、依赖、fact/AC 和决策交给 plan-ir。生成的 blueprint/plan/prompts 冻结，不将执行态写回计划。审批沿用已有授权，不重复要求阶段批准。
@@ -68,7 +70,7 @@ spec 过门，再显式 replan，不在执行任务中应用上游现代化建�
 - **输入门槛**：`spec/baseline/` 就绪 **且** `spec/ui-coverage-report.md` 最近一次 PASS，才能生成 plan；否则阻断并提示回 a2h-spec。
 - **indexed 布局唯一**：feature-plan.md = 纯调度索引（`plan_format: indexed-v1`；Base 层正文外置 `plans/base-plan.md`（只读，无 checkbox/evidence）、索引留 3 行 stub；slice 头部按 parallel_group 以 `## Group N` 分节），逐 slice 账本在 `plans/slices/slice-NN-<fid>.md`；无 single 模式。
 - **slice 文件三铁律**：① 调度表非详案（work_scope名字级 + spec_refs指针，机器scope=product/excluded，复制正文FAIL）；② 生成后只读（零checkbox/evidence/状态字段，完成性由代码校验与brief记录）；③ 不持有占位（plan期占位直写registry）。
-- **域判据**：spec 重审才变 → feature-index/spec；重新排期才变 → plan；执行推进才变 → 状态账本（ui-manifest / feature-index）+ brief。plan 不承载任何执行态。
+- **域判据**：spec 重审才变 → feature-index/spec；重新排期才变 → plan；执行推进才变 → 原状态账本及brief。profile 2仅catalog指定核心section、完整真实表头及稳定F/page ID行的“状态”进度单元格可变，另有白名单受管进度块；相邻表、额外业务status表和数据关键词不豁免。skipped/excluded、owner、依赖、页面归属、目标与结构变更须重审、重过门并显式replan。plan 不承载任何执行态。
 - **编排派发（§3.0，HARD-GATE）**：P1 三写产物（ui-plan / base-plan / plans/slices/*）**必须由 A/B/C subagent 生成，主线程禁自写**；降级自跑仅限 §3.0 三条件成立，且须在审批摘要「可调整项」注明降级原因——**静默自跑 = PROCESS_VIOLATION**。
 - **`<HARD-GATE>` 覆盖率阈值（§7）**：P0 功能 100% / UI 页面覆盖（ui-plan ⊇ ui-manifest）/ placeholder trigger 白名单率 100%（对 registry 跑）/ complex anchor 完整率 100%（读 spec）/ 对接点归属率 100% / **组件嵌入归属率 100%** / **分层校验 5 项**，任一不达标 → 阻断 plan 输出。
 - **接线工作**只能走 ① owned task（Step 3d）或 ② forward-ref；其余写法（placeholder / prose defer）一律 plan FAIL。

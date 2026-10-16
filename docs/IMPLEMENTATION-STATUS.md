@@ -1,4 +1,12 @@
-# 0.9.0 实施与验证边界
+# 0.9.1 实施与验证边界
+
+WorkBuddy 评估中的已复现问题已按 [整改对应表](WORKBUDDY-0.9.1.md) 完成工具修改：Spec/Plan 的 MD 合同与解析/冻结同步，raw 字符串保留未知，增加受控旧规格诊断，Execute/Verify 真正消费逐页派生报告及新鲜度检查。不会用代码示例充当目标声明或真实 AC。
+
+中性 Counter 的最终重跑完成当前 profile 2 源门禁、indexed Plan、原四拍落账和真实 hvigor 构建；执行实际 ArkTS Model 的宿主逻辑并区分 +2 变异。设备列表为空，整体行为仍 UNVERIFIED。其它三类样本仅完成源矩阵及事实提取；Chunky、iOS 编译、双端设备与视觉没有新增通过结论。详见 [实际评估](../evaluations/wb-0.9.1/README.md)。
+
+当前发行结果以 [验证说明](VALIDATION.md) 及当轮 release/package 报告为准。以下为 0.9.0 和此前记录。
+
+## 0.9.0 实施记录
 
 本轮以MD规程/模板/角色为主，配套Spec产物catalog/schema、Plan三层对账、合同输入冻结及只读资源/证据视图。新增内容profile 2默认用于新项目；历史项目兼容、升级和运行边界见[0.9.0合同说明](SPEC-PLAN-CONTRACT-0.9.md)。实际模型生成样本保留首轮失败与独立反馈，不以结构完整宣称语义或整App成功；[样本记录](../tests/evaluations/spec-plan-v2/README.md)说明范围。
 

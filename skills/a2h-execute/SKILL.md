@@ -17,7 +17,7 @@ profile 2 任务输入、Plan items→typed task映射、冻结进度豁免与�
 
 先读取 [iOS Harness v2](../ios-source-analysis/references/harness-v2.md)，以该协议决定输入、机器门禁和状态写者。以下原领域规程继续用于规格内容、indexed 计划、接线和真实验证；不得再手工调度或写入三份控制账本。
 
-v2 项目执行 next-batch → 按返回任务书执行 → 同路径 v2 receipt → land-results 的四拍。旧正文 Stage 0/1/2/3 是任务内实施细则，不再作为第二调度循环。done 仅表示任务落账；源错误不能记债务放行，随后继续真实结构与编译门。
+v2 项目执行 next-batch → 按返回任务书执行 → 同路径 v2 receipt → land-results 的四拍。每次 land-results 成功后立即执行 §10 的派生汇总、生成报告与一致性检查，部分执行同样执行；随后进入下一批或阶段门。旧正文 Stage 0/1/2/3 是任务内实施细则，不再作为第二调度循环。done 仅表示任务落账；源错误不能记债务放行，随后继续真实结构与编译门。
 
 
 
@@ -352,7 +352,7 @@ Stage 3 全部 group brief 落地 + §5f 统计输出后，派 **`a2h-closer`（
 
 CONVERGED + evidence 就位 → FV-1 完成。CONTINUE 按 dispatch_prompt 派 repair worker（feat → `a2h-migration-worker` / ui → `a2h-ios-converter`）后重调；其他 verdict 处置见 skill 自身 SKILL.md §3.3。
 
-**FV-2 终态全量编译**：FV-1 通过后（其 fix-forward / repair / icon-sizing 自愈可能改码），派发 Codex 子代理 `hmos-builder`（定义于 `.codex/agents/hmos-builder.toml`；CALLER=a2h-execute, STAGE_HINT=fv-final-build，≤20 轮）确认可构建无回归——这是进 a2h-verify 前的最后 gate。**必须为真实构建**：`all tasks up-to-date` 秒级空转不构成 PASS 证据，命中则 touch 入口文件或动用本轮唯一 clean 强制重编（中间 closer 保持增量，发布门较真）。编译修复仅限编译级小改，**不回跑 FV-1**。
+**FV-2 终态全量编译**：FV-1 通过后（其 fix-forward / repair / icon-sizing 自愈可能改码），派发 Codex 子代理 `hmos-builder`（定义于 `.codex/agents/hmos-builder.toml`；CALLER=a2h-execute, STAGE_HINT=fv-final-build，≤20 轮）确认可构建无回归——这是进 a2h-verify 前的最后 gate。**必须为真实构建**：`all tasks up-to-date` 秒级空转不构成 PASS 证据，命中则 touch 入口文件或动用本轮唯一 clean 强制重编（中间 closer 保持增量，发布门较真）。编译修复仅限编译级小改，**不回跑 FV-1**。回读构建器真实 JSON 报告路径，按 §10 将其作为 `--build-evidence` 传入三次报告命令；brief 中一句“编译 PASS”不构成可消费证据。报告仅说明本次全工程构建输入涵盖声明的页面目标文件，不能证明页面已注册、可到达或功能正确。
 
 </HARD-GATE>
 
@@ -374,7 +374,7 @@ Stage 3 Step 3a 发现目标页面 ui-snapshots 数据缺失（status 非 conver
 
 ### 8b. 覆盖 / 注入 / 降级
 
-派发前 runtime 上下文检查可**覆盖** plan 建议（触发词追加表：动画/视频/网络救火/knowledge-verifier 等）、按 `style_set` **注入**风格 skills、对不存在的 skill **降级**（语义匹配→migration tag 优先→无增强执行）。原则：**只升级不降级**——不得移除 plan 已建议的 skill（缺失降级除外），覆盖发生时记录进迁移报告覆盖记录表。完整覆盖表 / 注入逻辑 / 降级流程 **MUST 加载** [references/skill-binding-override.md](./references/skill-binding-override.md)。
+派发前 runtime 上下文检查可**覆盖** plan 建议（触发词追加表：动画/视频/网络救火/knowledge-verifier 等）、按 `style_set` **注入**风格 skills、对不存在的 skill **降级**（语义匹配→migration tag 优先→无增强执行）。原则：**只升级不降级**——不得移除 plan 已建议的 skill（缺失降级除外），覆盖发生时记录进阶段细节报告的覆盖记录表，并链接 §10 的派生迁移报告。完整覆盖表 / 注入逻辑 / 降级流程 **MUST 加载** [references/skill-binding-override.md](./references/skill-binding-override.md)。
 
 ---
 
@@ -414,9 +414,19 @@ Stage 3 Step 3a 发现目标页面 ui-snapshots 数据缺失（status 非 conver
 ## 10. 迁移报告
 
 <HARD-GATE>
-所有 Stage 与 §6 Final Structural Closure 执行完毕后生成 `spec/migration-report.md`。
+每次任务落账、Stage 0/1/2/3 收口、FV-1/FV-2 结束及部分执行交付前，主线程实际运行以下命令并读取退出码及产物；不得仅在报告中写“已运行”。`<target>` 使用配置中的绝对目标路径，输出是派生报告，不能写入 baseline 或三份控制账本。
 
-**报告完整模板**见 [templates/migration-report-template.md](./templates/migration-report-template.md)。含：总览 / Stage 1 详情（+页面转换清单）/ Stage 2 详情 / Stage 3 详情 / Skill 使用统计 / 覆盖记录 / 产出文件清单 / FAILED 列表 / 页面状态汇总 / 最终编译 / Final Structural Closure（§6 收尾，取自 `loops-final-structural-closure.json` + brief）。
+```text
+python <runtime>/scripts/a2h_ios.py spec-summary --project <target> --output <target>/spec/reports/spec-summary.json
+python <runtime>/scripts/a2h_ios.py migration-report --project <target> --output <target>/spec/migration-report.md
+python <runtime>/scripts/a2h_ios.py migration-report --project <target> --check <target>/spec/migration-report.md
+```
+
+有当前真实构建报告时，以上三条均追加同一个 `--build-evidence <build-report.json>`；未构建或缺少可绑定证据时不传，保留工具给出的 not_run、unknown、legacy_unclassified 或 stale。代码、计划、回执、日志或构建证据变化后重跑三条。`--check` 失败须更新证据或重新生成，禁止手改成功数、逐页状态或摘要来消除差异。
+
+汇总的逐页关联为 `page_id → plan_item_refs/task_ids → target_paths → ac_ids`。生成轴只消费冻结计划、当前回执文件摘要及原调度器成功落账；孤立回执或旧 converted/verified 不计为生成通过。编译轴消费当前全工程输入与产物证据，不向行为或视觉轴传递 PASS；行为轴只消费本页关联 AC 的真实观测与判定层级，host 单测不能当设备 UI 行为。未知关联和未跑范围按原值报告，禁止按全局 PASS 均摊到每页。
+
+报告结构与消费方式见 [templates/migration-report-template.md](./templates/migration-report-template.md)。`spec/migration-report.md` 完全由工具重建，不手工补正文。阶段细节、Skill 使用、失败原因与覆盖决定可另写 `spec/execution/` 下的报告并链接到该派生报告与原始证据；结构结论仍引用 §6 的 loops JSON 与 brief，由独立结构检查得出，不由 spec-summary 推测。
 
 </HARD-GATE>
 
@@ -440,7 +450,7 @@ Stage 3 Step 3a 发现目标页面 ui-snapshots 数据缺失（status 非 conver
 | "只执行 Stage 2" | 只读 plans/base-plan.md（旧 plan 回退 feature-plan.md 旧 Phase 0 段） |
 | "只执行 Stage 3" | 只读 feature-plan.md 的 Slice 列表（前提：Stage 2 已完成） |
 | "从 Stage 2 开始" | 跳过 Stage 1，从 Base 层开始执行 |
-| "重试 FAILED 的 slice" | 扫描迁移报告中的 FAILED slice，每个按 **size-1 组**重跑（1 worker + 1 closer） |
+| "重试 FAILED 的 slice" | 从当前 summary、原调度器失败任务及阶段 brief 定位 slice；原 owner 按 **size-1 组**重跑（1 worker + 1 closer），v2 仍走四拍并重建派生报告 |
 | "只执行 Slice N" | 把该 Slice 作为 **size-1 组**执行其 4 步（前提：其依赖已完成） |
 | "继续执行"（resume） | **读 feature-index 状态列**判定已完成 slice（implemented/verified 跳过；slice:feature 1:1），从首个 pending 的 parallel_group 续跑；组内细节看该组 brief |
 
@@ -493,4 +503,4 @@ python3 scripts/lint_execute_coverage.py --project-root $PROJECT_ROOT
 
 ## 阶段证据
 
-将真实产物、源/目标版本、校验命令与结果写本阶段报告；状态以证据为准。无需遥测上传。
+将真实产物、源/目标版本、校验命令与结果写本阶段细节报告；每次成功落账与阶段收口按 §10 重建派生报告并校验。两类报告互相引用，派生状态不手填。无需遥测上传。

@@ -11,7 +11,7 @@ args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 if args.output.exists() or args.output.with_suffix(args.output.suffix + ".sha256").exists():
     parser.error("Output already exists; choose a new package path")
-include = {".codex-plugin", "skills", "scripts", "src", "tests", "schemas", "rules", "docs", "providers", "agents-codex", "bin", "policies", "vendor"}
+include = {".codex-plugin", "skills", "scripts", "src", "tests", "schemas", "rules", "docs", "evaluations", "providers", "agents-codex", "bin", "policies", "vendor"}
 files = [p for folder in sorted(include) for p in (root / folder).rglob('*') if p.is_file()
          and not {'__pycache__', '.build', '.swiftpm', 'node_modules'}.intersection(p.relative_to(root).parts)
          and p.suffix != '.pyc' and not p.is_symlink()]

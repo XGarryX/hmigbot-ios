@@ -28,6 +28,14 @@ profile 2 在 raw `literal-ledger.json` 之外运行 `product-literals --project
 `usage: unresolved` 需回读源调用，不能因 raw `page_level: true` 把协议键或测试断言当 UI 文案。
 raw 保持完整；投影视图不能豁免源义务、不能按目录名自动排除，不能把其 source point 当 vp 自动换算。
 
+Swift 扩展分隔符字符串（如 `#"line\nnext"#`、`##"..."##`）保留完整
+`source_expression`，包括 `#` 数、单/三引号和内部引号；普通 `\n` 在其中不能按 JSON
+直接解码。当前提取器将它们登记到 `dynamic_texts`，`decoding_status: unresolved`、
+`reason: extended_delimiter_requires_swift_semantic_decode`；多行与插值也分别记录待解码/待求值原因。
+投影视图中的 `classification: product` 只表示源归属，不能把这些原表达式当成已知的目标文案。
+回读匹配的转义/插值分隔符并取得独立语义证据后，才记录已确认值和转换决定；禁止补造 `value`。
+受限 SwiftUI 转换器遇到扩展分隔符会明确拒绝，交语义适配处理，不能删 `#` 后重试。
+
 1. 建立源引用 → 实际文件 → variant → 目标资源名的唯一映射。
    名称按目标规则归一化，并检查大小写/标点碰撞；不同原资源不能被同名覆盖。
 2. 图片记录 idiom、scale、尺寸、方向、rendering mode、resizing、capInsets、

@@ -45,7 +45,9 @@ contract_refs:
 ```
 路径是项目内 baseline/ref 下存在的 Markdown；片段是精确标题。允许传递引用，相关文件与决策账本按真实摘要冻结。主业务真源仍是 Markdown；现有事实/语义/覆盖与 requirements-index 保持消费者路径。
 
-目标 Owner.method 在服务层、目标接口、实现映射目标列或目标状态列中明确声明；AC 仅引用，不在自身创造目标。不要机械拼 feature 名与 file/body。文档描述目标类或组件时也需有明确的目标映射。
+目标 Owner.method/Owner.state 在受支持的服务/目标接口、实现映射目标列或页面目标状态列中明确声明；表头须紧随真实分隔行，逐表固定目标列。源列、普通源说明、代码围栏和数据单元格中的“目标/status”等词不能声明目标或重新决定列位置；AC 仅引用，不在自身创造目标。不要机械拼 feature 名与 file/body。文档描述目标类或组件时也需有明确的目标映射。
+
+核心章节与被精确引用的标题须可唯一定位；同名节含相反行为时先诊断歧义并交原作者合并或消歧，不静默取最后一节。独立内容复核判断输入、处理、可观察结果和错误/取消是否完整及符合源码，不以会话短语是否出现代替语义判断。
 
 action-contract/action-use将共享行为归属与引用显式化，机器核验ID、字段和引用关系；自然语言是否忠于源码、UI投影是否改变完成边界仍由独立联读裁定。消费者发现冲突回原owner，不能现场任选、悄悄重定义或以目标实现反向修规格。
 
@@ -62,4 +64,6 @@ SwiftUI 写身份、持有/借用、Binding/Environment、modifier 顺序、任�
 ## 升级与边界
 旧 baseline 保留 ID；补齐合同，重提 facts/literals、复核专业资料与源门禁，再显式 replan，不继承旧 PASS。import 不再生成伪持久化义务，旧图由工具重提取，不能手改。
 
-spec-check 只读，不更新 findings；source-check --harness 包含内容检查并更新原门禁 findings。程序检测结构和有证据的反例，不证明全量语义等价；编译与行为验证仍须实际执行。
+Spec进入profile 2冻结后，仅catalog指定两张核心索引表的合法稳定ID行、“状态”进度单元格及白名单受管进度块可变，精确边界见 [Plan交付合同](../../a2h-plan/references/plan-delivery-contract.md#状态解释)。其它业务表即使有status列也全文冻结；范围、owner、依赖、归属和结构变化先复核再显式replan。
+
+spec-check 只读，不更新 findings；source-check --harness 包含内容检查并更新原门禁 findings。排查旧规格或审阅候选修改时使用 `source-check --harness --report-only` 只读诊断，诊断失败仍须修复后过正式门禁。程序检测结构和有证据的反例，不证明全量语义等价；编译与行为验证仍须实际执行。

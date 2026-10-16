@@ -17,6 +17,84 @@ class Token:
     value: str
     line: int
     kind: str = "symbol"
+    hash_count: int = 0
+    quote_count: int = 0
+    end_line: int = 0
+    start: int = 0
+    end: int = 0
+
+
+def _string_opening(text, pos):
+    """Recognize Swift string delimiters without consuming a standalone macro #."""
+    quote = pos
+    while quote < len(text) and text[quote] == '#':
+        quote += 1
+    if quote >= len(text) or text[quote] != '"':
+        return None
+    return quote - pos, 3 if text.startswith('"""', quote) else 1
+
+
+def _block_comment_end(text, start):
+    depth, pos = 1, start + 2
+    while depth and pos < len(text):
+        if text.startswith('/*', pos):
+            depth += 1
+            pos += 2
+        elif text.startswith('*/', pos):
+            depth -= 1
+            pos += 2
+        else:
+            pos += 1
+    if depth:
+        raise MigrationError(f"Unterminated comment at line {text.count(chr(10), 0, start) + 1}")
+    return pos
+
+
+def _interpolation_end(text, start):
+    """Skip a complete interpolation; its expressions stay inside the string token.
+
+    This only preserves lexical boundaries. It does not bind/evaluate Swift
+    expressions or claim their runtime value is known.
+    """
+    depth, pos = 1, start
+    while pos < len(text):
+        if text.startswith('//', pos):
+            end = text.find('\n', pos)
+            pos = len(text) if end == -1 else end
+        elif text.startswith('/*', pos):
+            pos = _block_comment_end(text, pos)
+        elif _string_opening(text, pos) is not None:
+            pos, _, _ = _string_end(text, pos)
+        elif text[pos] == '(':
+            depth += 1
+            pos += 1
+        elif text[pos] == ')':
+            depth -= 1
+            pos += 1
+            if not depth:
+                return pos
+        else:
+            pos += 1
+    raise MigrationError(f"Unterminated string interpolation at line {text.count(chr(10), 0, start) + 1}")
+
+
+def _string_end(text, start):
+    hashes, quotes = _string_opening(text, start)
+    closing = '"' * quotes + '#' * hashes
+    escape = '\\' + '#' * hashes
+    pos = start + hashes + quotes
+    while pos < len(text):
+        if text.startswith(closing, pos):
+            return pos + len(closing), hashes, quotes
+        if text.startswith(escape, pos):
+            following = pos + len(escape)
+            if following < len(text) and text[following] == '(':
+                pos = _interpolation_end(text, following + 1)
+            else:
+                pos = following + 1
+        else:
+            pos += 1
+    raise MigrationError(f"Unterminated string at line {text.count(chr(10), 0, start) + 1}")
 
 
 def tokenize(text: str) -> list[Token]:
@@ -30,37 +108,15 @@ def tokenize(text: str) -> list[Token]:
             end = text.find("\n", pos)
             pos = len(text) if end == -1 else end
         elif text.startswith("/*", pos):
-            depth, start = 1, pos
-            pos += 2
-            while depth and pos < len(text):
-                if text.startswith("/*", pos):
-                    depth += 1
-                    pos += 2
-                elif text.startswith("*/", pos):
-                    depth -= 1
-                    pos += 2
-                else:
-                    pos += 1
-            if depth:
-                raise MigrationError(f"Unterminated comment at line {line}")
+            start = pos
+            pos = _block_comment_end(text, pos)
             line += text[start:pos].count("\n")
-        elif char == '"':
+        elif _string_opening(text, pos) is not None:
             start, start_line = pos, line
-            marker = '"""' if text.startswith('"""', pos) else '"'
-            pos += len(marker)
-            while pos < len(text):
-                if text[pos] == "\\":
-                    pos += 2
-                elif text.startswith(marker, pos):
-                    pos += len(marker)
-                    break
-                else:
-                    pos += 1
-            else:
-                raise MigrationError(f"Unterminated string at line {start_line}")
+            pos, hashes, quotes = _string_end(text, pos)
             value = text[start:pos]
             line += value.count("\n")
-            result.append(Token(value, start_line, "string"))
+            result.append(Token(value, start_line, "string", hashes, quotes, line, start, pos))
         else:
             match = re.match(r"[A-Za-z_][A-Za-z_0-9]*|[0-9]+(?:\.[0-9]+)?|\+=|-=|==|->", text[pos:])
             value = match.group() if match else char
@@ -123,7 +179,9 @@ class Parser:
 
     def text_literal(self, interpolate=False):
         token = self.take()
-        if token.kind != "string" or token.value.startswith('"""'):
+        if token.kind == "string" and token.hash_count:
+            self.error("extended-delimiter string literals require a Swift semantic adapter")
+        if token.kind != "string" or token.quote_count == 3:
             self.error("only single-line string literals are supported")
         raw = token.value[1:-1]
         pieces, start = [], 0
