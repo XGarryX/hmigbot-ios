@@ -4,7 +4,7 @@ Nuitka resolves ``__file__`` beside its executable.  The shipping launcher puts
 that executable three directories below scripts, so sibling helper discovery
 cannot find the complete bundle.  A disposable layout places the entry binary
 beside the original scripts and retains each helper's own unchanged payload.
-Only the native image mutation entry is bridged to its read-only source audit.
+Native input bridges retain the original detectors and their failure decisions.
 """
 from __future__ import annotations
 
@@ -80,6 +80,13 @@ def runtime_layout():
             f'sys.path.insert(0, {str(ROOT / "src")!r})\n'
             'from hmigbot_ios.native_icon_scope import autofix_main\n'
             'raise SystemExit(autofix_main())\n', encoding='utf-8')
+        literal = skills / 'a2h-execute/scripts/literal_gate.py'
+        literal.write_text('import sys\n'
+            f'sys.path.insert(0, {str(ROOT / "src")!r})\n'
+            'from hmigbot_ios.native_literal_scope import main\n'
+            'raise SystemExit(main())\n', encoding='utf-8')
+        from .native_pipeline_semantics import stage_runtime
+        stage_runtime(skills, root=ROOT)
         env = {**os.environ, 'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8',
                'ARKTS_SKILL_DIR': str(closure)}
         if system == 'windows':
@@ -93,7 +100,7 @@ def runtime_layout():
         yield closure / ('_entry' + suffix), env
 
 
-def invoke(arguments, original=None):
+def _invoke_raw(arguments, original=None):
     """Return the original pipeline's exact stdout/stderr/exit disposition."""
     arguments = list(map(str, arguments))
     # The suspended-process / host-interpreter repair is Windows-specific.
@@ -120,3 +127,16 @@ def invoke(arguments, original=None):
     return subprocess.CompletedProcess(result.args, result.returncode,
         result.stdout.decode('utf-8', errors='replace'),
         result.stderr.decode('utf-8', errors='replace'))
+
+
+def invoke(arguments, original=None):
+    """Preserve raw engine evidence, then use the original native loop protocol."""
+    arguments = list(map(str, arguments))
+    if arguments and arguments[0] == 'iterate':
+        parser = argparse.ArgumentParser(add_help=False)
+        parser.add_argument('--mode')
+        args, _ = parser.parse_known_args(arguments)
+        if args.mode == 'pipeline':
+            from .native_pipeline_semantics import pipeline_iterate
+            return pipeline_iterate(arguments, lambda raw: _invoke_raw(raw, original=original))
+    return _invoke_raw(arguments, original=original)

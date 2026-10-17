@@ -8,6 +8,7 @@ Image-chain formatting; every detector location maps to its production line.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -308,6 +309,27 @@ def audit(project, output, original):
                     result[key] = remap(item)
             return result
         data = remap(data)
+    # The original detector recognizes width/height/aspectRatio, whereas a
+    # source-backed dynamic image may intentionally have a maximum height.
+    # Retain its original finding and require the exact typed/source contract;
+    # this is a read-only layout proof, never density inference or visual PASS.
+    from .native_pipeline_semantics import source_bounded_image
+    original_report = copy.deepcopy(data)
+    remaining, dispositions = [], []
+    for finding in data['flagged']:
+        proof = None
+        if (isinstance(finding, dict) and finding.get('kind') == 'ONE-DIM-NO-ASPECT'
+                and isinstance(finding.get('file'), str) and type(finding.get('line')) is int):
+            try:
+                proof = source_bounded_image(project, finding['file'], finding['line'])
+            except (ValueError, OSError, KeyError):
+                # Unsupported/missing provenance remains an original finding.
+                proof = None
+        if proof is None:
+            remaining.append(finding)
+        else:
+            dispositions.append({'original_finding': finding, **proof})
+    data.update(flagged=remaining, original_report=original_report, native_dispositions=dispositions)
     after = {name: _sha(path.read_bytes()) for name, path in sources.items()}
     if hashes != after:
         raise ValueError('Production ArkTS changed during the read-only image audit')
@@ -340,7 +362,8 @@ def autofix_main(arguments=None):
     with tempfile.TemporaryDirectory(prefix='native-icon-result-') as temporary:
         native = icon_audit(args.project_root, Path(temporary) / 'audit.json')
     report = {'passed': native['status'] == 'passed', 'warnings': [],
-        'scanned': native['report']['scanned'], 'flagged_before': len(native['report']['flagged']),
+        'scanned': native['report']['scanned'],
+        'flagged_before': len(native['report']['original_report']['flagged']),
         'flagged_after': len(native['report']['flagged']), 'fixed_count': 0, 'fixed': [],
         'mutated': False, 'source_platform': 'ios', 'native_image_constraints': native,
         'dynamic_unresolved': [row for row in native['report']['flagged'] if row.get('dynamic')],

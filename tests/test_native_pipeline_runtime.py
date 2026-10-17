@@ -31,10 +31,11 @@ def fixture(project):
     write(project / 'spec/archive/template/entry/src/main/ets/pages/Historical.ets',
         "@ComponentV2\nstruct Historical { build() { Image($r('app.media.icon')) } }\n")
     write(project / 'spec/baseline/plans/feature-plan.md', '# Feature Plan\n')
+    write(project / 'spec/baseline/literal-ledger.json', '{"texts":[],"colors":[],"dims":[],"durations_ms":[]}')
 
 
 class PipelineLayoutTests(unittest.TestCase):
-    def test_all_six_helpers_are_original_bytes_and_image_entry_is_read_only(self):
+    def test_original_payloads_are_retained_with_explicit_native_input_bridges(self):
         with runtime_layout() as (executable, env):
             scripts = executable.parent
             skills = scripts.parent.parent
@@ -47,8 +48,12 @@ class PipelineLayoutTests(unittest.TestCase):
             self.assertEqual(env['ARKTS_SKILL_DIR'], str(scripts))
             for skill, names in HELPERS.items():
                 for name in names:
-                    self.assertEqual((skills / skill / 'scripts' / name).read_bytes(),
-                                     (VENDOR / skill / 'scripts' / name).read_bytes())
+                    if name == 'assembly_gate.py':
+                        self.assertIn('native_pipeline_semantics import assembly_main',
+                                      (skills / skill / 'scripts' / name).read_text(encoding='utf-8'))
+                    else:
+                        self.assertEqual((skills / skill / 'scripts' / name).read_bytes(),
+                                         (VENDOR / skill / 'scripts' / name).read_bytes())
             icon = (skills / 'arkts-icon-sizing/scripts/icon_autofix.py').read_text(encoding='utf-8')
             self.assertIn('native_icon_scope import autofix_main', icon)
 
@@ -114,6 +119,28 @@ class PipelineLayoutTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0, result.stderr + result.stdout)
             final = json.loads((project / 'final.json').read_text(encoding='utf-8'))
             self.assertNotEqual(final.get('final_state'), 'PASS', final)
+
+    def test_pipeline_literal_bridge_keeps_real_text_failure_and_unresolved_units(self):
+        with tempfile.TemporaryDirectory(prefix='pipeline-literal-bridge-') as temporary:
+            project = Path(temporary)
+            fixture(project)
+            ledger = project / 'spec/baseline/literal-ledger.json'
+            ledger.write_text(json.dumps({'texts': [{'value': 'Missing required page text',
+                'page_level': True, 'sources': ['Views/Home.swift:3']}], 'colors': [],
+                'dims': [{'value': 24, 'unit': 'source_point_or_context_unresolved',
+                          'sources': ['Views/Home.swift:4']}], 'durations_ms': []}), encoding='utf-8')
+            raw = ledger.read_bytes()
+            state = project / 'spec/execution/loop.json'
+            result = invoke(['iterate', '--project-root', project, '--mode', 'pipeline',
+                             '--target', 'final', '--state-file', state])
+            self.assertEqual(result.returncode, 1, result.stderr + result.stdout)
+            report = json.loads((state.parent / 'literal-pipeline-iter0.json').read_text(encoding='utf-8'))
+            self.assertFalse(report['passed'])
+            self.assertEqual(report['findings'], report['original_report']['findings'])
+            self.assertGreater(report['stats']['texts']['missing_page'], 0)
+            self.assertEqual(report['stats']['dims']['ok'], 0)
+            self.assertEqual(report['stats']['dims']['unresolved'], 1)
+            self.assertEqual(ledger.read_bytes(), raw)
 
     @unittest.skipUnless(os.name == 'nt', 'Windows process ownership bridge')
     def test_owned_timeout_preserves_actual_partial_output_and_failure(self):

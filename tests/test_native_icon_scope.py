@@ -92,6 +92,30 @@ class NativeIconScopeTests(unittest.TestCase):
         self.assertEqual(result['report']['scanned'], 1)
         self.assertEqual(path.read_bytes(), before)
 
+    def test_source_bounded_image_keeps_original_finding_and_only_clears_proven_cap(self):
+        from test_native_pipeline_semantics import NativeSemanticsTests
+        fixture = NativeSemanticsTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        fixture.image_fixture()
+        page = fixture.ets / 'pages/Editor.ets'
+        before = page.read_bytes()
+        report = icon_audit(fixture.project, fixture.project / 'evidence/bounded.json')
+        self.assertEqual(report['status'], 'passed')
+        self.assertEqual(report['report']['flagged'], [])
+        self.assertEqual(len(report['report']['original_report']['flagged']), 1)
+        disposition, = report['report']['native_dispositions']
+        self.assertEqual(disposition['kind'], 'source_max_height_contain')
+        self.assertEqual(disposition['max_height'], 220)
+        self.assertTrue(disposition['source_visual_unverified'])
+        self.assertEqual(page.read_bytes(), before)
+        # A different cap cannot borrow the frozen source's cap or another node.
+        page.write_bytes(before.replace(b'maxHeight: 220', b'maxHeight: 221'))
+        failed = icon_audit(fixture.project, fixture.project / 'evidence/wrong-cap.json')
+        self.assertEqual(failed['status'], 'needs_source_dimensions')
+        self.assertEqual(failed['report']['native_dispositions'], [])
+        self.assertEqual(len(failed['report']['flagged']), 1)
+
     def test_compact_chain_boundaries_do_not_borrow_dimensions_and_keep_source_lines(self):
         source, = self.modules([('entry', 'entry')])
         cases = [
