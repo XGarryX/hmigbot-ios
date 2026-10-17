@@ -78,6 +78,16 @@ def structural_loop(arguments):
     finalize.add_argument('--state-file', type=Path, required=True)
     finalize.add_argument('--output-json', type=Path)
     args = parser.parse_args(arguments)
+    if args.operation == 'iterate' and args.mode in {'slice', 'group'}:
+        from .native_structural import enabled, iterate as native_iterate
+        if enabled(args.project_root):
+            try:
+                return native_iterate(args, original)
+            except (ValueError, KeyError, OSError) as exc:
+                if args.output_json:
+                    from .core import write_json
+                    write_json(args.output_json, {'status': 'failed', 'passed': False, 'error': str(exc)})
+                raise
     if args.operation == 'iterate' and args.mode == 'pipeline':
         report = args.state_file.resolve().with_name(args.state_file.stem + '-native-images.json')
         audit = icon_audit(args.project_root, report)
@@ -96,6 +106,40 @@ def structural_loop(arguments):
     return result.returncode
 
 
+def verify_slice_wiring(arguments):
+    from .native_structural import enabled, wiring
+    # Let the bundled parser own the complete legacy CLI, including help and
+    # validation errors. Only a positively identified native project adapts.
+    probe = argparse.ArgumentParser(add_help=False)
+    probe.add_argument('--project-root', type=Path)
+    identity, _ = probe.parse_known_args(arguments)
+    if identity.project_root is None or not enabled(identity.project_root):
+        result = original('arkts-structural-closure', 'verify_slice_wiring.py', arguments)
+        sys.stdout.write(result.stdout)
+        sys.stderr.write(result.stderr)
+        return result.returncode
+    parser = argparse.ArgumentParser(description='Native indexed wiring with original C1/C3/C4 detectors')
+    parser.add_argument('--project-root', type=Path, required=True)
+    parser.add_argument('--slice', dest='slice_number', type=int, required=True)
+    parser.add_argument('--feature-plan', type=Path)
+    parser.add_argument('--output-json', type=Path)
+    args = parser.parse_args(arguments)
+    import tempfile
+    try:
+        with tempfile.TemporaryDirectory(prefix='native-wiring-') as directory:
+            report = wiring(args.project_root.resolve(), args.slice_number,
+                            args.output_json or Path(directory) / 'wiring.json', original,
+                            feature_plan=args.feature_plan)
+    except (ValueError, KeyError, OSError) as exc:
+        if args.output_json:
+            from .core import write_json
+            write_json(args.output_json, {'status': 'failed', 'overall': 'BLOCKED', 'error': str(exc)})
+        raise
+    if not args.output_json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0 if report['overall'] == 'PASS' else 1
+
+
 def main(arguments=None):
     arguments = list(sys.argv[1:] if arguments is None else arguments)
     try:
@@ -106,6 +150,8 @@ def main(arguments=None):
             return feature_inputs(arguments)
         if operation == 'structural-loop':
             return structural_loop(arguments)
+        if operation == 'verify-slice-wiring':
+            return verify_slice_wiring(arguments)
         if operation == 'icon-audit':
             parser = argparse.ArgumentParser(description='Read-only native image constraints check')
             parser.add_argument('--project-root', type=Path, required=True)
