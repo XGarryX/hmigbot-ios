@@ -10,6 +10,7 @@ import argparse
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -18,8 +19,8 @@ import tempfile
 import uuid
 
 from .behavior import _target_tokens, _target_pairs
-from .core import read_json, safe_child, write_json
-from .native_structural_evidence import EvidenceIndex, IDENT, _one
+from .core import read_json, safe_child, write_json, io_path
+from .native_structural_evidence import EvidenceIndex, IDENT, _one, product_source_roots
 
 SAFE_AREA_REFERENCE = ('https://raw.githubusercontent.com/openharmony/docs/'
     'OpenHarmony-6.0-Release/zh-cn/application-dev/reference/apis-arkui/'
@@ -813,6 +814,113 @@ DETECTORS = frozenset({'assembly', 'audit', 'binding', 'carrier', 'deadshell', '
     'icon', 'immersive', 'ledger', 'literal', 'orphans', 'resname', 'theme'})
 
 
+def _outside_main_ets(project, roots, relative):
+    """Prove an actual unaliased ETS is outside every configured main root."""
+    if not isinstance(relative, str) or not relative or '\x00' in relative:
+        raise ValueError('Scope finding has an unknown source path')
+    spelling = relative.replace('\\', '/')
+    parts = spelling.split('/')
+    path = Path(spelling)
+    if ('..' in parts or any(':' in part and not (
+            position == 0 and path.is_absolute() and re.fullmatch(r'[A-Za-z]:', part))
+            for position, part in enumerate(parts))):
+        raise ValueError('Scope finding path contains traversal or an ambiguous stream')
+    lexical = io_path(path if path.is_absolute() else project / path)
+    if not lexical.is_absolute() or not lexical.is_relative_to(project):
+        raise ValueError('Scope finding path escapes the project')
+    resolved = lexical.resolve()
+    # A source-root spelling cannot be scoped away through an alias, and an
+    # outside alias resolving into the source root remains a real source item.
+    if any(lexical.is_relative_to(root) or resolved.is_relative_to(root) for root in roots):
+        return None
+    if not resolved.is_relative_to(project) or not lexical.is_file():
+        raise ValueError('Scope finding has no project-owned real source file')
+    if lexical.suffix != '.ets':
+        return None  # Resource/other detector domains retain their own findings.
+    for part in (lexical, *lexical.parents):
+        if part == project:
+            break
+        if part.is_symlink() or (hasattr(part, 'is_junction') and part.is_junction()):
+            raise ValueError('Scope finding uses an ambiguous linked source path')
+    if (os.path.normcase(str(lexical)) != os.path.normcase(str(resolved))
+            or lexical.stat().st_nlink != 1):
+        raise ValueError('Scope finding has an ambiguous aliased source identity')
+    return {'kind': 'outside_configured_main_ets', 'file': relative,
+            'resolved_relative': resolved.relative_to(project).as_posix(),
+            'file_sha256': hashlib.sha256(resolved.read_bytes()).hexdigest(),
+            'source_roots': [root.relative_to(project).as_posix() for root in roots],
+            'reason': 'Both lexical and real source paths are outside every declared module main ETS root.'}
+
+
+def source_scope_reports(project, audit, orphans):
+    """Partition only proved outside-source audit/orphan rows; retain raw data."""
+    project = Path(project).resolve()
+    roots = product_source_roots(project)
+    effective_audit, effective_orphans = copy.deepcopy(audit), copy.deepcopy(orphans)
+    audit_rows, orphan_rows = audit.get('findings'), orphans.get('orphans')
+    if not isinstance(audit_rows, list) or not isinstance(orphan_rows, list):
+        raise ValueError('Malformed original source-scope report')
+    if any(not isinstance(row, dict) for row in audit_rows + orphan_rows):
+        raise ValueError('Malformed original source-scope finding')
+    summary = audit.get('summary')
+    if not isinstance(summary, dict) or type(orphans.get('orphan_count')) is not int:
+        raise ValueError('Original source-scope counts are missing')
+    if orphans['orphan_count'] != len(orphan_rows):
+        raise ValueError('Original orphan count does not match its findings')
+    for key in ('FAIL', 'WARN'):
+        if type(summary.get(key)) is not int or summary[key] != sum(
+                row.get('severity_at_scope') == key for row in audit_rows):
+            raise ValueError('Original audit severity counts differ from its findings')
+    for level in ('L1', 'L2', 'L3', 'L4', 'L5'):
+        if level in summary and (type(summary[level]) is not int or summary[level] != sum(
+                row.get('level') == level for row in audit_rows)):
+            raise ValueError('Original audit level counts differ from its findings')
+    def component(row):
+        # Match the original graph's documented UI path hints. This is only
+        # count reconciliation; no directory name grants a scope exemption.
+        if not isinstance(row.get('file'), str):
+            raise ValueError('Original orphan has an unknown source path')
+        parts = row['file'].replace('\\', '/').split('/')[:-1]
+        return any(part in {'components', 'views', 'widgets', 'dialogs', 'dialog'} for part in parts)
+    if 'component_orphan_count' in orphans and (
+            type(orphans['component_orphan_count']) is not int
+            or orphans['component_orphan_count'] != sum(component(row) for row in orphan_rows)):
+        raise ValueError('Original component orphan count differs from its findings')
+    audit_keep, orphan_keep, audit_scope, orphan_scope = [], [], [], []
+    for row in audit_rows:
+        if not isinstance(row, dict):
+            raise ValueError('Malformed original audit finding')
+        proof = _outside_main_ets(project, roots, row.get('file'))
+        if (proof and row.get('severity_at_scope') in {'FAIL', 'WARN'}
+                and row.get('level') in {'L1', 'L2', 'L3', 'L4', 'L5'}
+                and type(row.get('line')) is int and row['line'] > 0
+                and isinstance(row.get('subtype'), str)):
+            audit_scope.append({'original_finding': copy.deepcopy(row), **proof})
+        else:
+            audit_keep.append(row)
+    for row in orphan_rows:
+        if not isinstance(row, dict):
+            raise ValueError('Malformed original orphan finding')
+        proof = _outside_main_ets(project, roots, row.get('file'))
+        if proof and isinstance(row.get('class_name'), str) and isinstance(row.get('reason'), str):
+            orphan_scope.append({'original_finding': copy.deepcopy(row), **proof})
+        else:
+            orphan_keep.append(row)
+    effective_audit.update(original_report=copy.deepcopy(audit), findings=audit_keep,
+                           native_scope_dispositions=audit_scope)
+    effective_audit['summary'] = {**summary,
+        'FAIL': sum(row.get('severity_at_scope') == 'FAIL' for row in audit_keep),
+        'WARN': sum(row.get('severity_at_scope') == 'WARN' for row in audit_keep)}
+    for level in ('L1', 'L2', 'L3', 'L4', 'L5'):
+        if level in summary:
+            effective_audit['summary'][level] = sum(row.get('level') == level for row in audit_keep)
+    effective_orphans.update(original_report=copy.deepcopy(orphans), orphans=orphan_keep,
+        orphan_count=len(orphan_keep), native_scope_dispositions=orphan_scope)
+    if 'component_orphan_count' in orphans:
+        effective_orphans['component_orphan_count'] = sum(component(row) for row in orphan_keep)
+    return effective_audit, effective_orphans
+
+
 def _inputs_snapshot(project):
     """Bind proofs and all original detectors to one stable declared product."""
     index = EvidenceIndex(project)
@@ -893,13 +1001,19 @@ def pipeline_iterate(arguments, run_raw):
     raw_files = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                  for p in raw_directory.iterdir() if p.is_file()}
     effective = copy.deepcopy(reports)
-    effective['orphans'] = adapt_orphans(project, reports['orphans'])
+    effective['audit'], scoped_orphans = source_scope_reports(project, reports['audit'], reports['orphans'])
+    effective['orphans'] = adapt_orphans(project, scoped_orphans)
     effective['immersive'] = safearea_report(project, reports['immersive'])
     # Assembly may already be adapted by its real staged subprocess shim.
     if not reports['assembly'].get('native_dispositions'):
         effective['assembly'] = adapt_assembly(project, reports['assembly'])
-    resolved = []
-    for disposition in effective['orphans']['native_dispositions']:
+    resolved, audit_resolved = [], []
+    for disposition in effective['audit']['native_scope_dispositions']:
+        item = disposition['original_finding']
+        if item['severity_at_scope'] == 'FAIL':
+            audit_resolved.append([item['file'], item['line'], item['subtype']])
+    for disposition in (effective['orphans']['native_dispositions']
+                        + effective['orphans']['native_scope_dispositions']):
         item = disposition['original_finding']
         resolved.append([item['file'], 0, 'pipeline-orphan:' + item['class_name'] + ':' + item['reason']])
     if not reports['immersive'].get('passed') and effective['immersive'].get('passed'):
@@ -909,14 +1023,26 @@ def pipeline_iterate(arguments, run_raw):
             item = disposition['original_finding']
             resolved.append([item['file'], 0, 'assembly:' + item['kind'] + ':' + item.get('class', '-')])
     fingerprint = copy.deepcopy(current.get('fingerprint', []))
-    for row in resolved:
+    for row in audit_resolved + resolved:
         if fingerprint.count(row) != 1:
             raise ValueError('Native disposition does not match exactly one original fingerprint: ' + str(row))
         fingerprint.remove(row)
     actions = current.get('wiring_repair_actions')
     if not isinstance(actions, int) or actions < len(resolved):
         raise ValueError('Original pipeline finding count differs from exact native dispositions')
-    current.update(iter=iteration, wiring_repair_actions=actions - len(resolved), fingerprint=fingerprint)
+    if (type(current.get('audit_fail')) is not int
+            or current['audit_fail'] != reports['audit']['summary']['FAIL']
+            or type(current.get('audit_warn')) is not int
+            or current['audit_warn'] != reports['audit']['summary']['WARN']):
+        raise ValueError('Original pipeline audit counts differ from original audit findings')
+    current.update(iter=iteration, wiring_repair_actions=actions - len(resolved), fingerprint=fingerprint,
+        audit_fail=effective['audit']['summary']['FAIL'], audit_warn=effective['audit']['summary']['WARN'])
+    scope_dispositions = (effective['audit']['native_scope_dispositions']
+                          + effective['orphans']['native_scope_dispositions'])
+    scope_hashes = {row['resolved_relative']: row['file_sha256'] for row in scope_dispositions}
+    if any(hashlib.sha256(io_path(project / path).read_bytes()).hexdigest() != digest
+           for path, digest in scope_hashes.items()):
+        raise ValueError('Scoped-out source bytes changed during native pipeline detection')
     after = _inputs_snapshot(project)
     if before != after:
         raise ValueError('Product or frozen source inputs changed during native pipeline detection')
@@ -944,7 +1070,10 @@ def pipeline_iterate(arguments, run_raw):
         output_paths[detector] = str(destination)
     audit = {'schema_version': 'native-pipeline-dispositions/1', 'iteration': iteration,
         'raw_state': str(raw_state), 'raw_output': str(raw_output), 'raw_files_sha256': raw_files,
-        'raw_verdict': raw_result.get('verdict'), 'resolved_fingerprints': resolved,
+        'raw_verdict': raw_result.get('verdict'), 'resolved_fingerprints': audit_resolved + resolved,
+        'scope_disposition_files_sha256': scope_hashes,
+        'original_audit_fail': reports['audit']['summary']['FAIL'],
+        'effective_audit_fail': current['audit_fail'],
         'original_finding_count': actions, 'effective_finding_count': current['wiring_repair_actions'],
         'source_inputs_sha256': after, 'original_runner_verdict': verdict,
         'source_visual_unverified': True, 'all_original_detectors_executed': sorted(DETECTORS)}

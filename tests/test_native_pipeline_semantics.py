@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -12,7 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 from hmigbot_ios.native_pipeline_semantics import (
     adapt_assembly, adapt_orphans, assembly_binding, form_surfaces,
-    safearea_report, source_bounded_image, static_resource_use, pipeline_iterate, stage_runtime)
+    safearea_report, source_bounded_image, static_resource_use, pipeline_iterate, stage_runtime,
+    source_scope_reports)
 from hmigbot_ios.native_structural_evidence import EvidenceIndex
 
 
@@ -345,12 +347,86 @@ export struct Editor {
         return subprocess.CompletedProcess(result.args, result.returncode,
             result.stdout.decode('utf8', 'replace'), result.stderr.decode('utf8', 'replace'))
 
+    def scope_noise(self):
+        relatives = [
+            'arkts-network-troubleshoot/references/templates/code/platform-info.ets',
+            *['arkts-structural-closure/scripts/tests/fixtures/c16_component_orphans/entry/src/main/ets/' + name
+              for name in ('services/DeadService.ets', 'components/OrphanCard.ets', 'dialogs/PrivacyPolicyDialog.ets')]]
+        paths = []
+        for relative in relatives:
+            path = self.project / '.hmigbot-ios/plugin/vendor/hmigbot/skills' / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((ROOT / 'vendor/hmigbot/skills' / relative).read_bytes())
+            paths.append(path.relative_to(self.project).as_posix())
+        return paths
+
+    def scope_reports(self, audit_files, orphan_files):
+        audit = {'findings': [{'file': path, 'line': 97, 'subtype': 'naked-TODO',
+            'level': 'L3', 'severity_at_scope': 'FAIL'} for path in audit_files],
+            'summary': {'FAIL': len(audit_files), 'WARN': 0, 'L3': len(audit_files)},
+            'handoff_escape_hatches': []}
+        orphans = {'orphans': [{'file': path, 'class_name': Path(path).stem, 'reason': 'NO_IMPORTER'}
+            for path in orphan_files], 'orphan_count': len(orphan_files),
+            'component_orphan_count': sum(any(part in {'components', 'dialogs'} for part in Path(path).parts)
+                for path in orphan_files)}
+        return audit, orphans
+
+    def test_real_runtime_fixture_scope_partitions_counts_without_changing_raw_bytes(self):
+        paths = self.scope_noise()
+        audit, orphans = self.scope_reports(paths[:1], paths[1:])
+        before = self.snapshot()
+        effective_audit, effective_orphans = source_scope_reports(self.project, audit, orphans)
+        self.assertEqual(effective_audit['original_report'], audit)
+        self.assertEqual(effective_orphans['original_report'], orphans)
+        self.assertEqual(effective_audit['summary'], {'FAIL': 0, 'WARN': 0, 'L3': 0})
+        self.assertEqual(effective_orphans['orphan_count'], 0)
+        self.assertEqual(effective_orphans['component_orphan_count'], 0)
+        for row in effective_audit['native_scope_dispositions'] + effective_orphans['native_scope_dispositions']:
+            self.assertEqual(row['file_sha256'], hashlib.sha256((self.project / row['resolved_relative']).read_bytes()).hexdigest())
+        self.assertEqual(before, self.snapshot())
+
+    def test_main_source_todo_and_orphan_are_retained_even_in_hidden_subdirectories(self):
+        self.code('.embedded/ActualRules.ets', '// TODO implement actual business\nexport class ActualRules {}\n')
+        self.code('store/ActualStore.ets', 'export class ActualStore { value: number = 1; }\n')
+        paths = ['entry/src/main/ets/.embedded/ActualRules.ets', 'entry/src/main/ets/store/ActualStore.ets']
+        audit, orphans = self.scope_reports(paths[:1], paths[1:])
+        ea, eo = source_scope_reports(self.project, audit, orphans)
+        self.assertEqual(ea['summary']['FAIL'], 1)
+        self.assertEqual(eo['orphan_count'], 1)
+        self.assertEqual(ea['native_scope_dispositions'], [])
+        self.assertEqual(eo['native_scope_dispositions'], [])
+
+    def test_scope_unknown_paths_aliases_traversal_and_count_mismatch_fail_closed(self):
+        paths = self.scope_noise()
+        for unknown in ('missing.ets', '../outside.ets', 'tools/../' + paths[0], 'file:alternate.ets', ''):
+            with self.subTest(unknown=unknown):
+                audit, orphans = self.scope_reports([unknown], [])
+                with self.assertRaises(ValueError):
+                    source_scope_reports(self.project, audit, orphans)
+        audit, orphans = self.scope_reports(paths[:1], paths[1:])
+        for field in ('FAIL', 'L3'):
+            wrong = copy.deepcopy(audit)
+            wrong['summary'][field] += 1
+            with self.assertRaises(ValueError):
+                source_scope_reports(self.project, wrong, orphans)
+        wrong = copy.deepcopy(orphans)
+        wrong['component_orphan_count'] += 1
+        with self.assertRaises(ValueError):
+            source_scope_reports(self.project, audit, wrong)
+        alias = self.project / 'tools/aliased-main.ets'
+        alias.parent.mkdir()
+        os.link(self.ets / 'Host.ets', alias)
+        audit, orphans = self.scope_reports(['tools/aliased-main.ets'], [])
+        with self.assertRaises(ValueError):
+            source_scope_reports(self.project, audit, orphans)
+
     def test_actual_original_13_detectors_then_original_runner_and_finalize(self):
         self.background()
         shared = self.ets / 'components/Shared.ets'
         shared.write_text(shared.read_text(encoding='utf8') + self.shared[:self.shared.index('@ComponentV2\nexport struct UnusedCard')], encoding='utf8')
         self.code('pages/Root.ets', "import { Background, Action } from '../components/Shared';\n@Entry\n@ComponentV2\nstruct Root { build() { Background() { Action(); } } }")
         self.write('spec/baseline/plans/feature-plan.md', '# Feature Plan\n')
+        self.scope_noise()
         before = self.snapshot()
         state, output = self.project / 'spec/execution/native-loop.json', self.project / 'result.json'
         arguments = ['iterate', '--project-root', str(self.project), '--mode', 'pipeline',
@@ -363,6 +439,8 @@ export struct Editor {
         self.assertEqual(len(audit['all_original_detectors_executed']), 13)
         self.assertEqual(audit['raw_verdict'], 'CONTINUE')
         self.assertGreaterEqual(len(audit['resolved_fingerprints']), 1)
+        self.assertEqual(len(audit['scope_disposition_files_sha256']), 4)
+        self.assertEqual((audit['original_audit_fail'], audit['effective_audit_fail']), (1, 0))
         for name, sha in audit['raw_files_sha256'].items():
             self.assertEqual(hashlib.sha256((Path(audit['raw_state']).parent / name).read_bytes()).hexdigest(), sha)
         final = self.raw_pipeline(['finalize', '--state-file', str(state), '--output-json', str(self.project / 'final.json')])
@@ -376,6 +454,9 @@ export struct Editor {
         shared = self.ets / 'components/Shared.ets'
         shared.write_text(shared.read_text(encoding='utf8') + '\n@ComponentV2\nexport struct GenuineGap { build() { Text("unrendered"); } }\n', encoding='utf8')
         self.write('spec/baseline/plans/feature-plan.md', '# Feature Plan\n')
+        self.scope_noise()
+        self.code('core/ActualRules.ets', '// TODO implement actual business\nexport class ActualRules { value: number = 1; }\n')
+        self.code('store/ActualStore.ets', 'export class ActualStore { value: number = 1; read(): number { return this.value; } }\n')
         state, output = self.project / 'spec/execution/native-loop.json', self.project / 'result.json'
         result = pipeline_iterate(['iterate', '--project-root', str(self.project), '--mode', 'pipeline',
             '--target', 'final', '--state-file', str(state), '--output-json', str(output), '--max-iter', '3'], self.raw_pipeline)
@@ -383,6 +464,15 @@ export struct Editor {
         self.assertEqual(json.loads(output.read_text(encoding='utf8'))['verdict'], 'CONTINUE')
         remaining = json.loads((state.parent / 'orphans-pipeline-iter0.json').read_text(encoding='utf8'))
         self.assertIn('GenuineGap', [f['class_name'] for f in remaining['orphans']])
+        self.assertIn('ActualStore', [f['class_name'] for f in remaining['orphans']])
+        audit = json.loads((state.parent / 'audit-pipeline-iter0.json').read_text(encoding='utf8'))
+        main_raw = [row for row in audit['original_report']['findings']
+                    if row['file'].replace('\\', '/').startswith('entry/src/main/ets/')]
+        self.assertEqual(audit['findings'], main_raw)
+        self.assertEqual(audit['summary']['FAIL'], sum(row['severity_at_scope'] == 'FAIL' for row in main_raw))
+        self.assertTrue(any(row['subtype'] == 'naked-TODO' for row in audit['findings']))
+        self.assertTrue(all(row['file'].replace('\\', '/').startswith('entry/src/main/ets/')
+                            for row in audit['findings']))
         final = self.raw_pipeline(['finalize', '--state-file', str(state), '--output-json', str(self.project / 'final.json')])
         self.assertNotEqual(final.returncode, 0, final.stderr + final.stdout)
 
