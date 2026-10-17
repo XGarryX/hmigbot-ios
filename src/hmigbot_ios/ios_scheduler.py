@@ -14,7 +14,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from .core import MigrationError, atomic_write, digest, json_bytes, read_json, safe_child, snapshot, write_json
+from .core import MigrationError, atomic_write, digest, io_path, json_bytes, read_json, safe_child, snapshot, write_json
 from .ios_facts import validate_graph
 from .ios_harness import ac_inventory, check
 from .harness_schema import validate
@@ -246,6 +246,16 @@ def _runtime_directory(project, program, *, windows, cleanup_reports=None):
 def invoke(project, program, args):
     env = {**os.environ, 'PYTHONUTF8': '1', 'ARKTS_SKILL_DIR': str(UPSTREAM.parent)}
     windows, cleanup_reports = os.name == 'nt', []
+    if windows:
+        project = io_path(project)
+        args = list(args)
+        # The frozen kernel derives its project root from these input paths.
+        # Supply the filesystem spelling explicitly: Path(custom_path) inside
+        # the original code would otherwise discard the I/O-aware subclass.
+        for index, flag in enumerate(args[:-1]):
+            if flag in {'--plan', '--state'}:
+                path = Path(args[index + 1])
+                args[index + 1] = os.fspath(io_path(path if path.is_absolute() else project / path))
     try:
         # Frozen upstream sys.executable points at a non-shipped python.exe beside
         # its binary on Windows. Stage unchanged payload plus the host interpreter;
@@ -532,7 +542,7 @@ def step(project, wave, *, landing=False):
         # source bytes at this trusted call boundary, not arbitrary future
         # files under a directory that happens to be named fence-snapshot.
         expected_fence = {prefix + path: digest(safe_child(project, path).read_bytes())
-                          for path in kernel()._scope_files(project)}
+                          for path in kernel()._scope_files(os.fspath(io_path(project)))}
         action = invoke(project, 'next_batch', ['--plan', str(plan_path), '--state', 'spec/state/state.json', '--json'])
         if action.get('action') == 'dispatch':
             generated_fence = _fence_files(project)

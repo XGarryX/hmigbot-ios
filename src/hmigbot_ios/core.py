@@ -21,6 +21,40 @@ class MigrationError(ValueError):
     pass
 
 
+class _WindowsIOPath(type(Path())):
+    """Keep normal path identity while using extended-length Windows IO addresses."""
+
+    def __fspath__(self):
+        value = os.path.abspath(str(self))
+        if value.startswith("\\\\?\\"):
+            return value
+        if value.startswith("\\\\"):
+            return "\\\\?\\UNC\\" + value[2:]
+        return "\\\\?\\" + value
+
+    def resolve(self, strict=False):
+        return io_path(super().resolve(strict=strict))
+
+    def iterdir(self):
+        # Recent pathlib versions use str(self) here, bypassing __fspath__.
+        with os.scandir(self) as entries:
+            names = [entry.name for entry in entries]
+        for name in names:
+            yield self / name
+
+
+def io_path(path: Path) -> Path:
+    """Adapt filesystem IO on Windows without leaking prefixes into contract paths."""
+    if os.name != "nt":
+        return Path(path)
+    value = str(path)
+    if value.startswith("\\\\?\\UNC\\"):
+        value = "\\\\" + value[8:]
+    elif value.startswith("\\\\?\\"):
+        value = value[4:]
+    return _WindowsIOPath(value)
+
+
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -30,6 +64,7 @@ def json_bytes(value) -> bytes:
 
 
 def read_json(path: Path):
+    path = io_path(path)
     def unique(pairs):
         result = {}
         for key, value in pairs:
@@ -50,9 +85,10 @@ def write_json(path: Path, value):
 
 
 def atomic_write(path: Path, data: bytes):
+    path = io_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
-        temp = Path(stream.name)
+        temp = io_path(Path(stream.name))
         stream.write(data)
     try:
         os.replace(temp, path)
@@ -69,14 +105,15 @@ def safe_child(root: Path, relative: str) -> Path:
     reserved = {"con", "prn", "aux", "nul"} | {f"{prefix}{i}" for prefix in ("com", "lpt") for i in range(1, 10)}
     if relative != PurePosixPath(relative).as_posix() or any(p.endswith((" ", ".")) or p.split(".")[0].lower() in reserved for p in parts):
         raise MigrationError(f"Non-portable relative path: {relative}")
+    root = io_path(root).resolve()
     child = root.joinpath(*parts).resolve()
-    if not child.is_relative_to(root.resolve()) or child == root.resolve():
+    if not child.is_relative_to(root) or child == root:
         raise MigrationError(f"Path escapes root: {relative}")
     return child
 
 
 def source_files(root: Path):
-    root = root.resolve()
+    root = io_path(root).resolve()
     if not root.is_dir():
         raise MigrationError(f"Source directory does not exist: {root}")
     # Every non-generated file contributes to the fingerprint, including assets,
@@ -85,18 +122,19 @@ def source_files(root: Path):
     for parent, dirs, names in os.walk(root, followlinks=False):
         dirs[:] = sorted(d for d in dirs if d not in EXCLUDED)
         for name in dirs + names:
-            item = Path(parent) / name
+            item = io_path(Path(parent) / name)
             if item.is_symlink() or (hasattr(item, "is_junction") and item.is_junction()):
                 raise MigrationError(f"Source links require an explicit materialized copy: {item}")
         for name in sorted(names):
             if name.startswith("._") or name == ".DS_Store":
                 continue
-            result.append(Path(parent) / name)
+            result.append(io_path(Path(parent) / name))
     return sorted(result, key=lambda p: p.relative_to(root).as_posix())
 
 
 def snapshot(root: Path):
-    entries = [{"path": p.relative_to(root.resolve()).as_posix(),
+    root = io_path(root).resolve()
+    entries = [{"path": p.relative_to(root).as_posix(),
                 "sha256": digest(p.read_bytes()), "bytes": p.stat().st_size}
                for p in source_files(root)]
     return {"algorithm": "sha256", "excluded_directories": sorted(EXCLUDED),
@@ -155,6 +193,7 @@ def load_config(path: Path):
 
 def write_new_tree(output: Path, files: dict[str, bytes]):
     """Publish only into an absent or empty directory; never overwrite user work."""
+    output = io_path(output)
     import stat
 
     def output_present():
@@ -176,7 +215,7 @@ def write_new_tree(output: Path, files: dict[str, bytes]):
     output.parent.mkdir(parents=True, exist_ok=True)
     import shutil
     import time
-    temp = Path(tempfile.mkdtemp(prefix=".hmigbot-ios-", dir=output.parent))
+    temp = io_path(Path(tempfile.mkdtemp(prefix=".hmigbot-ios-", dir=output.parent)))
     publication_failure = None
     try:
         for name, data in files.items():
