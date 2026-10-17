@@ -45,9 +45,69 @@ def baseline_inputs(project, wave):
     return inputs
 
 
+def _execution_evidence(path):
+    """Named generator outputs are not task-owned product files.
+
+    Keep this adapter-local: source fingerprints must still include source
+    files with these names. Never ignore an entire work/spec/config tree, and
+    never permit product .ets, resource directories or arbitrary JSON here.
+    Support programs have a separate, explicitly named workspace.
+    """
+    exact = {
+        'build_out.log', 'build_temp.bat', 'spec/migration-report.md',
+        'spec/placeholder-registry.md', 'spec/execution/base-contracts.md',
+        'spec/execution/capability-manifest.json',
+        'spec/reports/product-literals.json', 'spec/reports/visual-verify-report.md',
+        'spec/.a2h/open-findings.json', 'spec/.a2h/impl-claims.json',
+        'spec/baseline/verification.json', 'spec/baseline/impl-claims.json',
+        'spec/baseline/ios-source-check.json', 'spec/baseline/plans/resource-mapping.md',
+    }
+    if path in exact:
+        return True
+    patterns = (
+        r'spec/state/(?:state|dispatch|journal)\.json',
+        r'spec/waves/plan-(?:understand|domains)\.json',
+        r'spec/waves/wave-(?:understand|domains)\.result\.json',
+        r'spec/waves/prompts/(?:understand|domains)/[a-z0-9_-]+\.txt',
+        r'spec/waves/results/(?:understand|domains)/[a-z0-9_-]+\.json',
+        r'spec/reports/(?:ios-|spec-|migration-)[a-z0-9_-]+\.(?:json|md)',
+        r'spec/reports/scheduler/[a-z_]+\.(?:(?:stdout|stderr)\.log|failure\.json)',
+        r'spec/reports/static-runtime/land-[a-z0-9_-]+\.json',
+        r'spec/reports/derived/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:json|md)',
+        r'spec/reports/behavior/[A-Za-z0-9_-]+/(?:stdout|stderr)\.log',
+        r'spec/reports/host-oracle/(?:support/)?[A-Za-z0-9_.-]+\.(?:py|mjs|js|json|log|md)',
+        r'spec/pipeline-run-\d{8}\.md',
+        r'spec/execution/briefs/[A-Za-z0-9_-]+\.md',
+        r'spec/execution/writeback/writeback-(?:(?:batch|group)-\d+|base-\d+(?:[._]\d+)?|final)\.json',
+        r'spec/execution/source-understanding/[A-Za-z0-9_-]+-source-notes\.md',
+        r'spec/execution/theme-receipts/page_\d{4}\.json',
+        r'spec/execution/autofix-log/round-\d+/(?:loop-state|loop-result-latest|loops|audit|wiring|orphans|immersive|icon|ledger|assembly|binding|capability|theme|literal|deadshell|carrier|hittest|resname|native-images|memory)[A-Za-z0-9_.-]*\.(?:json|log|md)',
+        r'work/pipeline-\d{8}/run\.py',
+        r'work/pipeline-\d{8}/support/[A-Za-z0-9_.-]+\.(?:py|mjs|js|ps1|sh|md|txt|log)',
+        r'work/pipeline-\d{8}/support/states/[A-Za-z0-9_.-]+\.json',
+        r'work/pipeline-\d{8}/calls/\d{8}T\d{12}-[0-9a-f]{6}(?:\.json|\.(?:stdout|stderr)\.log)',
+    )
+    return any(re.fullmatch(pattern, path) for pattern in patterns)
+
+
 def execution_files(project):
-    excluded = ('spec/state/', 'spec/reports/', 'spec/waves/')
-    return {f['path']: f['sha256'] for f in snapshot(project)['files'] if not f['path'].startswith(excluded)}
+    from .plan_contract import profile, structural_digest
+    project = Path(project)
+    projected = {'spec/baseline/ui-manifest.md', 'spec/baseline/feature-index.md'} if profile(project) >= 2 else set()
+    files = {}
+    for entry in snapshot(project)['files']:
+        path = entry['path']
+        if _execution_evidence(path):
+            continue
+        files[path] = (structural_digest(safe_child(project, path).read_text(encoding='utf-8-sig'), artifact=path)
+                       if path in projected else entry['sha256'])
+    return files
+
+
+def _fence_files(project):
+    prefix = 'spec/state/fence-snapshot/'
+    return {entry['path']: entry['sha256'] for entry in snapshot(project)['files']
+            if entry['path'].startswith(prefix)}
 
 
 def kernel():
@@ -309,16 +369,37 @@ def step(project, wave, *, landing=False):
         action = invoke(project, 'land_results', ['--plan', str(plan_path), '--state', 'spec/state/state.json', '--json'])
     else:
         before = execution_files(project)
+        evidence_path = project / f'spec/reports/ios-dispatch-{wave}.json'
+        prior = read_json(evidence_path) if evidence_path.exists() else None
+        if prior and prior.get('plan_sha256') != digest(plan_path.read_bytes()):
+            prior = None
+        prefix = 'spec/state/fence-snapshot/'
+        previous_fence = _fence_files(project)
+        if prior:
+            pinned_fence = {p: value for p, value in prior['before_files'].items() if p.startswith(prefix)}
+            if pinned_fence != previous_fence:
+                raise MigrationError('Dispatch changed files outside ownership: original fence snapshot changed')
+        # The original next_batch creates these backup copies before workers
+        # start. Pin only actual copies matching its original scope and the
+        # source bytes at this trusted call boundary, not arbitrary future
+        # files under a directory that happens to be named fence-snapshot.
+        expected_fence = {prefix + path: digest(safe_child(project, path).read_bytes())
+                          for path in kernel()._scope_files(project)}
         action = invoke(project, 'next_batch', ['--plan', str(plan_path), '--state', 'spec/state/state.json', '--json'])
         if action.get('action') == 'dispatch':
-            evidence_path = project / f'spec/reports/ios-dispatch-{wave}.json'
-            prior = read_json(evidence_path) if evidence_path.exists() else None
+            generated_fence = _fence_files(project)
+            if any(path != prefix + '.manifest.json'
+                   and value not in (expected_fence.get(path), previous_fence.get(path))
+                   for path, value in generated_fence.items()):
+                raise MigrationError('Original dispatch fence copy does not match its source snapshot')
             # Preserve earlier batch baseline so in-flight writes stay attributable.
-            if prior and prior.get('plan_sha256') == digest(plan_path.read_bytes()):
+            if prior:
                 before = prior['before_files']
                 task_ids = list(dict.fromkeys(prior['task_ids'] + [b['id'] for b in action['batch']]))
             else:
                 task_ids = [b['id'] for b in action['batch']]
+            before = {p: value for p, value in before.items() if not p.startswith(prefix)}
+            before.update(generated_fence)
             write_json(evidence_path, {'plan_sha256': digest(plan_path.read_bytes()), 'before_files': before, 'task_ids': task_ids})
     action['ios_scope'] = 'task generation only; compile and behavior gates remain separate'
     action['behavior_verified'] = False
@@ -350,7 +431,8 @@ def replan(project, input_path):
     archive.mkdir(parents=True)
     moved = []
     try:
-        for relative in ('spec/state', 'spec/blueprint', 'spec/waves'):
+        for relative in ('spec/state', 'spec/blueprint', 'spec/waves',
+                         'spec/reports/ios-dispatch-understand.json', 'spec/reports/ios-dispatch-domains.json'):
             origin = safe_child(project, relative)
             if origin.exists():
                 destination = safe_child(archive, relative)

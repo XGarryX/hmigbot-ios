@@ -45,6 +45,27 @@ def assert_pinned(project, contract):
         raise MigrationError('Frozen tool contract revision changed; review and explicitly replan')
 
 
+def _core_index_tables(text, artifact):
+    """Select the catalog index table, not other tables reusing its IDs."""
+    from .artifact_contract import catalog, markdown_sections, markdown_tables
+    declarations = [section for entry in catalog()['spec'] if entry.get('path') == artifact
+                    for section in entry.get('sections', []) if section.get('progress')]
+    headings, tables = markdown_sections(text), markdown_tables(text)
+    selected = []
+    for section in declarations:
+        matches = []
+        for table in tables:
+            prior = [heading for heading in headings if heading['line'] < table['line']]
+            if (table['headers'] == section['headers'] and prior
+                    and prior[-1]['title'] == section['title']):
+                matches.append(table)
+        if len(matches) > 1:
+            raise MigrationError('Core index progress table must be unique: ' + str(artifact))
+        if matches:
+            selected.append((section, matches[0]))
+    return selected
+
+
 def structural_digest(text, *, artifact=None):
     """Project only the catalog's core index progress cells, never business state.
 
@@ -67,23 +88,7 @@ def structural_digest(text, *, artifact=None):
                 raise MigrationError('Managed progress only permits defined count/axis state lines')
         text = text[:text.index(begin)] + begin + '\n' + end + text[text.index(end) + len(end):]
     lines = text.splitlines()
-    from .artifact_contract import catalog, markdown_sections, markdown_tables
-    declarations = [section for entry in catalog()['spec'] if entry.get('path') == artifact
-                    for section in entry.get('sections', []) if section.get('progress')]
-    headings = markdown_sections(text)
-    tables = markdown_tables(text)
-    for section in declarations:
-        matches = []
-        for table in tables:
-            prior = [heading for heading in headings if heading['line'] < table['line']]
-            if (table['headers'] == section['headers'] and prior
-                    and prior[-1]['title'] == section['title']):
-                matches.append(table)
-        if len(matches) > 1:
-            raise MigrationError('Core index progress table must be unique: ' + str(artifact))
-        if not matches:
-            continue
-        table = matches[0]
+    for section, table in _core_index_tables(text, artifact):
         progress = section['progress']
         id_column = table['headers'].index(progress['id_column'])
         columns = [table['headers'].index(name) for name in progress['columns']]
@@ -239,23 +244,40 @@ def _inventory(project):
     return features, pages
 
 
-def _table_rows(path):
+def _table_rows(path, *, artifact):
     rows = []
-    for table in _tables(path.read_text(encoding='utf-8-sig')):
+    tables = _core_index_tables(path.read_text(encoding='utf-8-sig'), artifact)
+    if len(tables) != 1:
+        raise MigrationError('Missing catalog core index table: ' + artifact)
+    for _, table in tables:
         for row in table['rows']:
+            if len(row) != len(table['headers']):
+                raise MigrationError('Malformed catalog core index row: ' + artifact)
             rows.append(dict(zip(table['headers'], row)))
     return rows
 
 
 def _feature_rows(project):
     result = {}
-    for row in _table_rows(project / 'spec/baseline/feature-index.md'):
+    artifact = 'spec/baseline/feature-index.md'
+    for row in _table_rows(project / artifact, artifact=artifact):
         ident = row.get('ID', row.get('id', '')).strip('` ')
         if re.fullmatch(r'F\d+', ident) and row.get('状态', row.get('status', '')) not in {'skipped', 'excluded'}:
             if ident in result:
                 raise MigrationError('Duplicate active feature-index row: ' + ident)
             result[ident] = row
     return result
+
+
+def _manifest_target(project, row, page):
+    """The catalog cell is one .ets path, optionally followed by / Component."""
+    cell = row['ArkTS 目标文件/组件'].replace('`', '').strip()
+    match = re.fullmatch(r'(.+?\.ets)(?:[ \t]+/[ \t]+([A-Za-z_$][\w$]*))?', cell)
+    if not match or match[1].count('.ets') != 1:
+        raise MigrationError('UI manifest needs one unambiguous target file/component: ' + page)
+    path = match[1]
+    safe_child(project, path)
+    return path
 
 
 def _contract_dependencies(project, row):
@@ -414,7 +436,8 @@ def validate_plan(project, request):
             raise MigrationError('Plan dependency references unknown/excluded item: ' + ident)
         if ident.startswith(('UI:', 'SLICE:')) and not item['ac_ids']:
             raise MigrationError('Product UI/Slice items must bind acceptance criteria: ' + ident)
-    manifest = _table_rows(project / 'spec/baseline/ui-manifest.md')
+    artifact = 'spec/baseline/ui-manifest.md'
+    manifest = _table_rows(project / artifact, artifact=artifact)
     manifest_pages = set()
     for row in manifest:
         page = row.get('page_id', '').strip('` ')
@@ -426,8 +449,7 @@ def validate_plan(project, request):
             raise MigrationError('UI plan and manifest page scope/owner differ: ' + page)
         if not excluded:
             manifest_pages.add(page)
-            targets = [v.strip('` ') for k, v in row.items() if ('ArkTS' in k and '目标' in k) or k in {'target_path', '目标文件'}]
-            if not targets or any(target not in matches[0]['ownership'] for target in targets):
+            if _manifest_target(project, row, page) not in matches[0]['ownership']:
                 raise MigrationError('UI plan ownership differs from manifest target: ' + page)
     ui_pages = {page for ident, item in active.items() if ident.startswith('UI:') for page in item['page_ids']}
     if ui_pages != manifest_pages:
