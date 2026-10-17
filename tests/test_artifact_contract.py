@@ -282,7 +282,7 @@ class ArtifactContractTests(unittest.TestCase):
         self.assertEqual(check(self.project)[1], 0, check(self.project)[0])
 
     def test_shipped_templates_and_schema_examples_match_catalog(self):
-        from hmigbot_ios.artifact_contract import catalog, markdown_sections, markdown_tables, validate_json
+        from hmigbot_ios.artifact_contract import canonical_headers, catalog, markdown_sections, markdown_tables, validate_json
         templates = ROOT / 'skills/a2h-spec/templates'
         names = {'feature-base.md': 'feature-base-template.md', 'feature-index.md': 'feature-index-template.md',
                  'ui-manifest.md': 'ui-manifest-template.md', 'skip-list.md': 'skip-list-template.md',
@@ -302,7 +302,11 @@ class ArtifactContractTests(unittest.TestCase):
                     part = next((p for p in parts if p['title'] == rule['title']), None)
                     self.assertIsNotNone(part)
                     if 'headers' in rule:
-                        self.assertTrue(any(t['headers'] == rule['headers'] for t in markdown_tables(part['body'])))
+                        matches = [t for t in markdown_tables(part['body'])
+                                   if canonical_headers(rule, t['headers']) is not None]
+                        self.assertTrue(matches)
+                        if key == 'ui-manifest.md' and rule['title'] == '页面与覆盖层':
+                            self.assertEqual(matches[0]['headers'][0], '序号')
         for path, definition in [(templates / 'meta-json-schema.md', 'page_meta'),
                                   (ROOT / 'skills/a2h-spec/references/action-contracts.md', 'action_contract')]:
             text = path.read_text(encoding='utf-8-sig')

@@ -33,6 +33,21 @@ def catalog():
     return read_json(CATALOG_PATH)
 
 
+def canonical_headers(requirement, headers):
+    """Normalize only declared aliases in an otherwise exact catalog header.
+
+    The UI writer's authored ``序号`` column still carries canonical page_id
+    values. This is not an alias for arbitrary ID/status tables or JSON keys.
+    """
+    expected = requirement.get('headers', [])
+    aliases = requirement.get('header_aliases', {})
+    if len(headers) != len(expected) or any(
+            actual != canonical and actual not in aliases.get(canonical, [])
+            for actual, canonical in zip(headers, expected)):
+        return None
+    return list(expected)
+
+
 def contract_version(project):
     config = read_json(Path(project) / '.migbot/config.json')
     version = config.get('ios_harness', {}).get('spec_contract_version', 1)
@@ -511,7 +526,8 @@ def check_artifacts(project, source, fail, inputs):
                     continue
                 if 'headers' not in requirement:
                     continue
-                table = next((table for table in markdown_tables(body) if table['headers'] == requirement['headers']), None)
+                table = next((table for table in markdown_tables(body)
+                              if canonical_headers(requirement, table['headers']) is not None), None)
                 if not table or not table['rows'] or any(len(row) != len(table['headers']) or any(not cell.strip() for cell in row) for row in table['rows']):
                     fail('ARTIFACT_TABLE', section_subject, 'Use the exact catalog headers and at least one complete data row, or an evidenced applicable N/A')
                     continue

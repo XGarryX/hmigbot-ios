@@ -47,7 +47,7 @@ def assert_pinned(project, contract):
 
 def _core_index_tables(text, artifact):
     """Select the catalog index table, not other tables reusing its IDs."""
-    from .artifact_contract import catalog, markdown_sections, markdown_tables
+    from .artifact_contract import canonical_headers, catalog, markdown_sections, markdown_tables
     declarations = [section for entry in catalog()['spec'] if entry.get('path') == artifact
                     for section in entry.get('sections', []) if section.get('progress')]
     headings, tables = markdown_sections(text), markdown_tables(text)
@@ -56,9 +56,10 @@ def _core_index_tables(text, artifact):
         matches = []
         for table in tables:
             prior = [heading for heading in headings if heading['line'] < table['line']]
-            if (table['headers'] == section['headers'] and prior
+            headers = canonical_headers(section, table['headers'])
+            if (headers is not None and prior
                     and prior[-1]['title'] == section['title']):
-                matches.append(table)
+                matches.append({**table, 'authored_headers': table['headers'], 'headers': headers})
         if len(matches) > 1:
             raise MigrationError('Core index progress table must be unique: ' + str(artifact))
         if matches:

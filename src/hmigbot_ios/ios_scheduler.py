@@ -56,6 +56,10 @@ def _execution_evidence(path):
     Support programs have a separate, explicitly named workspace.
     """
     exact = {
+        # Observed DevEco-generated editor/cache metadata, not product inputs.
+        # Keep raw/source snapshots intact and all neighboring paths audited.
+        '.idea/.deveco/cxx/.clang-format', '.idea/.deveco/module/entry.cache.json',
+        '.idea/.deveco/project.cache.json', '.idea/.gitignore',
         'build_out.log', 'build_temp.bat', 'spec/migration-report.md',
         'spec/placeholder-registry.md', 'spec/execution/base-contracts.md',
         'spec/execution/capability-manifest.json',
