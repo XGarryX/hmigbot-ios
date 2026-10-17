@@ -26,7 +26,13 @@ class SourceInputIntegrationTests(unittest.TestCase):
             project = Path(directory)
             write_json(project / '.migbot/config.json', {'ios_harness': {'spec_contract_version': 2}})
             (project / 'spec/baseline').mkdir(parents=True)
-            (project / 'spec/baseline/feature-index.md').write_text('# No product features in this evidence pinning fixture\n', encoding='utf-8')
+            # This probe has no product rows, but it still declares a valid
+            # profile-2 catalog table so dependency pinning need not accept a
+            # malformed index merely to exercise raw source evidence.
+            (project / 'spec/baseline/feature-index.md').write_text(
+                '# No product features in this evidence pinning fixture\n## 功能清单\n'
+                '| ID | 功能 | 优先级 | 排序依赖 | 契约依赖 | 关联页面 | 创建页面 | complexity | tier | depth | 状态 | spec |\n'
+                '|---|---|---|---|---|---|---|---|---|---|---|---|\n', encoding='utf-8')
             bundle = project / 'spec/ref/ios-manifest-evidence/capture-001'
             (bundle / 'artifacts').mkdir(parents=True)
             (bundle / 'manifest.json').write_text('{}', encoding='utf-8')

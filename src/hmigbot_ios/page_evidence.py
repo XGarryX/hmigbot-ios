@@ -56,7 +56,8 @@ def generation(project, source_sha):
                     or receipt.get('ios_receipt_version') != 2
                     or receipt.get('plan_sha256') != digest(plan_path.read_bytes())
                     or receipt.get('task_id') != ident or receipt.get('behavior_verified') is not False
-                    or not isinstance(files, dict) or set(files) != set(task['ownership'])
+                    or not isinstance(files, dict) or set(files) - set(task['ownership'])
+                    or receipt.get('status') != 'blocked' and set(files) != set(task['ownership'])
                     or set(receipt.get('files_touched', [])) != set(files)
                     or set(receipt.get('ac_ids', [])) != set(task.get('ac_ids', []))
                     or any(digest(safe_child(project, p).read_bytes()) != h for p, h in files.items())):
@@ -98,13 +99,17 @@ def combine(statuses):
 
 def pages(project, acs, global_axes, tasks, records):
     from .artifact_contract import markdown_tables
-    from .plan_contract import _projection
+    from .plan_contract import _manifest_target, _projection, _table_rows, profile
     from .artifact_contract import catalog
     manifest = project / 'spec/baseline/ui-manifest.md'
+    catalog_profile = profile(project) >= 2
     rows = []
     if manifest.exists():
-        for table in markdown_tables(manifest.read_text(encoding='utf-8-sig')):
-            rows.extend(dict(zip(table['headers'], row)) for row in table['rows'])
+        if catalog_profile:
+            rows = _table_rows(manifest, artifact='spec/baseline/ui-manifest.md')
+        else:
+            for table in markdown_tables(manifest.read_text(encoding='utf-8-sig')):
+                rows.extend(dict(zip(table['headers'], row)) for row in table['rows'])
     units = []
     try:
         for artifact in catalog()['plan']['artifacts']:
@@ -120,8 +125,9 @@ def pages(project, acs, global_axes, tasks, records):
         if not match: continue
         ident = match[1]
         entries = [r for r in rows if r.get('page_id', '').strip('` ') == ident]
-        targets = sorted({v.strip('` ') for row in entries for k, v in row.items()
-                          if ('ArkTS' in k and '目标' in k) or k in {'target_path', '目标文件'}})
+        targets = (sorted({_manifest_target(project, row, ident) for row in entries}) if catalog_profile else
+                   sorted({v.strip('` ') for row in entries for k, v in row.items()
+                           if ('ArkTS' in k and '目标' in k) or k in {'target_path', '目标文件'}}))
         item_ids = {u['item_id'] for u in units if ident in u.get('page_ids', []) and u.get('scope') == 'product'}
         linked = [t for t in tasks if (item_ids & set(t.get('plan_item_refs', []))
                   or not t.get('plan_item_refs') and set(targets) & set(t['ownership']))]

@@ -155,7 +155,19 @@ def load_config(path: Path):
 
 def write_new_tree(output: Path, files: dict[str, bytes]):
     """Publish only into an absent or empty directory; never overwrite user work."""
-    if output.exists() and (not output.is_dir() or any(output.iterdir())):
+    import stat
+
+    def output_present():
+        try:
+            status = output.lstat()
+        except FileNotFoundError:
+            return False
+        reparse_point = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        if stat.S_ISLNK(status.st_mode) or getattr(status, "st_file_attributes", 0) & reparse_point:
+            raise MigrationError(f"Output must not be a link or reparse point: {output}")
+        return True
+
+    if output_present() and (not output.is_dir() or any(output.iterdir())):
         raise MigrationError(f"Output must be absent or empty: {output}")
     for name in files:
         safe_child(output, name)
@@ -163,15 +175,36 @@ def write_new_tree(output: Path, files: dict[str, bytes]):
         raise MigrationError("Output contains case-colliding paths")
     output.parent.mkdir(parents=True, exist_ok=True)
     import shutil
+    import time
     temp = Path(tempfile.mkdtemp(prefix=".hmigbot-ios-", dir=output.parent))
+    publication_failure = None
     try:
         for name, data in files.items():
             dest = safe_child(temp, name)
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(data)
-        if output.exists():
+        if output_present():
             output.rmdir()  # Empty-directory-only operation, fails if concurrently modified.
-        temp.rename(output)
+        for attempt in range(5):
+            if os.path.lexists(output):
+                raise MigrationError(f"Output appeared before publication: {output}")
+            try:
+                temp.rename(output)
+                break
+            except PermissionError as error:
+                # Windows can briefly deny directory renames while another handle is open.
+                # Keep publication atomic, and surface genuine denials after bounded retries.
+                if getattr(error, "winerror", None) != 5 or attempt == 4 or os.path.lexists(output):
+                    raise
+                time.sleep(0.05 * (2 ** attempt))
+    except BaseException as error:
+        publication_failure = error
+        raise
     finally:
-        if temp.exists():
-            shutil.rmtree(temp)
+        try:
+            if temp.exists():
+                shutil.rmtree(temp)
+        except Exception as cleanup_error:
+            if publication_failure is None:
+                raise
+            publication_failure.add_note(f"Temporary tree cleanup failed at {temp}: {cleanup_error}")

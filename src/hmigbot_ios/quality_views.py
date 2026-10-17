@@ -23,8 +23,11 @@ def spec_inputs(project):
 
 def target_inputs(project):
     """Bind the complete non-generated product tree, separate from tool reports."""
+    from .ios_scheduler import _execution_evidence
     return {f['path']: f['sha256'] for f in snapshot(Path(project))['files']
-            if not f['path'].startswith(('spec/', '.migbot/', 'migration/'))}
+            if not f['path'].startswith(('spec/', 'migration/'))
+            and (not f['path'].startswith('.migbot/') or f['path'] == '.migbot/config.json')
+            and not _execution_evidence(f['path'])}
 
 
 def product_literals(project):

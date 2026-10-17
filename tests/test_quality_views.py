@@ -172,7 +172,7 @@ Total: 0
         report_path = self.root / 'build/build.json'
         write_json(report_path, {'schema_version': 'hmigbot-ios/1', 'status': 'build_passed',
             'source_sha256': self.graph['source_sha256'], 'target_project': str(self.project.resolve()),
-            'target_input_hashes': {'entry/Main.ets': digest(target.read_bytes())},
+            'target_input_hashes': self.module().target_inputs(self.project),
             'spec_input_hashes': self.module().spec_inputs(self.project),
             'exit_code': 0, 'hvigor_success_marker': True, 'source_changed': False,
             'artifacts': [{'path': 'entry/build/app.hap', 'sha256': digest(hap.read_bytes())}]})

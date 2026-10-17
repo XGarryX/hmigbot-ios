@@ -10,6 +10,8 @@ import tempfile
 import shutil
 import platform
 import uuid
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from .core import MigrationError, atomic_write, digest, json_bytes, read_json, safe_child, snapshot, write_json
@@ -60,7 +62,7 @@ def _execution_evidence(path):
         'spec/reports/product-literals.json', 'spec/reports/visual-verify-report.md',
         'spec/.a2h/open-findings.json', 'spec/.a2h/impl-claims.json',
         'spec/baseline/verification.json', 'spec/baseline/impl-claims.json',
-        'spec/baseline/ios-source-check.json', 'spec/baseline/plans/resource-mapping.md',
+        'spec/baseline/ios-source-check.json',
     }
     if path in exact:
         return True
@@ -68,11 +70,13 @@ def _execution_evidence(path):
         r'spec/state/(?:state|dispatch|journal)\.json',
         r'spec/waves/plan-(?:understand|domains)\.json',
         r'spec/waves/wave-(?:understand|domains)\.result\.json',
-        r'spec/waves/prompts/(?:understand|domains)/[a-z0-9_-]+\.txt',
+        r'spec/waves/prompts/(?:understand|domains)/[a-z0-9_-]+\.txt(?:\.repair\.txt)?',
         r'spec/waves/results/(?:understand|domains)/[a-z0-9_-]+\.json',
         r'spec/reports/(?:ios-|spec-|migration-)[a-z0-9_-]+\.(?:json|md)',
         r'spec/reports/scheduler/[a-z_]+\.(?:(?:stdout|stderr)\.log|failure\.json)',
+        r'spec/reports/scheduler/[a-z_]+\.cleanup-[0-9a-f]{32}\.json',
         r'spec/reports/static-runtime/land-[a-z0-9_-]+\.json',
+        r'spec/reports/ios-blocked-receipts/(?:understand|domains)/[a-z0-9_-]+/[0-9a-f]{64}\.json',
         r'spec/reports/derived/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:json|md)',
         r'spec/reports/behavior/[A-Za-z0-9_-]+/(?:stdout|stderr)\.log',
         r'spec/reports/host-oracle/(?:support/)?[A-Za-z0-9_.-]+\.(?:py|mjs|js|json|log|md)',
@@ -110,6 +114,70 @@ def _fence_files(project):
             if entry['path'].startswith(prefix)}
 
 
+def _original_ownership(paths):
+    """Mirror the original fence's leading './' character stripping.
+
+    The native ownership contract and receipt checks retain exact paths. Only
+    the original kernel's plan gets these literal compatibility aliases; this
+    must never authorize a real shadow file such as gitignore for .gitignore.
+    """
+    return list(dict.fromkeys([*paths, *(path.lstrip('./') for path in paths)]))
+
+
+def _land_native_receipts(project, wave, plan_path, blocked):
+    """Bridge a native blocked outcome through the original failure writer.
+
+    The legacy kernel treats any schema-valid final_state as task completion,
+    including BLOCKED. It has a supported missing-as-failed channel instead.
+    Preserve the exact native receipt as content-addressed evidence, remove it
+    only from the legacy consumer while that writer records the failed attempt,
+    then restore it. A crash leaves recoverable evidence, never a fake success
+    receipt or a hand-authored state/dispatch/journal entry.
+    """
+    if not blocked:
+        return invoke(project, 'land_results', ['--plan', str(plan_path), '--state', 'spec/state/state.json', '--json'])
+    dispatch = read_json(project / 'spec/state/dispatch.json').get('waves', {}).get(wave, {}).get('dispatched', {})
+    journal_path = project / 'spec/state/journal.json'
+    landed, _ = kernel().journal_indexes(read_json(journal_path) if journal_path.exists() else {}, wave)
+    pending, evidence, removed = [], [], []
+    try:
+        for ident, path in blocked:
+            raw = path.read_bytes()
+            archive = f'spec/reports/ios-blocked-receipts/{wave}/{ident}/{digest(raw)}.json'
+            archived = safe_child(project, archive)
+            if archived.exists():
+                if archived.read_bytes() != raw:
+                    raise MigrationError('Blocked receipt archive conflicts with its content hash')
+            else:
+                atomic_write(archived, raw)
+            evidence.append({'id': ident, 'archive': archive, 'sha256': digest(raw),
+                             'native_status': 'blocked', 'original_disposition': 'missing-as-failed'})
+            if dispatch.get(ident, {}).get('attempts', 0) > landed.get(ident, 0):
+                path.unlink()
+                removed.append((path, raw))
+                pending.append(ident)
+        args = ['--plan', str(plan_path), '--state', 'spec/state/state.json', '--json']
+        if pending:
+            args += ['--missing-as-failed', ','.join(pending)]
+        action = invoke(project, 'land_results', args)
+    finally:
+        restore_errors = []
+        for path, raw in removed:
+            try:
+                if path.exists() and path.read_bytes() != raw:
+                    raise MigrationError('Native result changed during legacy failure landing: ' + str(path))
+                if not path.exists():
+                    atomic_write(path, raw)
+            except (OSError, MigrationError) as exc:
+                restore_errors.append(exc)
+        if restore_errors:
+            raise MigrationError('Could not restore all native receipts; originals retained in blocked archive: '
+                                 + '; '.join(str(exc) for exc in restore_errors)) from restore_errors[0]
+    action['ios_blocked_receipts'] = evidence
+    action['ok'] = False
+    return action
+
+
 def kernel():
     spec = importlib.util.spec_from_file_location('ios_upstream_wavelib', UPSTREAM / '_wavelib.py')
     module = importlib.util.module_from_spec(spec)
@@ -117,15 +185,74 @@ def kernel():
     return module
 
 
+def _cleanup_windows_runtime(project, program, directory, parent):
+    """A staged executable lock is cleanup debt, not a command failure."""
+    error = None
+    for attempt in range(1, 5):
+        try:
+            # Delete only the unique directory created under this explicit
+            # temporary parent; refuse links or a changed resolved target.
+            if (directory.resolve() != parent / directory.name or not directory.name.startswith('ios-scheduler-python-')
+                    or directory.is_symlink() or getattr(directory, 'is_junction', lambda: False)()):
+                raise MigrationError('Refusing cleanup outside the staged runtime directory')
+            shutil.rmtree(directory)
+            error = None
+            break
+        except (OSError, MigrationError) as exc:
+            if isinstance(exc, FileNotFoundError) and not directory.exists():
+                error = None
+                break
+            error = exc
+            if isinstance(exc, OSError) and getattr(exc, 'winerror', None) in {5, 32, 33} and attempt < 4:
+                time.sleep(0.05 * 2 ** (attempt - 1))
+                continue
+            break
+    if error is None and attempt == 1:
+        return None
+    report = {'schema_version': 1, 'kind': 'scheduler_runtime_cleanup', 'program': program,
+              'status': 'retained' if error else 'removed_after_retry', 'runtime_path': str(directory),
+              'attempts': attempt, 'error': str(error) if error else None,
+              'winerror': getattr(error, 'winerror', None)}
+    path = project / 'spec/reports/scheduler' / (program + '.cleanup-' + uuid.uuid4().hex + '.json')
+    report['audit_path'] = str(path)
+    try:
+        write_json(path, report)
+    except OSError as exc:
+        report['audit_error'] = str(exc)
+        try:
+            sys.stderr.write(f'Scheduler runtime cleanup {report["status"]}: {directory}; '
+                             f'attempts={attempt}; cleanup_error={error}; audit_error={exc}\n')
+        except OSError as stderr_error:
+            report['stderr_error'] = str(stderr_error)
+    return report
+
+
+@contextmanager
+def _runtime_directory(project, program, *, windows, cleanup_reports=None):
+    if not windows:
+        with tempfile.TemporaryDirectory(prefix='ios-scheduler-python-') as temp:
+            yield temp
+        return
+    parent = Path(tempfile.gettempdir()).resolve()
+    directory = Path(tempfile.mkdtemp(prefix='ios-scheduler-python-', dir=parent))
+    try:
+        yield str(directory)
+    finally:
+        report = _cleanup_windows_runtime(project, program, directory, parent)
+        if report and cleanup_reports is not None:
+            cleanup_reports.append(report)
+
+
 def invoke(project, program, args):
     env = {**os.environ, 'PYTHONUTF8': '1', 'ARKTS_SKILL_DIR': str(UPSTREAM.parent)}
+    windows, cleanup_reports = os.name == 'nt', []
     try:
         # Frozen upstream sys.executable points at a non-shipped python.exe beside
         # its binary on Windows. Stage unchanged payload plus the host interpreter;
         # never repair vendor bytes in place or replace original state algorithms.
-        with tempfile.TemporaryDirectory(prefix='ios-scheduler-python-') as temp:
+        with _runtime_directory(project, program, windows=windows, cleanup_reports=cleanup_reports) as temp:
             command = [sys.executable, str(UPSTREAM / (program + '.py')), *args]
-            if os.name == 'nt':
+            if windows:
                 if platform.machine().lower() not in {'amd64', 'x86_64', 'x64'}:
                     raise MigrationError('Bundled Windows kernel requires x64')
                 directory = Path(temp) / '_entry.dist'
@@ -141,7 +268,10 @@ def invoke(project, program, args):
                                   cwd=project, env=env, capture_output=True, timeout=60, shell=False)
     except (subprocess.TimeoutExpired, OSError) as exc:
         log = project / 'spec/reports/scheduler' / (program + '.failure.json')
-        write_json(log, {'program': program, 'error': str(exc), 'status': 'FAIL'})
+        report = {'program': program, 'error': str(exc), 'status': 'FAIL'}
+        if cleanup_reports:
+            report['runtime_cleanup'] = cleanup_reports
+        write_json(log, report)
         raise MigrationError('Original scheduler failed; evidence: ' + str(log)) from exc
     directory = project / 'spec/reports/scheduler'
     atomic_write(directory / (program + '.stdout.log'), proc.stdout)
@@ -150,7 +280,10 @@ def invoke(project, program, args):
         raise MigrationError('Original scheduler rejected input: ' + proc.stderr.decode('utf-8', errors='replace')[-1800:])
     import json
     try:
-        return json.loads(proc.stdout)
+        result = json.loads(proc.stdout)
+        if isinstance(result, dict) and any('stderr_error' in report for report in cleanup_reports):
+            result['ios_runtime_cleanup'] = cleanup_reports
+        return result
     except (ValueError, UnicodeError) as exc:
         raise MigrationError('Original scheduler did not return a JSON action') from exc
 
@@ -179,7 +312,7 @@ def generate(project, input_path, *, validate_only=False):
     tasks = request.get('tasks')
     if not isinstance(tasks, list) or not tasks:
         raise MigrationError('Plan must have nonempty typed tasks')
-    ids, owned, covered, planned = set(), set(), set(), []
+    ids, owned, original_owned, covered, planned = set(), set(), {}, set(), []
     all_acs = ac_inventory(project) if wave == 'domains' else {}
     all_facts = {f['id'] for f in graph['facts']}
     for task in tasks:
@@ -202,6 +335,11 @@ def generate(project, input_path, *, validate_only=False):
             if wave == 'understand' and not path.startswith('spec/'):
                 raise MigrationError('Understanding tasks may only write specs')
             owned.add(portable)
+        for path in _original_ownership(own):
+            portable = path.casefold()
+            if portable in original_owned and original_owned[portable] != ident:
+                raise MigrationError('Ambiguous original ownership projection: ' + path)
+            original_owned[portable] = ident
         ac_ids = task.get('ac_ids', [])
         fact_ids = task.get('fact_ids')
         if not isinstance(ac_ids, list) or any(a not in all_acs for a in ac_ids) or wave == 'domains' and not ac_ids and contract_profile < 2:
@@ -282,7 +420,7 @@ def generate(project, input_path, *, validate_only=False):
         nodes.append({'id': t['id'], 'kind': 'agent', 'agent': t['role'] + '@0.6.0',
                       'model': t.get('model', 'inherit'), 'schema': 'fixResult',
                       'prompt_file': prompt, 'parents': t.get('parents', []), 'map_group': 'ios-' + wave,
-                      'ownership': t['ownership'], 'result_path': receipt, 'resume_key': wave + ':' + t['id']})
+                      'ownership': _original_ownership(t['ownership']), 'result_path': receipt, 'resume_key': wave + ':' + t['id']})
     plan = {'plan_version': 'a2h-2.1.0', 'wave': wave,
             'max_parallel': parallel, 'max_attempts': 2, 'tasks': nodes, 'products': {}, 'ios_adapter_version': 2}
     contract = read_json(blueprint / 'contracts.json')
@@ -338,6 +476,7 @@ def step(project, wave, *, landing=False):
         if changed - allowed:
             raise MigrationError('Dispatch changed files outside ownership: ' + ','.join(sorted(changed - allowed)))
         owned_tasks = {t['id']: t for t in contract['ios_tasks']}
+        blocked = []
         for task in plan['tasks']:
             path = safe_child(project, task['result_path'])
             if not path.exists():
@@ -366,8 +505,17 @@ def step(project, wave, *, landing=False):
                 raise MigrationError('Receipt omitted task acceptance criteria')
             if receipt.get('status') == 'generated' and receipt.get('findings'):
                 raise MigrationError('Open semantic findings cannot be landed as generated success')
-        action = invoke(project, 'land_results', ['--plan', str(plan_path), '--state', 'spec/state/state.json', '--json'])
+            if receipt['status'] == 'blocked':
+                blocked.append((task['id'], path))
+        action = _land_native_receipts(project, wave, plan_path, blocked)
     else:
+        state_path = project / 'spec/state/state.json'
+        if state_path.exists():
+            rows = read_json(state_path).get('waves', {}).get(wave, {}).get('tasks', [])
+            rows = rows.values() if isinstance(rows, dict) else rows
+            if any((row.get('status') == 'failed' and not str(row.get('reason', '')).startswith('RETRY_NEEDED'))
+                   or row.get('status') == 'folded' or row.get('final_state') == 'BLOCKED' for row in rows):
+                raise MigrationError('Native failed/blocked tasks cannot advance; repair and explicitly review replan')
         before = execution_files(project)
         evidence_path = project / f'spec/reports/ios-dispatch-{wave}.json'
         prior = read_json(evidence_path) if evidence_path.exists() else None
@@ -403,7 +551,8 @@ def step(project, wave, *, landing=False):
             write_json(evidence_path, {'plan_sha256': digest(plan_path.read_bytes()), 'before_files': before, 'task_ids': task_ids})
     action['ios_scope'] = 'task generation only; compile and behavior gates remain separate'
     action['behavior_verified'] = False
-    failed = action.get('action') == 'escalate' or any(x.get('status') in {'RETRY_NEEDED', 'RETRY_EXHAUSTED'} for x in action.get('landed', []))
+    failed = (bool(action.get('ios_blocked_receipts')) or action.get('action') == 'escalate'
+              or any(x.get('status') in {'RETRY_NEEDED', 'RETRY_EXHAUSTED', 'FAIL', 'INFRA_FAIL'} for x in action.get('landed', [])))
     return action, 2 if failed else 0
 
 
