@@ -80,6 +80,7 @@ def project_rollout(raw, source_path, expected):
         raise MigrationError('Ambiguous rollout writer agent path')
     source_sha = digest(raw)
     calls, handles, projected, record_refs = {}, {}, {}, {}
+    ignored_failed_spawns = []
 
     def include(call, output_entry, output):
         output_line, output_row, output_sha = output_entry
@@ -144,7 +145,19 @@ def project_rollout(raw, source_path, expected):
             task = args.get('task_name')
             if not isinstance(task, str) or not any(fnmatch.fnmatchcase(task, p) for p in patterns):
                 continue
-            output = _object(payload.get('output', payload.get('content')), 'spawn result')
+            spawn_output = payload.get('output', payload.get('content'))
+            # These exact host-tool failures contain no agent handle. A real
+            # retry still needs its own structured spawn and tool completion;
+            # every other malformed output remains a hard parse failure.
+            if spawn_output in ('collab spawn failed: agent thread limit reached',
+                                'collab tool failed: agent thread limit reached'):
+                ignored_failed_spawns.append({'task_name': task, 'call_id': call['id'],
+                    'error_kind': 'agent_thread_limit_reached',
+                    'spawn_source_line': call['entry'][0], 'spawn_source_line_sha256': call['entry'][2],
+                    'output_source_line': line, 'output_source_line_sha256': entry[2],
+                    'output_sha256': digest(spawn_output.encode('utf-8'))})
+                continue
+            output = _object(spawn_output, 'spawn result')
             name = output.get('task_name')
             if not TASK.fullmatch(task) or name != writer + '/' + task:
                 continue  # An inherited/other writer's spawn cannot satisfy this expected set.
@@ -190,6 +203,7 @@ def project_rollout(raw, source_path, expected):
     manifest = {**header, 'writer': {'session_id': meta.get('id'), 'agent_path': writer,
                 'source_line': writer_line, 'source_line_sha256': writer_sha},
                 'expected_task_patterns': patterns, 'unmatched_patterns': missing,
+                'ignored_failed_spawns': ignored_failed_spawns,
                 'handles': list(handles.values()), 'records': [record_refs[n] for n in sorted(record_refs)],
                 'preflight_exit_code': code, 'projection_sha256': digest(projection)}
     return projection, manifest, code

@@ -146,6 +146,83 @@ class JoinRolloutTests(unittest.TestCase):
         self.observe({'/root/unrelated/worker': {'completed': 'unrelated observation'}})
         self.assertEqual(self.run_gate()[0].returncode, 3)
 
+    def test_confirmed_thread_limit_spawn_failure_then_real_completed_retry_uses_original_gate(self):
+        failure = 'collab spawn failed: agent thread limit reached'
+        failed_call = self.tool('spawn_agent', {'task_name': 'worker'}, failure)
+        successful_call = self.spawn()
+        self.observe({'/root/parent/worker': {'completed': 'first real completion'}})
+        self.tool('followup_task', {'target': 'worker', 'message': 'private followup'}, '')
+        completed_call = self.observe({'/root/parent/worker': {'completed': 'actual retried completion'}})
+        result, source_sha = self.run_gate()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = self.manifest(source_sha)
+        self.assertEqual(manifest['original_gate']['exit_code'], 0)
+        self.assertEqual(manifest['original_gate']['recognized_handles'], 1)
+        self.assertEqual(len(manifest['handles']), 1)
+        self.assertEqual(manifest['handles'][0]['spawn_call_id'], successful_call)
+        self.assertEqual(manifest['handles'][0]['observation_call_id'], completed_call)
+        ignored = manifest['ignored_failed_spawns']
+        self.assertEqual(len(ignored), 1)
+        self.assertEqual(ignored[0]['call_id'], failed_call)
+        self.assertEqual(ignored[0]['task_name'], 'worker')
+        self.assertEqual(ignored[0]['spawn_source_line'], 2)
+        self.assertEqual(ignored[0]['output_source_line'], 3)
+        raw_lines = self.rollout.read_bytes().splitlines()
+        self.assertEqual(ignored[0]['spawn_source_line_sha256'], hashlib.sha256(raw_lines[1]).hexdigest())
+        self.assertEqual(ignored[0]['output_source_line_sha256'], hashlib.sha256(raw_lines[2]).hexdigest())
+        self.assertEqual(ignored[0]['output_sha256'], hashlib.sha256(failure.encode()).hexdigest())
+        self.assertNotIn(failed_call, {record['call_id'] for record in manifest['records']})
+
+    def test_confirmed_spawn_failure_without_real_retry_cannot_create_a_joined_handle(self):
+        for failure in ('collab spawn failed: agent thread limit reached',
+                        'collab tool failed: agent thread limit reached'):
+            with self.subTest(failure=failure):
+                self.rows = self.rows[:1]
+                self.tool('spawn_agent', {'task_name': 'worker'}, failure)
+                self.observe({'/root/parent/worker': {'completed': 'no real spawned handle'}})
+                result, source_sha = self.run_gate()
+                self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+                manifest = self.manifest(source_sha)
+                self.assertEqual(manifest['handles'], [])
+                self.assertEqual(len(manifest['ignored_failed_spawns']), 1)
+                self.assertFalse(manifest['original_gate']['invoked'])
+
+    def test_spawn_failure_does_not_relax_retry_status_or_original_artifact_validation(self):
+        self.tool('spawn_agent', {'task_name': 'worker'}, 'collab spawn failed: agent thread limit reached')
+        self.spawn()
+        result, source_sha = self.run_gate()
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertFalse(self.manifest(source_sha)['original_gate']['invoked'])
+        self.observe({'/root/parent/worker': 'running'})
+        self.assertEqual(self.run_gate()[0].returncode, 1)
+        self.observe({'/root/parent/worker': {'completed': 'real observed completion'}})
+        (self.project / 'artifact.txt').unlink()
+        result, source_sha = self.run_gate()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertNotEqual(self.manifest(source_sha)['original_gate']['exit_code'], 0)
+
+    def test_malformed_spawn_success_is_not_ignored_even_with_a_later_valid_handle(self):
+        for malformed in ('not-json', 'collab spawn failed:',
+                          'collab spawn failed: unverified arbitrary text',
+                          'collab spawn failed: agent thread limit reached\n{"task_name":"/root/parent/worker"}'):
+            with self.subTest(output=malformed):
+                self.rows = self.rows[:1]
+                self.tool('spawn_agent', {'task_name': 'worker'}, malformed)
+                self.spawn()
+                self.observe({'/root/parent/worker': {'completed': 'later real completion'}})
+                result, _ = self.run_gate()
+                self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+                self.assertIn(b'Invalid structured spawn result', result.stdout)
+
+    def test_confirmed_failure_does_not_hide_duplicate_real_spawns(self):
+        self.tool('spawn_agent', {'task_name': 'worker'}, 'collab spawn failed: agent thread limit reached')
+        self.spawn()
+        self.spawn()
+        self.observe({'/root/parent/worker': {'completed': 'ambiguous duplicate handles'}})
+        result, _ = self.run_gate()
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertIn(b'Multiple real spawns', result.stdout)
+
     def test_agent_message_final_answer_prose_is_not_a_completion_oracle(self):
         self.spawn()
         self.rows.append({'type': 'response_item', 'payload': {'type': 'agent_message',
