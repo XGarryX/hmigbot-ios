@@ -29,6 +29,9 @@ class JoinEvidenceTests(unittest.TestCase):
                 'artifacts': [{'path': 'entry/Counter.ets', 'min_count': 1, 'min_bytes': 1, 'json': False}]})
         ledger = root / 'spec/a2h/_work/join-ledger.jsonl'
         ledger.write_text('{"join_point":"stage1_batch-02","joined":["counter"]}\n', encoding='utf-8')
+        patrol = root / 'spec/fix/round-1/patrol/arkts-ui-build-batch-02.md'
+        patrol.parent.mkdir(parents=True, exist_ok=True)
+        patrol.write_text('---\nsource: patrol\npatrol_domain: arkts-ui-build\nfindings: 0\n---\n', encoding='utf-8')
 
     def test_only_named_join_metadata_is_ignored_by_execution_ownership(self):
         before = execution_files(self.project)
@@ -67,6 +70,31 @@ class JoinEvidenceTests(unittest.TestCase):
         self.assertNotEqual(snapshot(self.source)['sha256'], source_before['sha256'])
         self.assertEqual(EXCLUDED, exclusions)
 
+    def test_patrol_receipts_use_only_original_route_domains_and_numeric_batch_ids(self):
+        before = execution_files(self.project)
+        for domain in ('ui-build', 'ui-adapt', 'data-network', 'system-component', 'thirdparty-component'):
+            for mode in ('batch', 'group'):
+                path = self.project / f'spec/fix/round-12/patrol/arkts-{domain}-{mode}-02.md'
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('---\nsource: patrol\nfindings: 0\n---\n', encoding='utf-8')
+        self.assertEqual(execution_files(self.project), before)
+        paths = ('spec/fix/round-1/patrol/notes.md', 'spec/fix/round-1/patrol/Hidden.ets',
+            'spec/fix/round-1/patrol/arbitrary.json', 'spec/fix/round-x/patrol/arkts-ui-build-batch-02.md',
+            'spec/fix/round-0/patrol/arkts-ui-build-batch-02.md',
+            'spec/fix/round-1/ui/arkts-ui-build-batch-02.md',
+            'spec/fix/round-1/patrol/ui-build-batch-02.md', 'spec/fix/round-1/patrol/arkts-audit-batch-02.md',
+            'spec/fix/round-1/patrol/arkts-ui-build-base-02.md',
+            'spec/fix/round-1/patrol/arkts-ui-build-batch-two.md',
+            'spec/fix/round-1/patrol/arkts-ui-build-batch-02.json',
+            'spec/fix/round-1/patrol/arkts-ui-build-batch-02.md.ets',
+            'spec/fix/round-1/patrol/nested/arkts-ui-build-batch-02.md')
+        for relative in paths:
+            path = self.project / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('unclassified input', encoding='utf-8')
+        after = execution_files(self.project)
+        self.assertEqual({p for p in before.keys() | after.keys() if before.get(p) != after.get(p)}, set(paths))
+
     def test_original_dispatch_join_metadata_receipt_and_landing_keep_the_fence(self):
         output = 'entry/Counter.ets'
         request = self.root / 'request.json'
@@ -94,7 +122,10 @@ class JoinEvidenceTests(unittest.TestCase):
         for relative in ('spec/a2h/_work/arbitrary.json', 'spec/a2h/_work/Shadow.ets',
                          'spec/a2h/_work/expected_counter.json.bak',
                          'spec/a2h/_workish/expected_counter.json',
-                         'spec/a2h/_work/other/join-ledger.jsonl'):
+                         'spec/a2h/_work/other/join-ledger.jsonl',
+                         'spec/fix/round-1/patrol/notes.md', 'spec/fix/round-1/patrol/Hidden.ets',
+                         'spec/fix/round-1/patrol/arbitrary.json',
+                         'spec/fix/round-1/patrol/arkts-audit-batch-02.md'):
             with self.subTest(path=relative):
                 path = self.project / relative
                 path.parent.mkdir(parents=True, exist_ok=True)

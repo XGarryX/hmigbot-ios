@@ -28,16 +28,32 @@ dispatch banner 里；本 skill 提供三个机械零件，把两类实测事故
 ### 1. join_gate.py — 收口硬闸（join 点必调）
 
 ```bash
-python3 $SKILLS_ROOT/a2h-join/scripts/join_gate.py --project . --join-point <名字>
+python3 $SKILLS_ROOT/a2h-join/scripts/join_gate.py --project <目标工程> \
+    --join-point <名字> --rollout <派发方本会话的原始rollout.jsonl>
 ```
 
-- 机械枚举本会话 rollout 的全部 `spawn_agent` 句柄（不信模型自报）
-- 按最新 `list_agents` 出参判 completed / OUTSTANDING
-- 对 completed 按 expected-set 契约或原子信封验产物完整性
+- 本封装显式读取 `--rollout` 指定文件，不扫描其他会话；缺少该参数返回 exit 3。
+- 派发前必须有非空 `spec/a2h/_work/expected_<join点>.json`；只选择其中 `task_names`
+  匹配的真实直接子任务，不把其他仍在施工的同级任务算作本 join 已收口。
+- 派发方身份来自原文件首个 `session_meta` 的 `agent_path` / `source.subagent.thread_spawn.agent_path`；
+  fork 继承进来的祖先会话元数据不能替换当前 writer。匹配原 `spawn_agent` 的 call_id 与真实返回身份，
+  再把 `/root/派发方/子任务` 等深路径投影成原消费者支持的 `/root/子任务`。
+- 完成依据是该句柄最近一次真实 `list_agents` 肯定状态。live 列表回收已完成槽位后的缺席不抹除
+  已观测的 completed；真实 `followup_task`、中断或新的 running 观测会重置完成状态，直到再次观测完成。
+  `FINAL_ANSWER` 正文、代理自报列表、文件存在和 0 句柄都不能补造完成。
+- 投影保留原 call_id、记录顺序、状态及来源 SHA 映射，明确标记 derived；原文件持续追加时可按
+  `source_bytes` 指定前缀复验 `source_sha256`。派生文件不能再次当作原始 rollout 输入。
+- 原 gate 继续验证原 expected-set 与真实产物，并负责追加原 join 账本。该入口要求全部 expected
+  句柄有肯定 completed 证据；unknown/缺证据返回 3，running/failed/dead 或产物不全返回非 0。
 - exit 0 → 追加 `spec/a2h/_work/join-ledger.jsonl`；exit 1 → 打印缺口清单，
   **禁止发完成报告/进下一阶段**；exit 3 → 按提示补信息（如先调一次 list_agents）
 - 条款⑤ fire-and-forget 豁免 = 脚本内静态 allowlist（改表须过评审），
-  正文 `[fire-and-forget]` 声明只是文档层
+  正文 `[fire-and-forget]` 声明只是文档层，不能替代本封装非空 expected-set 的完成证据。
+
+投影保存在 `spec/reports/host-oracle/support/join-<join点>-<源SHA>.log`，来源、身份映射、
+工具版本/文件 SHA、原 gate 退出码及输出保存在
+`spec/reports/derived/a2h-join/<join点>/<源SHA>.json`。stdout 只给身份、状态、计数、SHA 和审计路径；
+消息正文仅留在本地相关证据，不输出或上传。`--no-ledger` 仍保留这些派生审计证据，原 gate 不追加 join 账本。
 
 ### 2. wait_for_artifact.py — 活性探针（条款②辅助）
 
@@ -75,8 +91,8 @@ python3 $SKILLS_ROOT/a2h-join/scripts/audit_join_coverage.py <rollout.jsonl>... 
 
 - 契约必须来自**派发方**——不认子代理自报 manifest（摸鱼者的 manifest
   会与其半截产物完全吻合）
-- 无法预知产物集的点退回**原子信封**：子代理最后一步 temp+rename 写
-  `spec/a2h/_work/done/<task_name>.done`
+- 原库的**原子信封**协议保留在 vendor：`spec/a2h/_work/done/<task_name>.done`。
+  当前封装使用非空 expected-set；缺少它时返回 3，不自动切换到信封或空句柄成功。
 - `task_name` 必须唯一化（带 page-id/slice-id/round-N 后缀），这是
   task_name↔completed 机械配对不误配的前提
 
@@ -95,5 +111,7 @@ python3 $SKILLS_ROOT/a2h-join/scripts/audit_join_coverage.py <rollout.jsonl>... 
 
 - "做错了"（内容级）不归本套管——gate 验齐不齐/格式对不对；内容对错归
   verify / reviewer 轮（反摸鱼质检另有闭环）
-- 沙箱读不到 `~/.codex/sessions/` 时 gate 退化：只验产物契约（--rollout
-  显式传文件仍可全功能），句柄枚举交事后审计
+- 无法读取指定原始 rollout 时返回 3，先补足真实来源与状态观测后再调用。
+- 巡检 expected 产物按原 `patrol-routing.md` 闭表填完整域角色：
+  `spec/fix/round-<正整数>/patrol/arkts-<ui-build|ui-adapt|data-network|system-component|thirdparty-component>-<batch|group>-<数字ID>.md`。
+  原 apply 打印的 `<域>` 用该完整角色名替换；task_name 中的 `build/network` 简写不作为文件域别名。

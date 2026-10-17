@@ -83,6 +83,7 @@ def _execution_evidence(path):
         r'spec/reports/host-oracle/(?:support/)?[A-Za-z0-9_.-]+\.(?:py|mjs|js|json|log|md)',
         r'spec/pipeline-run-\d{8}\.md',
         r'spec/a2h/_work/expected_[A-Za-z0-9_-]+\.json',
+        r'spec/fix/round-[1-9]\d*/patrol/arkts-(?:ui-build|ui-adapt|data-network|system-component|thirdparty-component)-(?:batch|group)-\d+\.md',
         r'spec/execution/briefs/[A-Za-z0-9_-]+\.md',
         r'spec/execution/writeback/writeback-(?:(?:batch|group)-\d+|base-\d+(?:[._]\d+)?|final)\.json',
         r'spec/execution/source-understanding/[A-Za-z0-9_-]+-source-notes\.md',
