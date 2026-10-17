@@ -59,6 +59,120 @@ def _files(project, paths, *, product_ownership=False):
     return sorted(set(result))
 
 
+def _declarative_contracts(project, detail, content, label, keys, optional=()):
+    """Read one explicit native binding list without inventing missing entries."""
+    from .spec_contract import references
+    starts=list(re.finditer(r'^'+re.escape(label)+r'[ \t]*:',content,re.M))
+    if not starts: return []
+    if len(starts)!=1: raise MigrationError('Duplicate '+label+' block')
+    block=re.match(re.escape(label)+r'[ \t]*:[ \t]*([^\n]*)\n((?:[ \t]+[^\n]*(?:\n|$))*)',content[starts[0].start():])
+    if block is None or block[1].strip(): raise MigrationError('Unsupported '+label+' syntax')
+    entries=[]; current=None
+    for line in block[2].splitlines():
+        if not line.strip(): continue
+        match=re.fullmatch(r'(  - |    )([a-z_]+):[ \t]*(.+)',line)
+        if not match: raise MigrationError('Unsupported '+label+' field syntax')
+        prefix,key,value=match.groups()
+        if prefix=='  - ':
+            if key!='owner': raise MigrationError(label+' item must start with owner')
+            current={}; entries.append(current)
+        if current is None or key not in set(keys)|set(optional) or key in current:
+            raise MigrationError('Unknown or duplicate '+label+' field: '+key)
+        if value.startswith('"'): value=json.loads(value)
+        if not isinstance(value,str) or not value or value.startswith("'"):
+            raise MigrationError(label+' fields require unambiguous nonempty strings')
+        current[key]=value
+    if not entries or any(not set(keys)<=set(entry) for entry in entries):
+        raise MigrationError('Incomplete '+label+' responsibility')
+    owners={item['item_id'] for item in _projection(project,detail)}
+    seen=set()
+    for entry in entries:
+        identity=json.dumps(entry,sort_keys=True)
+        if identity in seen or entry['owner'] not in owners:
+            raise MigrationError('Duplicate or foreign '+label+' responsibility')
+        seen.add(identity)
+        references(project,detail,'contract_refs: '+json.dumps([entry['input']],ensure_ascii=False))
+    return entries
+
+
+def _component_definition(definition):
+    if definition.kind!='struct': return False
+    values=definition.source.values
+    for index in range(definition.start-1,-1,-1):
+        if values[index]=='struct':
+            prefix=values[max(0,index-5):index]
+            return any(prefix[position:position+2] in [['@','Component'],['@','ComponentV2']]
+                       for position in range(len(prefix)-1))
+        if values[index] in {';','}'}: break
+    return False
+
+
+def _adapt_direct_build_embeds(selection, evidence, category):
+    """Only the original missing-@Builder/build case has a native alternative."""
+    contracts=selection['embed_bindings']; details=[]
+    for contract in contracts:
+        parent=re.fullmatch(r'([A-Za-z_$][\w$]*)\.build',contract['parent'])
+        if parent is None or contract['kind']!='direct_declarative_child':
+            raise MigrationError('Unsupported direct declarative embed contract')
+        matches=[]
+        for original in category['details']:
+            if original.get('builder_name')!='build' or original.get('replace_with')!=contract['child']+'()': continue
+            relative=original.get('parent_file','').replace('\\','/')
+            definitions=[definition for definition in evidence.definitions if definition.name==parent[1]
+                         and definition.source.relative==relative]
+            resolve=re.fullmatch(r'Slice '+str(selection['slice_id'])+r' Step (3[a-d])',original.get('resolve_by',''))
+            if len(definitions)==1 and resolve and contract['owner']=='SLICE:'+selection['feature_id']+':'+resolve[1]:
+                matches.append(original)
+        if len(matches)!=1:
+            raise MigrationError('Direct embed contract must match exactly one original authored wire')
+    for original in category['details']:
+        detail={**original,'original_evidence':original}
+        if original.get('status')!='FAIL' or original.get('failed_check')!='C4_BUILDER_NOT_FOUND' or original.get('builder_name')!='build':
+            details.append(detail); continue
+        child_match=re.fullmatch(r'([A-Za-z_$][\w$]*)\(\)',original.get('replace_with',''))
+        relative=original.get('parent_file','').replace('\\','/')
+        parents=[definition for definition in evidence.definitions if definition.source.relative==relative
+                 and _component_definition(definition)]
+        if len(parents)!=1 or child_match is None:
+            details.append(detail); continue
+        parent=parents[0]; source=parent.source; values=source.values
+        declarations=[entry for entry in contracts if entry['parent']==parent.name+'.build'
+                      and entry['child']==child_match[1] and entry['kind']=='direct_declarative_child']
+        resolve=re.fullmatch(r'Slice '+str(selection['slice_id'])+r' Step (3[a-d])',original.get('resolve_by',''))
+        expected_owner='SLICE:'+selection['feature_id']+':'+resolve[1] if resolve else None
+        if len(declarations)!=1 or declarations[0]['owner']!=expected_owner:
+            details.append(detail); continue
+        build=parent.members.get('build',[])
+        if len(build)!=1 or build[0].kind!='method' or build[0].static or not build[0].body:
+            details.append(detail); continue
+        child=evidence.definition(child_match[1],source)
+        if (child is None or not _component_definition(child)
+                or relative not in selection['allowed_target_files']
+                or child.source.relative not in selection['allowed_target_files']):
+            details.append(detail); continue
+        begin,end=build[0].body; calls=[]
+        for index in range(begin+1,end-1):
+            if values[index:index+2]!=[child_match[1],'(']: continue
+            if values[index-1] in {'.','new','function','return','='}: continue
+            if evidence._flow_idle_local_contains(source,begin,end,index): continue
+            if evidence._flow_arrow_contains(source,begin,end,index): continue
+            if evidence._shadowed_parameter(source,child_match[1],begin,end): continue
+            if source.pairs.get(index+1) is None: continue
+            calls.append(index)
+        if len(calls)!=1:
+            details.append(detail); continue
+        detail={key:value for key,value in detail.items() if key not in {'failed_check','reason','repair_action'}}
+        detail.update(status='PASS',evidence=[{'role':'native-build-entry','file':relative,
+            'line':source.tokens[build[0].index].line,'class':parent.name,'member':'build'},
+            {'role':'direct-declarative-child','file':relative,'line':source.tokens[calls[0]].line,
+             'child':child.name,'definition_file':child.source.relative,
+             'definition_line':child.source.tokens[child.start].line},
+            {'role':'explicit-embed-contract',**declarations[0]}])
+        details.append(detail)
+    return {'pass':sum(detail['status']=='PASS' for detail in details),
+            'fail':sum(detail['status']=='FAIL' for detail in details),'details':details}
+
+
 def _top_cross(content):
     starts=list(re.finditer(r'^cross_slice_edits[ \t]*[:：]',content,re.M))
     if len(starts)>1: raise MigrationError('Duplicate top-level cross_slice_edits block')
@@ -341,6 +455,10 @@ def load_slice(project, number, feature_plan=None, group=None):
     allowed,authority=_target_authority(project,index,path,items,fid)
     modifies=_files(project,parsed.modifies_files)
     top,span=_top_cross(content)
+    embeds=_declarative_contracts(project,path,content,'embed_bindings',
+        {'owner','parent','child','kind','input'})
+    callbacks=_declarative_contracts(project,path,content,'callback_bindings',
+        {'owner','kind','producer','event','binding','consumer','input'},optional={'continuation'})
     cross=_files(project,[edit.file for edit in parsed.cross_slice_edits]+[edit['file'] for edit in top])
     # Wires/embeds are not added to modifies; their source contracts and the
     # original detector retain their own semantics and repair categories.
@@ -350,6 +468,7 @@ def load_slice(project, number, feature_plan=None, group=None):
         _files(project,[embed.parent_file])
     return {'slice_id':number,'feature_id':fid,'index':index,'detail':path,'parsed':parsed,
             'top_cross':top,'top_cross_span':span,
+            'embed_bindings':embeds,'callback_bindings':callbacks,
             'owned_files':owned,'modifies_files':modifies,'cross_slice_edits_files':cross,
             'allowed_target_files':allowed,'target_authority':authority,
             'audit_scope':sorted({path for path in owned+modifies+cross if Path(path).suffix=='.ets'})}
@@ -469,6 +588,14 @@ def wiring(project, number, destination, original, *, feature_plan=None, index=N
         raise MigrationError('Original wiring detector did not consume every integration point')
     report['original_C2_integration_point']=categories['C2_integration_point']
     evidence=index or EvidenceIndex(project)
+    if selection['embed_bindings']:
+        expected_embeds=[asdict(entry) for entry in selection['parsed'].parent_placeholder_replacement]
+        original_embeds=categories['C4_parent_replacement']['details']
+        fields=lambda entry: {key:entry.get(key,'') for key in ('parent_file','builder_name','replace_with','resolve_by')}
+        if len(expected_embeds)!=len(original_embeds) or [fields(entry) for entry in expected_embeds]!=[fields(entry) for entry in original_embeds]:
+            raise MigrationError('Original C4 detector did not consume every authored embed responsibility')
+        report['original_C4_parent_replacement']=categories['C4_parent_replacement']
+        categories['C4_parent_replacement']=_adapt_direct_build_embeds(selection,evidence,categories['C4_parent_replacement'])
     if selection['top_cross']:
         report['original_C3_cross_slice']=categories['C3_cross_slice']
         adapted,normalized,provenance=_adapt_top_cross(selection,Path(project).resolve(),original,evidence)
@@ -478,14 +605,26 @@ def wiring(project, number, destination, original, *, feature_plan=None, index=N
     proved=[]
     for old,point in zip(details,expected):
         proof=evidence.prove(point.description,selection['allowed_target_files'])
+        if proof['status']=='FAIL':
+            declared=evidence.prove_declarative(point.description,selection['allowed_target_files'],selection['callback_bindings'])
+            if declared['status']=='PASS': proof=declared
+        if proof['status']=='FAIL':
+            platform=evidence.prove_platform_route(point.description,selection['allowed_target_files'],selection['owned_files'])
+            if platform['status']=='PASS': proof=platform
         targets={entry['file'] for entry in proof.get('evidence',[]) if entry.get('role')=='definition'}
         proof['target_authority']=[entry for entry in selection['target_authority'] if entry['file'] in targets]
         proved.append({'ip_id':old['ip_id'],'description':point.description,
                        'original_evidence':old,**proof})
     categories['C2_integration_point']={'pass':sum(d['status']=='PASS' for d in proved),
         'fail':sum(d['status']=='FAIL' for d in proved),'details':proved}
-    replaced={'C2_integration_point'}|({'C3_cross_slice'} if selection['top_cross'] else set())
+    replaced={'C2_integration_point'}|({'C3_cross_slice'} if selection['top_cross'] else set())|({'C4_parent_replacement'} if selection['embed_bindings'] else set())
     actions=[a for a in report.get('repair_actions',[]) if a.get('category') not in replaced]
+    if selection['embed_bindings']:
+        for detail in categories['C4_parent_replacement']['details']:
+            if detail['status']=='FAIL':
+                actions.append({'id':'C4_parent_replacement__'+detail['ppr_id'],'category':'C4_parent_replacement',
+                    'failed_check':detail['failed_check'],'current_state':detail['reason'],
+                    'suggested_action':detail['repair_action'],'file':detail['parent_file'],'fixer_layer':'ui'})
     if selection['top_cross']:
         for detail in categories['C3_cross_slice']['details']:
             if detail['status']=='FAIL':
@@ -502,7 +641,7 @@ def wiring(project, number, destination, original, *, feature_plan=None, index=N
     report['scope']={key:selection[key] for key in ['owned_files','modifies_files','cross_slice_edits_files','audit_scope',
                                                  'allowed_target_files','target_authority']}
     report['native_adapter']={'version':1,'original_detector':'verify_slice_wiring.py',
-                              'preserved_categories':['C1_orphan_check','C4_parent_replacement']+
+                              'preserved_categories':['C1_orphan_check']+([] if selection['embed_bindings'] else ['C4_parent_replacement'])+
                                   ([] if selection['top_cross'] else ['C3_cross_slice']),
                               'source_roots':[path.relative_to(Path(project).resolve()).as_posix()
                                               for path in evidence.source_roots]}
