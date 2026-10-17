@@ -34,6 +34,8 @@ facts 生成 ios-facts.json 与 ios-obligations.json。这两件禁止模型手�
 
 ## 模型事实与覆盖
 
+页面/功能清单确定后先按 [原生规格生成协议](../../a2h-spec/references/native-authoring.md) 运行 `spec-authoring`，让工具枚举全部文档、条件维度、处置必填字段和各AC允许的源位置。候选不写baseline或控制账本；原作者复核落盘后仍运行原门禁。
+
 逐 page/feature 维护 `ios-semantics.json` v2，每个必需维度仍按 native-facts.md 枚举。known 的 value 必须是对象，fact_ids 指向所属源码的机器事实，evidence 必须落在这些事实片段内。复杂语义说明放 value 中，但须解释操作、状态、错误和观察结果。
 
 state_ownership.value 固定为 `{ "states": [{ "fact_id", "owner", "storage", "type", "initializer" }] }`，内容精确匹配状态事实。0、false、nil 与 Optional 默认值分别保留。

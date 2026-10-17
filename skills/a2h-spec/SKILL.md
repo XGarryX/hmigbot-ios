@@ -1,6 +1,10 @@
 ---
 name: a2h-spec
 description: "原生 iOS→HarmonyOS 规格生成：从 Swift/Objective-C、SwiftUI/UIKit 源行为交付可实施的 HMigBot baseline、目标公共合同与稳定 AC。用于初次迁移规格分析；不要用于排期、目标代码生成或已有规格的增量修改。"
+metadata:
+  type: pipeline
+  domain: migration
+  tags: [ios, spec, source-evidence]
 ---
 
 ## 控制面入口
@@ -120,6 +124,8 @@ HARD-DIV 按四件套：decision ID、替代数据流、supersedes 源 AC、新�
 已有授权直接复用；未知技术事实继续查证，产品取舍才提出具体选择。plan 消费同一账本。
 
 ### C5 实际校验
+
+页面/功能清单确定后，按 [原生规格生成协议](references/native-authoring.md) 运行 `spec-authoring`：先生成绑定当前源与MD的完整填报清单，再由原作者提交事实、处置与AC源位置，生成校验后的候选。候选中的字段与真值令牌由工具序列化；全部页面/功能必须一一对应，不能只写示例中的两份。候选仍须独立复核及原正式门禁。
 
 在目标根执行本包工具，所有 exit code 和报告路径保留：
 

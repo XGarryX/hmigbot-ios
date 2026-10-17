@@ -45,7 +45,7 @@
 | `spec/ref/ios-*-signals.json`；schema 2 | facts-view相应scope | 分专业机器视图；分析者继续读源码 | 线索不等于绑定或运行；当前图不符重提取 |
 | `baseline/ios-semantics.json`；schema 2 | page/feature事实作者 | typed known、fact_ids、evidence、unknown/N/A；source-check消费 | 必需维度与状态值核对；源证据变更重审；v1仅导入历史 |
 | `baseline/ios-coverage.json`；schema 2 | Spec源复核作者 | obligation_id→ac_ids及source_review；harness/Plan消费 | 当前graph_sha256；义务/AC不可漏；精确Preview仅按支持协议排除 |
-| `baseline/ios-source-disposition.json`；原范围协议 | 源范围作者按原source检查格式维护 | 文件/范围处置；source-check消费 | 不按目录猜排除；混合文件继续读产品符号；不可未知变排除 |
+| `baseline/ios-source-disposition.json`；原范围协议 | 源范围作者按 `source_disposition` schema 维护，`spec-authoring` 序列化候选 | `files` 条目必须有 `path/disposition/reason`；owner归属写page/feature的source_anchors | 不按目录猜排除；混合文件继续读产品符号；不可未知变排除；字面量排除另需真实文件摘要与行范围 |
 | `baseline/literal-ledger.json`；schema 2 | literals，从真实源提取 | 原始字面量/表达式/单位/源摘要；harness与产品投影消费 | 禁止spec空扫描代替；源变化重提；产品投影不覆盖raw |
 | `spec/ref/ios-expertise-plan.json`、`ios-expertise-reviews.json`、`ios-analysis-provenance.json`；schema 1 | expertise-plan；expertise-review保存真实源观察 | 固定专业资料、实际阅读、主题观察与来源；source门禁 | 当前源/资料包摘要；没有实际阅读/工具调用不能标used |
 | `spec/ref/mcp-runs/*/artifact.json`、`ios-mcp-index.json`；schema 1 | mcp-query实际调用时 | 工具响应和源事实关联；声明tool_evidence_ids的claim消费 | 响应只为tool_response；原capture校验、失败/unknown保留 |

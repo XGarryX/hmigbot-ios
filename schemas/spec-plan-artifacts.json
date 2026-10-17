@@ -50,6 +50,7 @@
       {"title": "资源与运行证据"}, {"title": "验收与接线"}
     ], "page_meta": true},
     {"path": "spec/baseline/api-inventory.json", "required": false, "schema": "api_inventory"},
+    {"path": "spec/baseline/ios-source-disposition.json", "required": false, "schema": "source_disposition"},
     {"path": "spec/baseline/api-contract-links.json", "required": false, "schema": "api_contract_links"},
     {"glob": "spec/baseline/features/*.state-machine.json", "required": false, "schema": "state_machine"}
   ],

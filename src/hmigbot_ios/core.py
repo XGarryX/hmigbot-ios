@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from xml.parsers.expat import ExpatError
 
 SCHEMA = "hmigbot-ios/1"
 EXCLUDED = {".git", ".build", "build", "DerivedData", "Pods", "Carthage",
@@ -128,8 +129,69 @@ def source_files(root: Path):
         for name in sorted(names):
             if name.startswith("._") or name == ".DS_Store":
                 continue
-            result.append(io_path(Path(parent) / name))
+            item = io_path(Path(parent) / name)
+            if _generated_xcode_metadata(item, item.relative_to(root)):
+                continue
+            result.append(item)
     return sorted(result, key=lambda p: p.relative_to(root).as_posix())
+
+
+def _generated_xcode_metadata(path: Path, relative: Path) -> bool:
+    """Ignore recognized Xcode cache files, never an entire workspace/user bundle.
+
+    Additional references, settings, schemes, lockfiles, malformed XML and
+    standalone workspaces remain inputs. Link checks run before this filter.
+    """
+    parts = relative.parts
+    in_user_data = any(part == 'xcuserdata' and index > 0
+                       and parts[index - 1].endswith(('.xcodeproj', '.xcworkspace'))
+                       for index, part in enumerate(parts))
+    if in_user_data and parts[-1] == 'UserInterfaceState.xcuserstate':
+        return True
+    if (in_user_data and parts[-1] == 'xcschememanagement.plist' and parts[-2] == 'xcschemes'):
+        if path.stat().st_size > 64 * 1024:
+            return False
+        import plistlib
+        try:
+            settings = plistlib.loads(path.read_bytes())
+        except (plistlib.InvalidFileException, ValueError, OverflowError, ExpatError):
+            return False
+        return (isinstance(settings, dict) and set(settings) <= {'SchemeUserState', 'SuppressBuildableAutocreation'}
+                and all(isinstance(value, dict) for value in settings.values()))
+    if (len(parts) >= 4 and parts[-1] == 'IDEWorkspaceChecks.plist' and parts[-2] == 'xcshareddata'
+            and parts[-3] == 'project.xcworkspace' and parts[-4].endswith('.xcodeproj')):
+        if path.stat().st_size > 64 * 1024:
+            return False
+        import plistlib
+        try:
+            checks = plistlib.loads(path.read_bytes())
+        except (plistlib.InvalidFileException, ValueError, OverflowError, ExpatError):
+            return False
+        return (isinstance(checks, dict) and set(checks) == {'IDEDidComputeMac32BitWarning'}
+                and checks['IDEDidComputeMac32BitWarning'] is True)
+    if (len(parts) < 3 or parts[-1] != 'contents.xcworkspacedata'
+            or parts[-2] != 'project.xcworkspace' or not parts[-3].endswith('.xcodeproj')):
+        return False
+    if path.stat().st_size > 64 * 1024:
+        return False
+    raw = path.read_bytes()
+    if b'<!DOCTYPE' in raw.upper() or b'<!ENTITY' in raw.upper():
+        return False
+    from xml.etree import ElementTree
+    try:
+        text = raw.decode('utf-8-sig')
+        if '<!DOCTYPE' in text.upper() or '<!ENTITY' in text.upper():
+            return False
+        parser = ElementTree.XMLParser(target=ElementTree.TreeBuilder(insert_comments=True, insert_pis=True))
+        tree = ElementTree.fromstring(text, parser=parser)
+    except (ElementTree.ParseError, ValueError, UnicodeError):
+        return False
+    children = list(tree)
+    return (tree.tag == 'Workspace' and tree.attrib == {'version': '1.0'}
+            and not (tree.text or '').strip() and len(children) == 1
+            and children[0].tag == 'FileRef' and children[0].attrib == {'location': 'self:'}
+            and not list(children[0]) and not (children[0].text or '').strip()
+            and not (children[0].tail or '').strip())
 
 
 def snapshot(root: Path):

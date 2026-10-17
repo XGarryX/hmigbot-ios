@@ -13,6 +13,7 @@ import uuid
 from .analyze import analyze
 from .core import MigrationError, read_json, safe_child, snapshot, write_json, digest, json_bytes, atomic_write, SOURCE_SUFFIXES, SOURCE_NAMES
 from .native_semantics import validate_native_facts
+from .native_contract import source_truth, validate_disposition
 
 ROOT = Path(__file__).resolve().parents[2]
 CODE = {'.swift', '.m', '.mm', '.h', '.c', '.cpp', '.storyboard', '.xib'}
@@ -190,9 +191,7 @@ def check_source(project: Path, *, after_repair=False, report_only=False):
                 truth = re.search(r'真:src:(.+?):(\d+)(?:`|\s|$)', body)
                 if truth:
                     try:
-                        file = safe_child(source, truth[1])
-                        if truth[1] not in anchors or not 1 <= int(truth[2]) <= len(file.read_text(encoding='utf-8-sig').splitlines()):
-                            raise MigrationError('Truth location is outside the feature anchors or line range')
+                        source_truth(source, anchors, truth[1], int(truth[2]))
                     except (MigrationError, OSError, UnicodeError) as exc:
                         fail('IOS.AC_TRUTH_INVALID', ac_id, str(exc))
                 elif not re.search(r'真:(test|trace|device|decision):[^`\s]+', body):
@@ -206,10 +205,11 @@ def check_source(project: Path, *, after_repair=False, report_only=False):
         if not isinstance(item, dict):
             fail('IOS.INVALID_DISPOSITION', str(item), 'Disposition entry must be an object')
             continue
-        if not isinstance(item.get('path'), str) or item['path'] not in known or item.get('disposition') not in {'dependency', 'test', 'not_applicable'} or not isinstance(item.get('reason'), str) or not item['reason'].strip():
-            fail('IOS.INVALID_DISPOSITION', str(item.get('path')), 'Unmapped source requires a concrete disposition and reason')
-        else:
+        try:
+            validate_disposition(item, known)
             ownership.add(item['path'])
+        except MigrationError as exc:
+            fail('IOS.INVALID_DISPOSITION', str(item.get('path')), str(exc))
     for path in sorted(known):
         if Path(path).suffix.lower() in CODE and path not in ownership:
             fail('IOS.SOURCE_UNACCOUNTED', path, 'Map to a page/feature source anchor or record a reviewed disposition')
@@ -284,7 +284,7 @@ def main(argv=None):
     init.add_argument('--source', required=True, type=Path)
     init.add_argument('--project', required=True, type=Path)
     commands.add_parser('expertise-audit')
-    for name in ('source-index', 'source-refresh', 'source-check', 'spec-check', 'spec-summary', 'migration-report', 'spec-upgrade', 'validate', 'build', 'literals', 'product-literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-check', 'plan-ir', 'replan', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query', 'manifest-evaluate'):
+    for name in ('source-index', 'source-refresh', 'source-check', 'spec-check', 'spec-authoring', 'spec-summary', 'migration-report', 'spec-upgrade', 'validate', 'build', 'literals', 'product-literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-check', 'plan-ir', 'replan', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query', 'manifest-evaluate'):
         p = commands.add_parser(name)
         p.add_argument('--project', required=True, type=Path)
         if name == 'source-check':
@@ -306,12 +306,14 @@ def main(argv=None):
             p.add_argument('--input', type=Path, required=True)
         if name == 'expertise-review':
             p.add_argument('--input', type=Path, required=True)
+        if name == 'spec-authoring':
+            p.add_argument('--input', type=Path)
         if name == 'mcp-query':
             p.add_argument('--server', type=Path, required=True)
             p.add_argument('--request', type=Path, required=True)
         if name == 'source-refresh':
             p.add_argument('--review', type=Path, required=True)
-        if name in {'literals', 'product-literals', 'spec-summary', 'migration-report', 'spec-upgrade'}:
+        if name in {'literals', 'product-literals', 'spec-summary', 'migration-report', 'spec-upgrade', 'spec-authoring'}:
             p.add_argument('--output', type=Path)
         if name in {'spec-summary', 'migration-report'}:
             p.add_argument('--build-evidence', type=Path)
@@ -349,6 +351,11 @@ def main(argv=None):
         elif args.command == 'literals':
             from .ios_literals import run
             result = run(args.project, args.output)
+        elif args.command == 'spec-authoring':
+            from .native_authoring import prepare, render
+            result = render(args.project, read_json(args.input)) if args.input else prepare(args.project)
+            if args.output:
+                write_json(_derived_output(args.project, args.output, 'spec-authoring.json'), result)
         elif args.command == 'spec-upgrade':
             from .spec_upgrade import inspect, apply
             if args.apply:

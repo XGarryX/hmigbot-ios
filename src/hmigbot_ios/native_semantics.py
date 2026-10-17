@@ -40,6 +40,12 @@ def validate_native_facts(source, project, documents, known, fail):
         fail('IOS.NATIVE_FACTS_MISSING', path.name, 'Read native-facts.md and retain framework/language semantics')
         return
     data = read_json(path)
+    validate_native_payload(source, project, documents, known, fail, data)
+
+
+def validate_native_payload(source, project, documents, known, fail, data):
+    """Validate an authored candidate with the same rules as the on-disk gate."""
+    path = project / 'spec/baseline/ios-semantics.json'
     if not isinstance(data, dict) or data.get('schema_version') not in {1, 2} or data.get('source_platform') != 'ios' or not isinstance(data.get('documents'), list):
         fail('IOS.NATIVE_FACTS_SCHEMA', path.name, 'Expected native facts v1/v2 with source_platform=ios and documents list')
         return

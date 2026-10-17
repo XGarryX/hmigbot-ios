@@ -61,6 +61,44 @@ def ac_inventory(project):
     return acs
 
 
+def validate_native_claims(project, graph, semantics, fail):
+    """Shared v2 claim checks for the formal gate and authoring candidates."""
+    from .native_pipeline import source_paths
+    facts = {f['id']: f for f in graph['facts']}
+    for doc in semantics.get('documents', []):
+        anchors = set()
+        folder = 'ui' if doc.get('kind') == 'page' else 'features'
+        for path in (project / 'spec/baseline' / folder).glob(doc.get('id', '') + '*.md'):
+            anchors.update(source_paths(path.read_text(encoding='utf-8-sig')))
+        for dimension, claim in doc.get('facts', {}).items():
+            relevant = [f for f in facts.values() if f['anchor']['path'] in anchors and dimension in RULES[f['kind']]['dimensions']]
+            subject = str(doc.get('id')) + ':' + dimension
+            tool_ids = claim.get('tool_evidence_ids', [])
+            if not isinstance(tool_ids, list):
+                raise MigrationError('tool_evidence_ids must be a list')
+            if tool_ids:
+                from .source_mcp import validate_captures
+                validate_captures(project, graph, tool_ids, claim.get('fact_ids', []))
+            if claim.get('status') == 'not_applicable' and relevant:
+                fail('IOS.NA_CONTRADICTION', subject, 'Source signals require treatment: ' + ','.join(f['id'] for f in relevant))
+            if claim.get('status') == 'known':
+                if not isinstance(claim.get('value'), dict) or not claim['value']:
+                    fail('IOS.CLAIM_TYPED_VALUE', subject, 'v2 known values must be structured objects')
+                refs = claim.get('fact_ids')
+                if not isinstance(refs, list) or not refs or any(r not in facts or facts[r]['anchor']['path'] not in anchors for r in refs):
+                    fail('IOS.CLAIM_FACT_LINK', subject, 'Known claims need machine fact IDs within document source anchors')
+                elif relevant and not {f['id'] for f in relevant} <= set(refs):
+                    fail('IOS.CLAIM_SIGNAL_MISSING', subject, 'Known dimension omitted a detected source signal')
+                else:
+                    evidence = claim.get('evidence', [])
+                    if any(not any(e.get('path') == facts[r]['anchor']['path'] and facts[r]['anchor']['line'] <= e.get('line', 0) <= facts[r]['anchor']['end_line'] for r in refs) for e in evidence):
+                        fail('IOS.CLAIM_UNRELATED_LINE', subject, 'Evidence must intersect the linked fact spans')
+                if dimension == 'state_ownership' and relevant:
+                    expected = [{'fact_id': f['id'], 'owner': f['owner'], **f['value']} for f in relevant if f['kind'] == 'state']
+                    if claim.get('value') != {'states': expected}:
+                        fail('IOS.STATE_VALUE_CONTRADICTION', subject, 'State owner/storage/type/initializer must match extracted declarations')
+
+
 def check(project: Path, *, report_only=False):
     from .native_pipeline import context, check_source, source_paths, findings_module
     source, project = context(project)
@@ -90,38 +128,7 @@ def check(project: Path, *, report_only=False):
         semantics = read_json(project / 'spec/baseline/ios-semantics.json')
         if semantics.get('schema_version') != 2:
             raise MigrationError('v1 free-text semantics cannot satisfy v2 gates; import and review')
-        for doc in semantics.get('documents', []):
-            anchors = set()
-            folder = 'ui' if doc.get('kind') == 'page' else 'features'
-            for path in (project / 'spec/baseline' / folder).glob(doc.get('id', '') + '*.md'):
-                anchors.update(source_paths(path.read_text(encoding='utf-8-sig')))
-            for dimension, claim in doc.get('facts', {}).items():
-                relevant = [f for f in facts.values() if f['anchor']['path'] in anchors and dimension in RULES[f['kind']]['dimensions']]
-                subject = str(doc.get('id')) + ':' + dimension
-                tool_ids = claim.get('tool_evidence_ids', [])
-                if not isinstance(tool_ids, list):
-                    raise MigrationError('tool_evidence_ids must be a list')
-                if tool_ids:
-                    from .source_mcp import validate_captures
-                    validate_captures(project, graph, tool_ids, claim.get('fact_ids', []))
-                if claim.get('status') == 'not_applicable' and relevant:
-                    fail('IOS.NA_CONTRADICTION', subject, 'Source signals require treatment: ' + ','.join(f['id'] for f in relevant))
-                if claim.get('status') == 'known':
-                    if not isinstance(claim.get('value'), dict) or not claim['value']:
-                        fail('IOS.CLAIM_TYPED_VALUE', subject, 'v2 known values must be structured objects')
-                    refs = claim.get('fact_ids')
-                    if not isinstance(refs, list) or not refs or any(r not in facts or facts[r]['anchor']['path'] not in anchors for r in refs):
-                        fail('IOS.CLAIM_FACT_LINK', subject, 'Known claims need machine fact IDs within document source anchors')
-                    elif relevant and not {f['id'] for f in relevant} <= set(refs):
-                        fail('IOS.CLAIM_SIGNAL_MISSING', subject, 'Known dimension omitted a detected source signal')
-                    else:
-                        evidence = claim.get('evidence', [])
-                        if any(not any(e.get('path') == facts[r]['anchor']['path'] and facts[r]['anchor']['line'] <= e.get('line', 0) <= facts[r]['anchor']['end_line'] for r in refs) for e in evidence):
-                            fail('IOS.CLAIM_UNRELATED_LINE', subject, 'Evidence must intersect the linked fact spans')
-                    if dimension == 'state_ownership' and relevant:
-                        expected = [{'fact_id': f['id'], 'owner': f['owner'], **f['value']} for f in relevant if f['kind'] == 'state']
-                        if claim.get('value') != {'states': expected}:
-                            fail('IOS.STATE_VALUE_CONTRADICTION', subject, 'State owner/storage/type/initializer must match extracted declarations')
+        validate_native_claims(project, graph, semantics, fail)
         coverage = read_json(project / 'spec/baseline/ios-coverage.json')
         if coverage.get('schema_version') != 2 or coverage.get('graph_sha256') != digest(json_bytes(graph)) or not isinstance(coverage.get('mappings'), list):
             raise MigrationError('Coverage requires v2 mappings and current graph_sha256')

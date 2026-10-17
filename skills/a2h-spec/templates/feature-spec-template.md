@@ -61,6 +61,8 @@ page.handler ← ViewModel/Service；包含参数与结果，交 a2h-plan 分配
 ## 验收标准
 - [ ] F001-AC01 <单个可观察断言>　`源:<源符号> → 标:<目标方法>`　`判:unit | <输入与期望结果>`　`真:src:<源相对路径>:<行号>`
 
+源真值从本功能已声明的 `source_anchors` 中选择真实路径和当前行号；按 [原生规格生成协议](../references/native-authoring.md) 交给 `spec-authoring` 渲染令牌。路径不匹配时回读源行为，修正真实归属或真值选择；不能为过门禁添加无关源文件、移动断言或改业务源码。
+
 `标:`必须是已在目标接口/状态/实现映射合同声明的`Owner.method`或`Owner.state`，UI布局验收也要定位已声明的组件构建/渲染入口。例如先在公开接口表声明`CounterPage.render(): void`，再用`标:CounterPage.render`；只写`标:CounterPage`、源符号或未声明的目标会被阻断。此锚点用于施工追踪，不能把“render存在”当作布局或行为验收。
 
 AC ID 稳定且不回收；主文件保留全部 AC。细节可移 addendum，但有 impl 指针。

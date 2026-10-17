@@ -47,6 +47,8 @@ v2中value固定为对象，数组/源表达式放对象内部；保存真实语
 自动转换器。nonvisual 只用于没有 UI 的 feature；不能用它逃避页面语义校验。
 文件归属与字段存在只是机械门，分析者还必须核对行为、调用目标与框架版本。
 
+生成前使用 [原生规格生成协议](../../a2h-spec/references/native-authoring.md) 的 `spec-authoring` 清单，逐一填写实际全部 page/F ID。条件维度由 `required_facts` 与正式检查共享；生成器不代写已知语义或N/A。文件处置的 `files` 仅保存 `path/disposition/reason` 及经审阅的可选证据字段；page/feature owner映射继续写 `source_anchors`。
+
 page/feature Markdown 头部增加 `source_platform: ios`、`ios_frameworks`、
 `source_languages` 与 `source_anchors`；“iOS 原生语义”节引用同 ID facts。
 目标映射写独立节：源概念、保留的行为、候选 ArkUI/ArkTS 表达、证据和待决策项。

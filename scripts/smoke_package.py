@@ -93,7 +93,7 @@ def main():
             for pattern in ('test_artifact_contract.py', 'test_plan_contract.py', 'test_quality_views.py',
                             'test_markdown_gates.py', 'test_freeze_contract.py', 'test_raw_strings.py',
                             'test_spec_upgrade.py', 'test_spec_upgrade_cli.py', 'test_page_evidence.py',
-                            'test_evidence_review.py'):
+                            'test_evidence_review.py', 'test_xcode_snapshot.py', 'test_native_authoring.py'):
                 execute('installed-' + pattern.removesuffix('.py'), [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover',
                         '-s', str(plugin / 'tests'), '-p', pattern, '-v'])
             execute('installed-expertise-mcp', [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover',

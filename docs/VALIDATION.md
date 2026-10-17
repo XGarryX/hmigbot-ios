@@ -1,4 +1,12 @@
-# 0.9.1 验证范围与复现
+# 0.9.2 验证范围与复现
+
+- 新增24项独立回归已通过：精确Xcode缓存排除、真实共享/本地Scheme及配置变化、13份native记录的完整性、字段schema、typed事实、N/A矛盾、附录/主功能锚点、过期输入、只读候选与正式门禁消费。
+- 全量529项：527通过、2项目录符号链接测试因本机Windows权限不足跳过，0失败。缓存损坏反例修复后，8项快照回归再次通过。
+- 11项发行检查通过：单元回归、原资源/调度器/专业资料审计、原流水线兼容、版本、技能/角色、便携入口与文档链接。另实际运行本机官方 skill-creator 的 quick_validate，96份Skill全部通过；外部插件validator未配置，不声明已运行。
+- 最终全量单元及ZIP独立安装/升级/卸载结果，使用本轮交付的 full-final.log、release-checks.json 和绑定ZIP摘要的 package-check.json；历史数字不用于推定当前结果。
+- [修复与旧索引升级](SOURCE-AUTHORING-0.9.2.md)；[生成操作协议](../skills/a2h-spec/references/native-authoring.md)。本轮只验证工具；不修改实际应用源/规格，不代表应用构建或设备验收。
+
+## 0.9.1 历史验证
 
 ## 2026-10-16 WorkBuddy 整改验证
 
