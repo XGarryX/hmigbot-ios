@@ -18,6 +18,12 @@ class NativeHelperTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory(prefix='native helper 测试 ')
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
+        (self.root / 'build-profile.json5').write_text(json.dumps({
+            'modules': [{'name': 'entry', 'srcPath': './entry'}]}), encoding='utf-8')
+        main = self.root / 'entry/src/main'
+        main.mkdir(parents=True)
+        (main / 'module.json5').write_text(json.dumps({
+            'module': {'name': 'entry', 'type': 'entry'}}), encoding='utf-8')
 
     def test_missing_image_dimensions_blocks_before_any_mutation(self):
         page = self.root / 'entry/src/main/ets/pages/Main.ets'

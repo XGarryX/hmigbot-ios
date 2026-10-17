@@ -39,26 +39,8 @@ def feature_inputs(arguments):
 
 def icon_audit(project, output):
     """Read-only original detector; never infer iOS scale from a default density."""
-    project, output = Path(project).resolve(), Path(output).resolve()
-    if not project.is_dir():
-        raise ValueError('Target project is missing')
-    # A previous report must never be mistaken for this invocation's output.
-    output.parent.mkdir(parents=True, exist_ok=True)
-    import tempfile
-    with tempfile.TemporaryDirectory(prefix='native-icon-audit-') as temp:
-        current = Path(temp) / 'report.json'
-        result = original('arkts-icon-sizing', 'icon_audit.py', ['--json', current], cwd=project)
-        if result.returncode or not current.is_file():
-            raise ValueError('Image constraint detector failed: ' + result.stderr[-1000:])
-        data = json.loads(current.read_text(encoding='utf-8-sig'))
-    if not isinstance(data, dict) or not isinstance(data.get('flagged'), list):
-        raise ValueError('Unexpected image constraint report')
-    # No hidden mutation is allowed for flagged dynamic images either.
-    native = {'source_platform': 'ios', 'status': 'needs_source_dimensions' if data['flagged'] else 'passed',
-              'mutated': False, 'report': data,
-              'scope': 'Image constraints only; not visual equivalence or inferred point-to-vp scale'}
-    output.write_text(json.dumps(native, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-    return native
+    from .native_icon_scope import audit
+    return audit(project, output, original)
 
 
 def structural_loop(arguments):
@@ -100,7 +82,15 @@ def structural_loop(arguments):
                 args.output_json.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
             print(json.dumps(data, ensure_ascii=False, indent=2))
             return 3
-    result = original('arkts-structural-closure', 'structural_loop.py', arguments)
+    native_pipeline = args.operation == 'iterate' and args.mode == 'pipeline'
+    if args.operation == 'finalize' and args.state_file.is_file():
+        from .core import read_json
+        native_pipeline = read_json(args.state_file).get('mode') == 'pipeline'
+    if native_pipeline:
+        from .native_pipeline_runtime import invoke as invoke_pipeline
+        result = invoke_pipeline(arguments, original=original)
+    else:
+        result = original('arkts-structural-closure', 'structural_loop.py', arguments)
     sys.stdout.write(result.stdout)
     sys.stderr.write(result.stderr)
     return result.returncode
