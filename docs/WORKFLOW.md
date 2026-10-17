@@ -1,6 +1,10 @@
 # 原 a2h 流水线中的原生 iOS 路径
 
 入口为 [a2h-run](../skills/a2h-run/SKILL.md)。初始化使用 source_platform=ios 与真实源、目标目录。
+完整细分步骤、各步 skill/MCP、产物和阶段交接见 [README 流水线](../README.md#迁移流水线细分步骤与阶段交接)。
+0.7.0 在 spec 中按固定清单加载外部 iOS 专业资料、保存审阅，并可采集真实源 MCP 证据；
+`source-check --harness` 验收记录合同，plan-ir 冻结资料/审阅/工具证据。实际接入见
+[外部能力规程](../skills/ios-source-analysis/references/external-expertise.md)。
 
 1. **spec**：ios-source-analysis 编排工程、UI、功能、API 四个源技能；形成源证据、分页/功能规格、原生语义和决策。
 2. **plan**：保留 P0 归属、P1 UI/Base/Slice、P2 汇总；indexed-v1、wires、integration_points、覆盖矩阵与稳定 AC 不变。

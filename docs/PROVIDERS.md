@@ -1,5 +1,20 @@
 # 官方来源、可选能力与实际状态
 
+## 0.7.0 实际新增接入（2026-10-12）
+
+已随包固定三套第三方 MIT 资料：AvdLee SwiftUI/Concurrency、Axiom UIKit/内存主题。
+expertise-plan/review 生成按主题清单与源审阅记录，source-check --harness 检查其来源和
+当前源版本。真实文件与许可见 [第三方来源](THIRD-PARTY-NOTICES.md)，使用方法见
+[外部接入规程](../skills/ios-source-analysis/references/external-expertise.md)。
+
+新增 mcp-query stdio 客户端，支持 Serena、Xcode 和 SourceKit 类源读工具白名单、
+版本协商、工具发现/分页、超时失败留档、原始响应/摘要与 known claim 引用检查。
+当前测试只覆盖隔离协议服务；真实后端、Mac 工程配置与有效符号绑定未实测。
+本版 MCP 输出保持 tool_response/unverified，不自动提升机器图为编译绑定或运行事实。
+SwiftSyntax/Clang 的既有 facts --providers 保留；MCP 经独立采集入口保存可审阅证据。
+
+下表保留 0.5.0 的 Apple 能力来源核查，不能把它的“未加载”理解为本版未导入第三方 skill。
+
 核查日期：2026-09-29。默认迁移由本包原 a2h 主线执行，外部能力可提供附加事实。
 “官方存在”“已配置”“已执行”必须分别记录，不能把链接或示例命令当调用成功。
 

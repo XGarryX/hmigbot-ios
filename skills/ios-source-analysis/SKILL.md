@@ -3,6 +3,15 @@ name: ios-source-analysis
 description: "原生 iOS 仓理解的统一入口：组织工程、UI、功能、API 四类分析，把 Swift、Objective-C、SwiftUI、UIKit、Interface Builder 的真实证据交给 a2h-spec。不是 iOS 应用生成器。"
 ---
 
+## 0.7.0 外部专业资料与工具证据
+
+先读 [外部 skill/MCP 接入规程](references/external-expertise.md)。facts 后运行 expertise-plan，按本轮主题清单读取实际上游资料，再用 expertise-review 提交源观察。需要符号证据时用 mcp-query；未连接工具保持 unknown/unavailable。结果继续进入现有 semantics/coverage/AC，不采用上游重构建议改写源行为。
+
+## 0.6.0 可执行协议
+
+本技能先加载 [Harness v2 协议](references/harness-v2.md)。事实、义务、计划和回执由随包脚本检查；本正文的分析责任继续适用，v2 协议决定机器产物和状态，旧版 source-check 不能代替新版门禁。
+
+
 
 # iOS 源仓理解与证据收口
 
@@ -25,6 +34,8 @@ description: "原生 iOS 仓理解的统一入口：组织工程、UI、功能�
 2. 调用 `ios-project-inspector`，识别 workspace、project、targets、schemes、
    SwiftPM、本地包、Pods、二进制 framework、构建条件和 app/extension 边界。
    在没有 Xcode 的机器上静态读文件；不能声称已解析有效 build settings。
+   遇 `Package.swift` 未求值或需区分产品与测试成员时，按
+   [清单求值与产品成员证据](references/source-input-evidence.md) 采集/推导后重做 facts。
 3. 调用 `ios-ui-analyzer`，按实际框架分别提取视图组合、状态/事件与导航。
    无可视主界面的 target 也要记录入口与平台行为，不能凭没有页面宣告无需迁移。
 4. 调用 `ios-feature-analyzer`，沿用户动作、生命周期和后台入口追至可观察效果，
@@ -63,6 +74,8 @@ Clang AST 与 SourceKit-LSP 的输出也不能冒充运行行为。
 每个 page/feature 有一个事实作者。可按 target/module 分工，但派发前写清文件所有权；
 宿主不支持分工时按同规程顺序执行。结束前回读交付文件、核对证据和范围，
 文件存在不代表分析已完成；不得用占位 Markdown 填平缺项。
+
+新生成产物先按 [Spec产物目录](../a2h-spec/references/artifact-contracts.md) 确认profile、格式、作者与消费者。UI/功能/API作者分别加载自己的analysis-v2执行步骤和正反例；异步/取消/分层清理的即时、完成与最终效果由唯一作者定义，各方精确引用。提交前按 [独立跨文档复核](../a2h-spec/references/spec-content-review.md) 完成finding→原owner返修→独立复查，结构PASS不能代替该源语义审阅。
 
 源码变化时按快照差异重读受影响调用链，再更新相关事实；保留旧版本和变更原因。
 只刷新 hash 不能关闭过期 source finding。路径歧义必须回到真实目录消歧。

@@ -3,6 +3,13 @@ name: ios-ui-to-arkui
 description: "在 a2h-execute Stage 1 按 iOS 页面 spec 实现 ArkUI；保留 SwiftUI 状态/Binding/身份/任务语义或 UIKit 生命周期/委托/约束，复用包内 ArkTS 组件、状态和导航技能及 batch 收口协议。"
 ---
 
+## 0.6.0 可执行协议
+
+本技能先加载 [Harness v2 协议](../ios-source-analysis/references/harness-v2.md)。事实、义务、计划和回执由随包脚本检查；本正文的分析责任继续适用，v2 协议决定机器产物和状态，旧版 source-check 不能代替新版门禁。
+
+读取 [语义映射与验收](references/semantic-mapping-v2.md)。按冻结任务书写 owned files，以源 fact/AC 为依据实现完整状态和反馈，再产真实摘要回执；生成不等于行为通过。
+
+
 
 # iOS 页面到 ArkUI 的实现
 
@@ -10,6 +17,8 @@ description: "在 a2h-execute Stage 1 按 iOS 页面 spec 实现 ArkUI；保留 
 
 输入 page_id、source_root、page_spec、ui_info、target、owning_slice、
 wiring_ownership_map、registered_placeholders、owned_files 与原生 facts。
+profile 2 同带 plan_item_refs/ac_ids、页面精确 spec_refs 与 contract_refs 传递闭包；
+按 a2h-execute/references/agent-prompts/_common.md 的输入消费与冲突回流规程执行。
 源只读；本角色只写被分配的页/组件。共享导航、注册、资源账本交 batch closer，
 功能 VM/repository 交所属 slice，不能抢写或用独立样例替代应用接线。
 
@@ -22,6 +31,7 @@ wiring_ownership_map、registered_placeholders、owned_files 与原生 facts。
 
 1. 回读分页 spec、source_anchors 与 ios-semantics 同 page ID。
    读取真实源文件、子视图和事件实现；核对源 hash，缺失/歧义回 a2h-spec。
+   联读组件树、条件分支、布局约束、资源与具体ArkUI映射；只有概述或未解决unknown时返回规格缺口，不能现场猜尺寸和状态。
 2. 列出必须保留的行为：初态、状态所有权、条件显示、输入/输出、导航、
    副作用时机、取消、布局/命中、资源与无障碍。原生机制和目标方案分开记录。
 3. SwiftUI 先迁移声明式层级与状态数据流，再迁移 modifier 有序效果、身份键、
@@ -47,6 +57,8 @@ wiring_ownership_map、registered_placeholders、owned_files 与原生 facts。
 返回实际 owned_files、组件导入/实例化需求、source→target 决策、placeholder、
 新增资源请求、未解决事实、需要验证的场景。原 batch closer 负责共享装配、
 结构检查、编译与 brief；主控按 apply_writeback 原协议落盘，不在 plan 回填状态。
+
+同时返回 consumed_refs/unread_refs/contract_conflicts（精确引用与受影响AC）。读取预算超出时分批读或拆任务，未消费输入不能被 deferred 描述掩盖成完成。page与共享动作合同冲突时提供两端和源anchor回Spec，不自行选一种。
 
 无设备时交付 generated/compiled 的真实状态，visual/device=not_run。
 复杂引擎/自绘/闭源 UI 无可行方案时提出具体边界与候选替代，不声称通用自动转换成功。

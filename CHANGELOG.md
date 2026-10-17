@@ -1,3 +1,53 @@
+# 0.9.2 — 2026-10-17
+
+- 精确识别Xcode自动自引用workspace、已知IDE检查缓存和直属xcuserdata；真实workspace引用、共享Scheme、锁文件、配置与源码继续使摘要过期。
+- 新增只读spec-authoring完整清单与受当前源/MD摘要绑定的候选渲染；生成器与原门禁共享disposition schema、native维度/事实校验及源真值锚点规则。
+- 同步Spec规程、模板、产物合同及续跑步骤；未知/缺失/重复/越界和NA矛盾继续拒绝，不改应用源码或放宽门禁。
+
+# 0.9.1 — 2026-10-16
+
+- 统一真实 Markdown 表格解析及目标列权限，处理相邻表、代码示例、行号/单元格跨度、核心标题歧义、缺件合并和显式未完成断言。
+- 按 catalog 的核心节/表头/稳定 ID 精确投影进度，阻断业务状态、范围与归属变化，typed segments 消除原文占位符碰撞；同步 Spec/Plan MD。
+- Swift 字符串保留完整 raw 分隔符、表达式和跨度，无法解码时标记 unresolved，不输出错误 value；同步资源消费 MD。
+- 新增只读 spec-upgrade 和明确选择候选的受控应用，不猜语义、不自动切 profile 或继承 PASS。
+- summary schema 2 逐页连接计划、原调度身份/落账、回执和当前输出；行为从本页 AC 原始观察推导；新增确定性 migration-report/--check，并在 Execute/Verify MD 实际调用。
+- 增加边界反例、独立审查及中性真实构建/逻辑评估；Chunky 和双端设备验收仍不在本次完成范围。
+
+# 0.9.0 — 2026-10-16
+
+- 以 MD 为主完善源分析步骤、正反例、页面组件/布局/ArkUI映射/资源表、共享动作单源、逐动作联读和原作者返修/独立复查；同步 Spec/Plan 模板、派发协议与角色。
+- 新项目启用 spec_contract_version=2；catalog/schema 与实际只读检查器共同限定核心章节、表头、页面 meta、动作定义/消费及按需 JSON 引用视图；原 API inventory 服务协议保留。
+- Plan 的 indexed MD、plan_items 投影与 typed task 对账 AC、页面、依赖、写权、范围及验证义务；冻结传递输入与工具合同版本，索引仅精确进度可变，禁止降级绕过。
+- 执行任务注入精确合同闭包，未读 addenda 阻断受影响 AC；独立 FV 无全工程写权，修复回原责任任务；统一既有六种 placeholder kind。
+- 新增 product-literals/spec-summary/plan-check；不覆盖 raw 字面量或三控制账本，不把历史 verified/brief PASS 当运行证据。编译和行为报告绑定当前源码、目标及规格摘要。
+- 增加正反例回归、实际模型生成的旧/新规则样本及独立源复核。发行检查验证工具合同和安装使用；不宣称真实 App 双端设备验收。
+
+# 0.8.0 — 2026-10-14
+
+- 从原spec原则、下游plan/execute消费者和软件设计实践完善主规格、目标公共接口、状态/对接点与独立AC合同；保留原五阶段和三账本写者。
+- 增加只读spec-check，并集成source-check --harness；检查正文、明确目标符号、UI目标状态、精确共享引用、延期断言及import/Preview真值反例。
+- import不再生成持久化操作义务；保留Preview原始事实和义务，通过哈希、精确词法区间、审阅与skip-list验证非产品排除。
+- domains冻结共享合同的传递依赖与决策账本，保留进度索引可写性，并将Stage 0真实资源映射留在执行所有权/回执检查中。
+- 新门禁证明内容/消费者合同，不能证明全量语义或设备行为；旧baseline需补合同、重提事实并显式重排，不继承旧成功。
+
+# 0.7.0 — 2026-10-12
+
+- 固定并随包导入 AvdLee SwiftUI、Swift Concurrency 和 Axiom UIKit/内存主题，3 个 MIT 快照、87 个真实文件；逐文件来源和 SHA256 审计。
+- 增加 expertise-plan/review：按真实源 token 路由、固定资料摘要、逐源文件观察与审阅记录；接入 source-check --harness 和 domains 计划冻结。旧 0.6.0 项目续跑需补审阅，保持原 ID。
+- 增加 stdio MCP 源读客户端：初始化/发现/白名单查询、分页、超时与错误证据、原始响应和 transcript 摘要；语义以 tool_evidence_ids 关联，失败/过期/无关证据拒绝。
+- README 明确初始化及五阶段细分步骤、skill/MCP、产物路径、门禁和前后衔接；恢复/复盘继续复用原账本。
+- 本机实际验证为源审阅合同、隔离 MCP 协议进程及原消费者/安装；未实测真实 Serena/SourceKit/Xcode 服务或完整 App 双端行为。
+
+# 0.6.0 — 2026-10-09
+
+- 新增机器 iOS 事实图和规则派生义务，四类分析视图与实际 provider 接入；保留解析层级、源码片段、摘要和未知。
+- v2 事实门禁阻断 NA 矛盾、错误初值、无关锚点、漏义务及弱 oracle；七技能补可执行入口、专业规程、模板和 ArkUI 语义映射。
+- 接入字节不变的 CodeX 1.7.0 四拍核心；typed task/所有权/DAG/fact/AC、任务书和 baseline 冻结，真实回执及文件差异检查。
+- 增加事件/存储效果链和显式进程观察；默认未运行为 UNVERIFIED，不继承旧版 PASS。
+- 显式旧版导入、源刷新、重排与历史留存；Windows 冻结核心的宿主解释器适配；发行检查失败/超时保留报告。
+- 独立使用发现并修复单页 Batch 规则冲突、差异表头误报与字面量零扫描；原字面量入口改为真实 iOS 源提取。
+- 验收范围为工具与隔离样本，真实 App/Apple 构建/鸿蒙 HAP/双端设备验收仍未验证。
+
 # 0.5.0
 
 - 原生重写 spec 前端；工程/UI/功能/API 四分析规程，保留 SwiftUI/UIKit/语言语义与独立行为真值。

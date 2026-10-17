@@ -49,6 +49,9 @@ def build_target(config, output: Path, timeout=300):
         env["NODE_HOME"] = str(Path(tool["node"]).parent)
     started = datetime.now(timezone.utc).isoformat()
     inputs = snapshot(target)
+    from .quality_views import spec_inputs, target_inputs
+    product_hashes = target_inputs(target)
+    contract_hashes = spec_inputs(target) if (target / '.migbot/config.json').exists() else {}
     source_before = snapshot(source)['sha256']
     try:
         result = subprocess.run(command, cwd=target, env=env, capture_output=True, timeout=timeout, shell=False)
@@ -63,6 +66,8 @@ def build_target(config, output: Path, timeout=300):
     source_after = snapshot(source)['sha256']
     hvigor_success = b'BUILD SUCCESSFUL' in stdout + stderr
     report = {"schema_version": SCHEMA, "started_at": started, "command": command,
+              "target_project": str(target.resolve()), "target_input_hashes": product_hashes,
+              "spec_input_hashes": contract_hashes,
               "target_input_sha256": inputs["sha256"], "target_after_sha256": snapshot(target)['sha256'],
               "source_sha256": source_before, "source_changed": source_before != source_after,
               "generation_integrity": generated_integrity,

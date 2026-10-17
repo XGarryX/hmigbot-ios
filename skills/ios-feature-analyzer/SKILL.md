@@ -3,8 +3,15 @@ name: ios-feature-analyzer
 description: "读取 iOS 功能行为与业务规则：沿 Swift/Objective-C 的事件、任务、委托、服务和持久化链提取状态转移、错误/取消、数据契约及独立验收真值，供原 a2h spec/plan 消费。"
 ---
 
+## 执行前加载
+
+按 [Harness v2](../ios-source-analysis/references/harness-v2.md) 确定机器产物/状态写者；按 [外部资料规程](../ios-source-analysis/references/external-expertise.md) 执行expertise-plan/review，未连接工具保持unknown/unavailable。
+
+执行 `python <runtime>/scripts/a2h_ios.py facts-view --project <target> --scope feature`，读取真实 `spec/ref/ios-feature-signals.json` 后继续读完整调用链。加载 [逐动作步骤与取消/清理正反例](references/analysis-v2.md)；不得手改机器信号，也不采用上游重构建议改写源行为。
 
 # iOS 功能行为与验收事实
+
+输出规格时按 [交付合同](../a2h-spec/references/spec-delivery-contract.md) 形成前态/事件/处理/后态/副作用/失败恢复、目标公开接口和对接点。信号是待审线索；先沿源码解释行为，再发行有具体期望的 AC。源测试仅作为独立 oracle，不计为目标产品实现或测试通过。
 
 ## 范围
 

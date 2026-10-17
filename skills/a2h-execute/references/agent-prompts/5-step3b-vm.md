@@ -1,6 +1,7 @@
 # Slice Step 3b：ViewModel 与状态
 
 输入 slice、feature/page spec、source_anchors/source_root、已有 .ets、native facts、owned_files。
+profile 2 输入同时含plan_item_refs/ac_ids、精确spec_refs与contract_refs闭包；按_common.md分批消费，返回consumed_refs/unread_refs/contract_conflicts。
 第一段读取真实 Swift/Objective-C 源码：事件→状态→副作用，解释 Optional、值/引用、
 actor/Task/取消或 ARC/delegate/block 语义；把事实写 source-understanding/<slice>-source-notes.md。
 第二段对照目标接口/平台决策，列语义差异与数据域、生命周期；未知项回 spec。

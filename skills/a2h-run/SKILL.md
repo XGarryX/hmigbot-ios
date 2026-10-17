@@ -23,6 +23,9 @@ description: "运行原生 iOS→HarmonyOS 的 a2h-spec → a2h-plan → a2h-exe
 | a2h-retrospect | 计划、brief、验证记录 | 可复用经验、未关闭项、源版本与变更记录 |
 
 阶段开始前加载该 SKILL.md 及本轮必需 references，不能只读取目录摘要。
+0.7.0 的 spec 阶段先按 ios-source-analysis 的 external-expertise 规程生成专业资料清单，
+由分析 owner 读取上游原文并提交源观察。MCP 仅在配置且真实可用时采集；所有证据进入
+原语义/AC/覆盖门禁。0.6.0 baseline 首次续跑也须采用 expertise-plan，不能继承旧门禁通过。
 使用已有授权自动推进；新的不可推断产品决策才请求用户选择，先完成可审阅材料。
 失败按原 `spec/.a2h/open-findings.json` 回流责任阶段，不能将失败步骤记为成功后继续验收。
 独立工作可继续，依赖失败输入的部分保持 blocked。不要将“部分可用”写成整轮完成。

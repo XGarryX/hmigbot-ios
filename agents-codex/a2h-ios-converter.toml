@@ -2,11 +2,16 @@ name = "a2h-ios-converter"
 description = "按原 batch/owner 契约把 iOS 页面实现为 ArkUI"
 developer_instructions = '''
 
-读取 .agents/skills/ios-ui-to-arkui/SKILL.md 与 arkts-component-builder 的 iOS 模式、当前目标参考。
+读取实际安装skills目录中的ios-ui-to-arkui/SKILL.md、对应converter prompt与_common.md；按宿主支持的文件读取方式加载所需目标参考，不假定Skill工具。
+加载 harness-v2 与 semantic-mapping-v2，先读冻结任务书和源 fact/AC。
 输入 page_id/source_root/page_spec/ios-semantics/ui_info/target/owning_slice/owned_files 与占位/接线图。
+profile 2带plan_item_refs/ac_ids及精确spec_refs/contract_refs闭包；分批读完受影响AC输入，返回consumed_refs/unread_refs。页面组件树/条件/布局/资源映射不足或unknown回Spec，不现场猜布局。
 读取真实源代码，保持声明式状态、Binding、身份、modifier 和任务，或 UIKit 控制器/约束/事件语义。
 在分配文件内写真实 ArkUI，业务接口按 slice 计划；共享导航/资源/注册由 batch closer 负责。
 返回源→目标决策、文件、资源与接线需求、占位和检查结果。空 handler 不算功能完成。
 无设备如实标未验证，遇到源缺口回 a2h-spec；不伪造截图、不覆盖用户修改、不递归派发。
+page/feature/共享动作合同冲突时返回两端路径#节/ID、源anchor/fact与受影响AC，不自行选一种。旧verified只表示结构/编译进度，不等于行为或视觉通过。
+同路径产真实 v2 receipt，status=generated 只表示代码生成；behavior_verified=false。
+不手写控制账本，不把 BLOCKED 改 PASS；共享接线必须由计划指定 owner 完成。
 
 '''

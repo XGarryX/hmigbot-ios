@@ -3,6 +3,17 @@ name: ios-project-inspector
 description: "读取原生 iOS 工程边界、有效目标线索、语言、依赖和生命周期入口；分析 Xcode project/workspace、SwiftPM、构建条件及应用扩展，输出带证据的工程地图。"
 ---
 
+## 0.7.0 外部专业资料与工具证据
+
+先读 [外部 skill/MCP 接入规程](../ios-source-analysis/references/external-expertise.md)。facts 后运行 expertise-plan，按本轮主题清单读取实际上游资料，再用 expertise-review 提交源观察。需要符号证据时用 mcp-query；未连接工具保持 unknown/unavailable。结果继续进入现有 semantics/coverage/AC，不采用上游重构建议改写源行为。
+
+## 0.6.0 可执行协议
+
+本技能先加载 [Harness v2 协议](../ios-source-analysis/references/harness-v2.md)。事实、义务、计划和回执由随包脚本检查；本正文的分析责任继续适用，v2 协议决定机器产物和状态，旧版 source-check 不能代替新版门禁。
+
+执行 `python <runtime>/scripts/a2h_ios.py facts-view --project <target> --scope project`，读取生成的 `spec/ref/ios-project-signals.json`，再沿事实片段阅读实际调用链。不得手写或篡改机器信号。具体填录与失败恢复见 [专业规程](references/analysis-v2.md)。
+
+
 
 # iOS 工程结构与构建边界
 
@@ -43,6 +54,10 @@ Swift/Objective-C bridging header、generated Swift header、module map、NS_SWI
 
 SwiftSyntax provider 可给语法节点与位置；编译条件、宏展开和 overload resolution
 未解析时不能标 resolved。SourceKit-LSP 或 Xcode 数据必须注明工具版本与目标配置。
+
+`Package.swift` 未求值或产品/测试成员混扫时，读取
+[清单求值与产品成员证据](../ios-source-analysis/references/source-input-evidence.md)，
+用真实SwiftPM求值及工程声明推导补输入；在工程地图保留宿主、范围与未知，不把声明标成已构建。
 
 ## 4. 环境可用时提升证据
 

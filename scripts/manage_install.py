@@ -32,6 +32,11 @@ Use the bundled $a2h-run: a2h-spec -> a2h-plan -> a2h-execute -> a2h-verify
 and read the native source skills. Keep the shared spec/baseline contracts,
 indexed plans, execution briefs, AC traceability and spec/.a2h/open-findings.json.
 Use source_anchors and ios-semantics.json to retain SwiftUI/UIKit and language facts.
+Load ios-source-analysis/references/harness-v2.md for the control contract.
+Load references/external-expertise.md in that skill for pinned iOS expertise.
+Run expertise-plan/review before the source gate; MCP responses stay tool evidence.
+Generate machine facts/obligations and run source-check --harness before plan-ir.
+Use next-batch/receipt/land-results; only original tools write the three state ledgers.
 All skills, references, templates, binaries and agent roles are local. No external
 HMigBot path or binding packet is needed. Helper runtime: .hmigbot-ios/plugin.
 Use the original ArkTS implementation and validation steps. Respect current user
@@ -94,7 +99,7 @@ def child(workspace, relative):
 
 def payload():
     files = {}
-    for folder in ('.codex-plugin', 'skills', 'scripts', 'src', 'rules', 'schemas', 'providers', 'docs', 'agents-codex', 'bin', 'policies', 'vendor'):
+    for folder in ('.codex-plugin', 'skills', 'scripts', 'src', 'rules', 'schemas', 'providers', 'docs', 'evaluations', 'agents-codex', 'bin', 'policies', 'vendor'):
         for path in (ROOT / folder).rglob('*'):
             if path.is_file() and not {'__pycache__', '.build', '.swiftpm'}.intersection(path.parts) and path.suffix != '.pyc':
                 if path.is_symlink():

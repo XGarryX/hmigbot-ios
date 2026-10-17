@@ -12,6 +12,14 @@ metadata:
 
 # a2h-retrospect
 
+## 0.7.0 原生源理解复盘输入
+
+计划优先读取 spec/baseline/plans/{ui-plan,base-plan,feature-plan}.md 与 slices，兼容旧
+spec/plans/plan-* 仅在实际存在时使用。读取 spec/ref/ios-expertise-plan.json、reviews、
+ios-analysis-provenance.json 及实际 MCP 捕获，区分加载资料、声明审阅、真实工具调用和
+行为验证。复盘源码误解、规范建议误当源事实、漏路由及证据失效；未知不能计入已验证准确率。
+上游固定快照不自动改写，改进放自有 references 或 staged patch，审阅升级后再回归。
+
 ## 1. 定位
 
 Pipeline 层第五步，**闭环自优化**。让 Domain Skill 越用越好。
@@ -47,7 +55,7 @@ a2h-spec → a2h-plan → a2h-execute → a2h-verify → a2h-retrospect（本 sk
 **前置检查（gate）**：
 - `spec/verify-report.md` 不存在 → 提示"请先执行 a2h-verify"，**终止**
 - `spec/migration-report.md` 不存在 → 提示"请先执行 a2h-execute"，**终止**
-- `spec/plans/plan-*.md` 不存在 → WARN"无 plan，跳过 plan vs actual 对比"，继续
+- `spec/baseline/plans/` 与兼容 `spec/plans/plan-*.md` 均不存在 → WARN"无 plan，跳过 plan vs actual 对比"，继续
 
 ---
 

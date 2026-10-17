@@ -48,7 +48,7 @@ def validate(plugin, fixtures, output):
         run('source-check', helper, ['source-check', '--project', project])
         run('original-addenda-closure', 'skills/a2h-spec/scripts/lint_addenda_closure.py', ['--spec', project / 'spec/baseline'])
         run('original-platform-divergence', 'skills/a2h-spec/scripts/lint_divergence.py', ['--spec-dir', project / 'spec/baseline/features', '--gate'])
-        run('original-literal-index', 'skills/a2h-spec/scripts/extract_literals.py', ['--spec-dir', project / 'spec/baseline', '--out', project / 'spec/baseline/literal-index.json'])
+        run('native-literal-index', 'skills/a2h-spec/scripts/extract_literals.py', ['--spec-dir', project / 'spec/baseline', '--out', project / 'spec/baseline/literal-index.json'])
         run('original-traceability', 'skills/a2h-spec/scripts/build_traceability_index.py', ['--project-root', project])
         state = project / 'spec/.a2h'
         requirements = read(state / 'requirements-index.json')['requirements']

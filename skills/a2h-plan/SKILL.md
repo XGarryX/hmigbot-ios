@@ -9,6 +9,23 @@ metadata:
   - migration
 ---
 
+## 0.6.0 控制面入口
+
+实施计划须消费已通过 spec-check 与 source-check --harness 的规格。公开目标接口、状态、值域和平台差异依据 [规格交付合同](../a2h-spec/references/spec-delivery-contract.md)；plan 逐条提取对接点并分配文件/handler写权，不临场补造业务合同。contract_refs 的共享接口与决策账本进入 domains 冻结输入。
+
+新生成的规格与计划使用 `spec_contract_version: 2`。生成或消费计划前读取 [Plan 交付合同](references/plan-delivery-contract.md)：该合同限定全部 indexed-v1 产物、MD 提纲、Plan items JSON 投影、typed task 来源映射、精确输入闭包及状态解释；模板负责形态，harness 检查实际映射，不能分别生成两套合法但不对应的计划。
+
+排查输入可先运行 `source-check --harness --report-only` 只读诊断；正式排期仍须通过源门禁。目标接口和页面状态只消费规格真实表格的受支持目标列，不能从源说明中的“目标”关键词推断声明。核心章节和任务精确标题有歧义时回原作者消歧，不静默选择某一节。
+
+先读取 [iOS Harness v2](../ios-source-analysis/references/harness-v2.md)，以该协议决定输入、机器门禁和状态写者。以下原领域规程继续用于规格内容、indexed 计划、接线和真实验证；不得再手工调度或写入三份控制账本。
+
+原计划覆盖检查后，将具体任务、所有权、依赖、fact/AC 和决策交给 plan-ir。生成的 blueprint/plan/prompts 冻结，不将执行态写回计划。审批沿用已有授权，不重复要求阶段批准。
+
+0.7.0 的 domains 计划还冻结 spec/ref 下的 expertise-plan/reviews、provenance 和 MCP
+采集索引/原始产物。任务引用已审阅源语义与 tool_evidence_ids；新增或修正源结论先回
+spec 过门，再显式 replan，不在执行任务中应用上游现代化建议。
+
+
 
 ## 宿主执行与收口
 
@@ -52,13 +69,13 @@ metadata:
 
 - **输入门槛**：`spec/baseline/` 就绪 **且** `spec/ui-coverage-report.md` 最近一次 PASS，才能生成 plan；否则阻断并提示回 a2h-spec。
 - **indexed 布局唯一**：feature-plan.md = 纯调度索引（`plan_format: indexed-v1`；Base 层正文外置 `plans/base-plan.md`（只读，无 checkbox/evidence）、索引留 3 行 stub；slice 头部按 parallel_group 以 `## Group N` 分节），逐 slice 账本在 `plans/slices/slice-NN-<fid>.md`；无 single 模式。
-- **slice 文件三铁律**：① 调度表非详案（scope 名字级 + `spec_refs` 指针，复制 spec 正文 = FAIL）；② 生成后只读（零 checkbox / evidence / 状态字段——完成性由 verify_slice_wiring 机械校验 + 组 brief 记录）；③ 不持有占位（plan 期占位**直接写** `spec/placeholder-registry.md`）。
-- **域判据**：spec 重审才变 → feature-index/spec；重新排期才变 → plan；执行推进才变 → 状态账本（ui-manifest / feature-index）+ brief。plan 不承载任何执行态。
+- **slice 文件三铁律**：① 调度表非详案（work_scope名字级 + spec_refs指针，机器scope=product/excluded，复制正文FAIL）；② 生成后只读（零checkbox/evidence/状态字段，完成性由代码校验与brief记录）；③ 不持有占位（plan期占位直写registry）。
+- **域判据**：spec 重审才变 → feature-index/spec；重新排期才变 → plan；执行推进才变 → 原状态账本及brief。profile 2仅catalog指定核心section、完整真实表头及稳定F/page ID行的“状态”进度单元格可变，另有白名单受管进度块；相邻表、额外业务status表和数据关键词不豁免。skipped/excluded、owner、依赖、页面归属、目标与结构变更须重审、重过门并显式replan。plan 不承载任何执行态。
 - **编排派发（§3.0，HARD-GATE）**：P1 三写产物（ui-plan / base-plan / plans/slices/*）**必须由 A/B/C subagent 生成，主线程禁自写**；降级自跑仅限 §3.0 三条件成立，且须在审批摘要「可调整项」注明降级原因——**静默自跑 = PROCESS_VIOLATION**。
 - **`<HARD-GATE>` 覆盖率阈值（§7）**：P0 功能 100% / UI 页面覆盖（ui-plan ⊇ ui-manifest）/ placeholder trigger 白名单率 100%（对 registry 跑）/ complex anchor 完整率 100%（读 spec）/ 对接点归属率 100% / **组件嵌入归属率 100%** / **分层校验 5 项**，任一不达标 → 阻断 plan 输出。
 - **接线工作**只能走 ① owned task（Step 3d）或 ② forward-ref；其余写法（placeholder / prose defer）一律 plan FAIL。
 - **Final Verification 必带 2 task**：FV-1 Final Structural Closure（a2h-execute §6）+ FV-2 终态全量编译，缺一即 plan FAIL —— 结构兜底在前（其修复会改码），终编译在后兜住可构建性；这是确保 §6 pipeline loop 不被遗漏的强制 task 化锚点。
-- **人工审批**：双计划生成后须用户确认才进 a2h-execute。
+- **阶段授权**：双计划检查通过后沿用用户已有授权进入 a2h-execute；当前会话未授权执行时再请求确认，不能用确认豁免失败门禁。
 - **References / Templates 强制加载（HARD-GATE）**：本 skill body 中所有 `[references/X.md]` / `[templates/Y.md]` 引用，在对应步骤执行时**必须** Read 整个文件作为执行规范，不得仅靠 body 摘要或字段名提示执行（templates 中"必填字段"段不得删减或简化）。跳过加载 = PROCESS_VIOLATION。规则适用于 LLM 主线程和派发的 subagent。
 
 ---
@@ -93,6 +110,7 @@ a2h-plan（读 Spec → 生成双计划，indexed 布局）
 | `spec/baseline/ui-manifest.md` | UI 页面清单、优先级、confidence、共享组件、转换批次 |
 | `spec/baseline/feature-index.md` | 功能总索引、依赖图、优先级、V1/V2 分配 |
 | `spec/baseline/feature-base.md` | Base 层公共能力定义（Models, DB, Network, Events 等） |
+| `spec/baseline/features/*.md` 及其 `contract_refs`/`impl:` 引用闭包 | active AC、目标接口/动作、值域与完成事件；任务记录精确章节，不只读索引摘要 |
 | `spec/baseline/ui/page_NNNN.md` | 各页面的详细 UI Spec（每个页面一个文件） |
 | `spec/baseline/source-coverage-report.md` | 源码侧功能覆盖审计（a2h-spec C4.6b 产出，ownership + skip-list）；排期时作「已认领能力」参照 |
 | `spec/baseline/module-dep-graph.json` | 多子仓项目专有：子仓 DAG + seam 签名，用于排子仓级拓扑序 |
@@ -154,7 +172,7 @@ UI 计划负责调度所有页面的 UI 转换工作，按优先级和 confidenc
 1. 同一优先级内，confidence: high 的页面排在前面（confidence 是**分批输入**，读 ui-manifest，**不输出成列**）；low 页行内标 ⚠️ 需人工补充数据（异常才显性）
 2. P0 → P1 → P2 顺序编排批次；**批内页数无上限**（批 = 优先级的自然分组，批内全并行派发、并发由 runtime 自然限流；若 Stage 1 收口编译修复负载过重，可项目级重引软上限）
 3. **页面依赖不约束分批**——导航 / 嵌入目标未建一律由 FWD-REF 机制兜底，且批内无编译（统一编译在 execute §3d 收口），跨批依赖零编译代价，无需依赖排序（**不输出逐页可并行列**——批内默认全并行，单写者纪律保证）
-4. **size-1 Batch 禁止**——孤页批并入**前一批**末尾（行内保留其原优先级标注；此并批不视为违反优先级单调性）
+4. **单页 Batch**——真实范围仅 1 页或首批无前批可合并时允许 size-1，记录真实页数及原因；其他孤页并入前批，保留原优先级。禁止凑造页面。
 
 **Step 3/4/5 已并入上表**（无 per-page agent 估算——每页恒 1 converter；结算检查点每 Batch 末尾注入，批内无编译——统一编译在 execute §3d 收口）。
 
@@ -172,6 +190,8 @@ UI 计划负责调度所有页面的 UI 转换工作，按优先级和 confidenc
 - 所有功能 ID（F-xxx）及其优先级和 V1/V2 分配
 - 功能之间的依赖关系（依赖图）
 - 每个功能涉及的页面和数据层组件
+
+profile 2 区分「排序依赖」与「契约依赖」、「关联页面」与「创建页面」：前者分别用于 DAG 与读取闭包，后者分别用于消费范围与唯一文件创建者。关联同一页不能推导多写者，契约依赖不能自动变串行边。遇到索引/feature/page/共享合同不一致，按 Plan 交付合同记录两端与源证据回 Spec，不能由计划作者择一覆盖。
 
 从 `spec/baseline/feature-base.md` 提取：
 - Base 层包含的公共能力列表（Models, DB, Network, Events, Preferences, 公共组件库）
@@ -327,13 +347,15 @@ chain-auth 是**横切**链路的逐层装配契约（L0–L7），owner 分散�
 
 完整模板见 [templates/ui-plan-template.md](./templates/ui-plan-template.md)（生成 ui-plan.md 时读）。
 
+profile 2每个任务以含完整item_id的独立标题定位，并在标题下生成固定七行责任表（字段/值、值为JSON literal）。含任务的MD带唯一plan_items_version:2 JSON投影，与责任表的ID/AC/写权/parents/page_ids/scope/verification逐字段exact一致；再对typed task检查。字段与拆合规则见[Plan交付合同](references/plan-delivery-contract.md)，不凭关键词或总量一致推断任务语义一致。
+
 Core：Batch 无页数上限（批次仅由优先级切分，页面依赖不参与——FWD-REF 兜底）；无逐批 `hard_limit/actual_pages` 自声明。`owning_slice` 列填**裸 F-ID**（`^F\d{3}$` 契约——Slice↔F-ID 1:1，编号见索引），供 converter 算 forward-ref `resolve_by` + §7 归属校验消费。**Summary 不再输出 owning_slice 全量映射段**（Batch 表行内已有，第三份副本禁止）。
 
 ### 5b. 功能执行计划格式（L1 索引 + L2 slice 文件）
 
 **MUST 加载**两个模板：[templates/feature-plan-template.md](./templates/feature-plan-template.md)（L1 索引 + base-plan.md：Context 含 `plan_format: indexed-v1` / Base 层 stub（Base-0..7 正文写 `plans/base-plan.md`，只读无 checkbox/evidence）/ slice 头部按 parallel_group `## Group N` 分节、每组末尾 `> group-closer @ GN` 插入行、每 slice 头部含 `detail:` 指针 / FV / Summary，"必填规则"段不得删减）+ [templates/slice-plan-template.md](./templates/slice-plan-template.md)（L2 slice 文件：三铁律 / `source_anchors_ref` / 结构化接线账本 `integration_points`·`wires`·`modifies_files`·`cross_slice_edits`（含两条降噪规则），"字段规则"段不得删减）。
 
-索引**不含**：依赖 ASCII 树、步骤契约文本、账本内容、状态列。slice 文件由 Step 4.0–4.3 生成账本；4 步任务行只写差异化 scope + input 指针（验收契约权威在 a2h-execute §5b–5e，plan 零复述）。
+索引不含依赖ASCII树、步骤契约/账本正文或状态列。Slice四步以名字级work_scope和input指针说明任务，另用固定责任表声明完整机器义务；验收契约仍在execute §5b–5e，不复述正文。
 
 ---
 
@@ -405,7 +427,7 @@ Plan 生成完毕后，必须执行覆盖率校验，确保所有 V1 功能都�
 | 组件嵌入归属率 | = 100% | 阻断（ui-manifest 子组件表 ∪ page_NNNN.md 嵌入关系未在 Slice `wires:` embed 条目中体现） |
 | 数据链路层扇出完整率（chain-auth 存在时） | = 100% | 阻断（§5.1 某层无 `data_chain_refs:` 落点） |
 | 分层校验 5 项（校验算法第 11 项） | 全部 PASS | 阻断（索引对应 / spec_refs 存在 / 快照 / 零复述 / 状态交叉任一失败） |
-| Batch 优先级单调性 + 无 size-1 批 | 批序 P0→P1→P2 单调，每页只入其优先级（ui-manifest 权威）对应批段；**size-1 批 = 0**（孤页并入前一批、行内保留原优先级，此并批不算违规） | 阻断 |
+| Batch 优先级单调性 + 无 size-1 批 | 批序 P0→P1→P2 单调，每页对应真实优先级；单页范围/首批无前批的 size-1 有明确原因，其余孤页并前批，禁止虚构页面 | 阻断 |
 </HARD-GATE>
 
 输出文件：`spec/baseline/plans/coverage-matrix.md`
@@ -432,6 +454,8 @@ registry 由 Step 4.1 在 plan 生成过程中**直接写入**（`spec/` 根目�
 
 §7 的覆盖率校验是 **F-ID / 页面 / 对接点粒度**（HARD-GATE）；本节是 **AC 粒度**的第二层对账
 （findings 闭环）。两层互补：**先 §7 后本节**，各跑一遍，结果都进 §8 审批摘要。
+
+profile 2先逐字段核对正文局部责任表→Plan items（item_id/ac_ids/ownership/parents/page_ids/scope/verification），再核对typed task来源：活动任务有有效plan_item_refs，所有活动MD项被覆盖，拆合带mapping_reason，排除项不进入执行。packet_id继续供原覆盖/认领，不替代plan_item_refs。
 
 三写产物（ui-plan / base-plan / slices）生成后，写 `spec/.a2h/plan-coverage.json`，把 Spec
 发布的每条 active requirement 映射到认领它的**执行单元**：
@@ -469,7 +493,7 @@ python3 scripts/lint_plan_coverage.py --project-root $PROJECT_ROOT
 
 ## 8. 门控
 
-双计划 **+ grill #2** 完成后需要**人工审批**（同时审批 **plan + decision-ledger**）。审批摘要输出模板（UI/功能计划概览 + 覆盖率 + Placeholder Registry + 骨架审计预演 + **grill #2 决策清单** + briefs 落点 + 可调整项）见 [templates/gate-output-template.md](./templates/gate-output-template.md)。
+双计划 **+ grill #2** 检查完成后按当前授权推进；尚未授权执行时再请求同时确认plan与decision-ledger。摘要输出模板（UI/功能计划概览 + 覆盖率 + Placeholder Registry + 骨架审计预演 + grill #2决策 + briefs落点 + 可调整项）见 [templates/gate-output-template.md](./templates/gate-output-template.md)。
 
 审批摘要必须附 **§7.3 AC 级对账结果**（🔴 未认领清单为空才可直接确认）。用户可直接确认 / 修改后确认 → 进入 a2h-execute（execute 按 ledger 查表执行，不再交互式追问）；或要求重新生成 → a2h-plan 重新执行。
 
@@ -481,7 +505,7 @@ python3 scripts/lint_plan_coverage.py --project-root $PROJECT_ROOT
 
 ---
 
-> **Remember**：`spec/baseline/` + `ui-coverage-report.md` PASS 才生成 plan；indexed 布局唯一（索引 + slices/ 只读账本）；占位直写 registry；§7 `<HARD-GATE>` 阈值任一不达标即阻断；双计划须人工审批后才进 a2h-execute。
+> **Remember**：Spec源门通过后生成indexed-v1只读计划；占位直写registry；覆盖与MD→typed JSON来源检查失败均阻断；阶段执行沿用当前用户授权。
 
 ---
 

@@ -3,6 +3,11 @@ name: ios-api-inventory
 description: "提取原生 iOS 服务 API、系统框架、权限、entitlements、隐私与三方 SDK 接缝；保存调用和数据契约证据，并向 HMigBot 目标领域技能提供可核验输入。"
 ---
 
+## 执行前加载
+
+按 [Harness v2](../ios-source-analysis/references/harness-v2.md) 确定机器产物/状态写者；按 [外部资料规程](../ios-source-analysis/references/external-expertise.md) 执行expertise-plan/review，未连接工具保持unknown/unavailable。
+
+执行 `python <runtime>/scripts/a2h_ios.py facts-view --project <target> --scope api`，读取真实 `spec/ref/ios-api-signals.json` 后继续读调用链。加载 [接缝分析与跨作者交接](references/analysis-v2.md)；不得手改机器信号，也不采用上游重构建议改写源行为。
 
 # iOS API、平台能力与依赖接缝
 

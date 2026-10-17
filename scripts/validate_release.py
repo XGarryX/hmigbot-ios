@@ -24,12 +24,20 @@ def main():
     checks = []
     def command(name, arguments):
         env = {**os.environ, 'PYTHONUTF8': '1'}
-        result = subprocess.run(arguments, cwd=ROOT, env=env, capture_output=True, timeout=600, shell=False)
-        (output / (name + '.stdout.log')).write_bytes(result.stdout)
-        (output / (name + '.stderr.log')).write_bytes(result.stderr)
-        checks.append({'name': name, 'passed': result.returncode == 0, 'exit_code': result.returncode})
+        try:
+            result = subprocess.run(arguments, cwd=ROOT, env=env, capture_output=True, timeout=600, shell=False)
+            stdout, stderr, code = result.stdout, result.stderr, result.returncode
+        except subprocess.TimeoutExpired as exc:
+            stdout, stderr, code = exc.stdout or b'', exc.stderr or b'', None
+        except OSError as exc:
+            stdout, stderr, code = b'', str(exc).encode('utf-8'), None
+        (output / (name + '.stdout.log')).write_bytes(stdout)
+        (output / (name + '.stderr.log')).write_bytes(stderr)
+        checks.append({'name': name, 'passed': code == 0, 'exit_code': code})
     command('unit-tests', [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover', '-s', 'tests', '-v'])
     command('upstream-resource-audit', [sys.executable, '-X', 'utf8', 'scripts/audit_upstream.py'])
+    command('scheduler-resource-audit', [sys.executable, '-X', 'utf8', 'scripts/audit_scheduler.py'])
+    command('external-expertise-audit', [sys.executable, '-X', 'utf8', 'scripts/a2h_ios.py', 'expertise-audit'])
     command('native-instruction-surface', [sys.executable, '-X', 'utf8', 'scripts/audit_native_surface.py'])
     command('original-pipeline-compatibility', [sys.executable, '-X', 'utf8', 'scripts/validate_native_pipeline.py', '--output', str(output / 'native-pipeline')])
     manifest = json.loads((ROOT / '.codex-plugin/plugin.json').read_text(encoding='utf-8-sig'))
@@ -42,14 +50,14 @@ def main():
         all(a['status'] == 'checklist_reference' and (ROOT / 'skills' / a['skill'] / 'SKILL.md').is_file() for a in catalog['atoms']),
         'skill_count': len(skills), 'atom_count': len(catalog['atoms'])})
     wrappers_equal = all((ROOT / 'skills' / name / 'scripts/run.py').read_bytes() == (ROOT / 'scripts/skill_entry.py').read_bytes()
-                         for name in ('ios-source-analysis', 'ios-resources-convert', 'ios-ui-to-arkui'))
+                         for name in ('ios-source-analysis', 'ios-project-inspector', 'ios-ui-analyzer', 'ios-feature-analyzer', 'ios-api-inventory', 'ios-resources-convert', 'ios-ui-to-arkui'))
     checks.append({'name': 'portable-skill-wrappers', 'passed': wrappers_equal})
     missing = []
     # Upstream vendor snapshots and project-output templates contain remote-relative,
     # example, and historical links; scope this gate to maintained delivery instructions.
     docs = [ROOT / 'README.md', *(ROOT / 'docs').glob('*.md')]
     docs += [p for p in (ROOT / 'skills').rglob('ios-*.md') if '/bin/' not in p.as_posix()]
-    docs += [p for name in ('ios-source-analysis', 'ios-resources-convert', 'ios-ui-to-arkui')
+    docs += [p for name in ('ios-source-analysis', 'ios-project-inspector', 'ios-ui-analyzer', 'ios-feature-analyzer', 'ios-api-inventory', 'ios-resources-convert', 'ios-ui-to-arkui')
              for p in (ROOT / 'skills' / name).rglob('*.md')]
     for path in docs:
         if path.read_text(encoding='utf-8-sig').startswith('> 历史记录'):

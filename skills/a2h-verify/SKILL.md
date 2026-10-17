@@ -9,6 +9,13 @@ metadata:
   - migration
 ---
 
+## 0.6.0 控制面入口
+
+先读取 [iOS Harness v2](../ios-source-analysis/references/harness-v2.md)，以该协议决定输入、机器门禁和状态写者。以下原领域规程继续用于规格内容、indexed 计划、接线和真实验证；不得再手工调度或写入三份控制账本。
+
+原真实验证继续执行。另运行 behavior-check 校验事件/持久化效果链；只有已有授权的实际用例才用 --run，保留独立源 oracle。未运行、未覆盖和环境不足仍为 UNVERIFIED，不受旧 PASS 或 task done 影响。
+
+
 
 # a2h-verify
 
@@ -54,7 +61,7 @@ CHECK-1/2 的具体规则见 [静态分析与 App 身份](references/static-and-
 3. 按 visual → UT 的相对顺序串行执行已选设备项；两项均选时，visual 退出并释放设备后静默 5 秒，再启动 UT。只选一项时直接执行该项，全部不选时直接汇总基础检查。
 4. 每段结束后读取本次报告、当前轮摘要和必要证据，保留原始状态。verifier 的内部修复由其自身调度，a2h-verify 不另派同类 fixer，也不重置内部轮数。
 5. 仍需由执行阶段处理的失败按 [失败处理](references/failure-loop.md) 回到 `a2h-execute`；修复后复检受影响项。
-6. 汇总到 `spec/verify-report.md`，使用 [报告模板](references/verify-report-template.md)。
+6. 汇总到 `spec/verify-report.md`，使用 [报告模板](references/verify-report-template.md)。结束前实际执行下节的派生汇总、迁移报告生成与一致性检查，读取产物并在验证报告中链接；本轮未选或未跑范围保持原状态。
 
 构建、签名和安装由设备 verifier 在执行测试时处理；构建或运行失败按实际结果记录，不新增独立编译检查。后续修复改变已测代码或配置时，复检受影响项；未复检的旧结果注明未覆盖当前改动。
 
@@ -79,6 +86,18 @@ CHECK-1/2 的具体规则见 [静态分析与 App 身份](references/static-and-
 已选项未生成报告、修复文件已写入或问题文件目录为空，都不能据此判 PASS。报告明确写出执行项与未选项；PASS 仅表示本次范围通过，存在未选项时不能描述为所有四项均已验证。
 
 ## 阶段证据
+
+CHECK 汇总与修复复检结束后，主线程依次实际运行以下命令；`<target>` 为绝对目标路径。有当前真实构建 JSON 报告时，三条均追加相同 `--build-evidence <build-report.json>`；缺少则不传，不从 verifier 的文字 PASS 或旧 verified 推定构建已验证。
+
+```text
+python <runtime>/scripts/a2h_ios.py spec-summary --project <target> --output <target>/spec/reports/spec-summary.json
+python <runtime>/scripts/a2h_ios.py migration-report --project <target> --output <target>/spec/migration-report.md
+python <runtime>/scripts/a2h_ios.py migration-report --project <target> --check <target>/spec/migration-report.md
+```
+
+读取命令退出码、summary 的逐页 `page_id/plan_item_refs/task_ids/target_paths/ac_ids` 及独立生成/编译/行为/视觉轴，将两份派生产物路径与实际检查结果写进 `spec/verify-report.md`。`--check` 从当前证据重算；过期或手改时修复证据、重新生成并重检，不能手填状态消除差异。工具汇总不能代替 CHECK-1/2 或各 verifier；结构仍独立引用真实结构检查。
+
+生成须有冻结计划、当前回执/产物摘要和原内核成功落账。编译为全工程构建输入覆盖声明页面文件，不证明页面可达或交互有效。行为按本页真实 AC 观测分配，不从全局 PASS 推给未测页面；host 逻辑测试不充作设备 UI。当前逐页视觉轴为 not_run，真实视觉结果继续引用选中 verifier 的本轮报告，不能回填派生状态。未知、未执行、未落账与过期结论均保留；用户未选择的 CHECK 不据此改成已执行。
 
 将真实产物、源/目标版本、校验命令与结果写本阶段报告；状态以证据为准。无需遥测上传。
 

@@ -1,6 +1,6 @@
 # 验证报告模板
 
-输出到 `spec/verify-report.md`。更新当前报告正文，状态与数字取自本次实际验证结果；不适用的明细可省略。四项总表始终保留，未选设备项填写 SKIP（用户未选择），证据填“—”，不读取旧结果充数。
+输出到 `spec/verify-report.md`。更新当前报告正文，状态与数字取自本次实际验证结果；不适用的明细可省略。四项总表始终保留，未选设备项填写 SKIP（用户未选择），证据填“—”，不读取旧结果充数。结束前按 [a2h-verify 阶段证据](../SKILL.md#阶段证据) 实际执行 summary、派生报告生成与 `--check`；本模板是验证范围叙述，不是 `spec/migration-report.md` 的手工写者。
 
 ---
 
@@ -12,6 +12,17 @@
 - 未选项：<CHECK-3/4 中用户未选的项目；全选时写“无”>
 - 代码与实测依据：<工作树状态/相关改动、verifier 轮次与测试包标识>
 - 本次范围结论：<PASS / FAIL / PARTIAL；有建议项时注明；仅针对执行项>
+
+## 同轮派生证据
+
+| 产物/检查 | 实际路径与结果 |
+|---|---|
+| spec-summary JSON | <本轮 spec/reports/spec-summary.json 路径与摘要> |
+| migration-report Markdown | <工具生成的 spec/migration-report.md 路径> |
+| 一致性检查 | <实际 migration-report --check 命令、构建证据参数及退出码> |
+| 结构证据 | <独立 loops JSON/brief 或未执行与原因> |
+
+逐页关联、生成/编译/行为/视觉轴从同轮 summary 读取并链接，不手工重写派生报告。工具尚无可校验的逐页视觉协议时，该轴保留 not_run；本轮真实视觉结果在下面 CHECK-3 引用。全工程构建覆盖声明页面文件不等于页面可达，host 逻辑行为不等于设备 UI。旧报告、孤立回执或全局 PASS 均不能补齐未测页面。
 
 ## 四项结果
 

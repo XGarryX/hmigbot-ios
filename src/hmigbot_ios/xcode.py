@@ -187,8 +187,10 @@ def project_inventory(root, files):
     return {'projects': projects, 'effective_build': 'unresolved'}, issues
 
 
-def dependency_inventory(root, files):
+def dependency_inventory(root, files, *, manifest_evaluations=None):
     dependencies, issues = [], []
+    evaluated = {item['path']: item for item in manifest_evaluations or []}
+    consumed = []
     for item in files:
         path = root / item['path']
         try:
@@ -220,7 +222,15 @@ def dependency_inventory(root, files):
                     elif line.strip() and not line.strip().startswith('#'):
                         issues.append({'code': 'carthage_line_unresolved', 'path': item['path'], 'line': number})
             elif path.name in {'Package.swift', 'Podfile', 'Cartfile'}:
-                issues.append({'code': 'executable_manifest_not_evaluated', 'path': item['path']})
+                evaluation = evaluated.get(item['path']) if path.name == 'Package.swift' else None
+                if (evaluation is not None and evaluation.get('status') == 'manifest_evaluated'
+                        and evaluation.get('manifest_sha256') == item['sha256']):
+                    consumed.append(evaluation)
+                else:
+                    issues.append({'code': 'executable_manifest_not_evaluated', 'path': item['path']})
         except (MigrationError, UnicodeError, AttributeError, TypeError) as exc:
             issues.append({'code': 'dependency_parse_failed', 'path': item['path'], 'message': str(exc)})
-    return {'dependencies': dependencies, 'complete_graph': False}, issues
+    result = {'dependencies': dependencies, 'complete_graph': False}
+    if consumed:
+        result['manifest_evaluations'] = consumed
+    return result, issues

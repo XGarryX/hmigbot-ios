@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 
 from .analyze import analyze
-from .core import MigrationError, anchor, digest, json_bytes, read_json, safe_child, snapshot, write_json, write_new_tree
+from .core import MigrationError, anchor, digest, io_path, json_bytes, read_json, safe_child, snapshot, write_json, write_new_tree
 
 BINDING = 'hmigbot-binding/1'
 CONTRACT = 'ios-harmony-contract/1'
@@ -44,7 +44,7 @@ SKIP = {'bin', '__pycache__', '.git', 'node_modules'}
 
 
 def binding_data(root: Path):
-    root = root.resolve()
+    root = io_path(root).resolve()
     manifest = read_json(root / '.codex-plugin/plugin.json')
     if (not isinstance(manifest, dict) or manifest.get('name') != 'migbot' or manifest.get('version') != '1.6.1'
             or 'hmigbot-CodeX' not in manifest.get('repository', '')
@@ -59,11 +59,11 @@ def binding_data(root: Path):
         for parent, dirs, names in os.walk(entry.parent, followlinks=False):
             dirs[:] = sorted(d for d in dirs if d not in SKIP)
             for child in dirs + names:
-                path = Path(parent) / child
+                path = io_path(Path(parent) / child)
                 if path.is_symlink() or (hasattr(path, 'is_junction') and path.is_junction()):
                     raise MigrationError('HMigBot skill contains a link: ' + str(path))
             for file in sorted(names):
-                path = Path(parent) / file
+                path = io_path(Path(parent) / file)
                 if path.suffix != '.pyc':
                     records[name]['files'][path.relative_to(root).as_posix()] = digest(path.read_bytes())
     return {'schema_version': BINDING, 'root': str(root), 'upstream': manifest,
