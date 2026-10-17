@@ -1,6 +1,8 @@
 import copy
 import json
+import os
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import unittest
@@ -8,7 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 from hmigbot_ios.core import MigrationError, anchor, digest, json_bytes, snapshot
-from hmigbot_ios.hmigbot import bind, check_binding, check_handoff, contract_draft, handoff, ROUTES, SKILLS
+from hmigbot_ios.hmigbot import bind, binding_data, check_binding, check_handoff, contract_draft, handoff, ROUTES, SKILLS
 
 
 class HandoffTests(unittest.TestCase):
@@ -72,6 +74,32 @@ class HandoffTests(unittest.TestCase):
         (self.upstream / '.codex-plugin/plugin.json').write_bytes(json_bytes({'name': 'hmigbot-plus'}))
         with self.assertRaisesRegex(MigrationError, 'standalone'):
             bind(self.upstream, self.root / 'second.json')
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows extended-path binding regression')
+    def test_deep_binding_keeps_normal_contract_keys_and_detects_changed_bytes(self):
+        base = self.upstream / 'skills/arkts-state-manager/references/deep-path-regression'
+        self.assertTrue(base.resolve().is_relative_to(self.root.resolve()))
+        extended_base = Path('\\\\?\\' + str(base))
+        self.addCleanup(shutil.rmtree, extended_base)
+        relative = '/'.join(['segment-' + 'x' * 48] * 5 + ['guide.md'])
+        logical = base.joinpath(*relative.split('/'))
+        self.assertGreater(len(str(logical.parent)), 260)
+        physical = Path('\\\\?\\' + str(logical))
+        physical.parent.mkdir(parents=True)
+        physical.write_bytes(b'original deep reference')
+        data = binding_data(self.upstream)
+        key = logical.relative_to(self.upstream).as_posix()
+        self.assertEqual(data['skills']['arkts-state-manager']['files'][key], digest(physical.read_bytes()))
+        self.assertEqual(data['root'], str(self.upstream.resolve()))
+        self.assertFalse(any('?' in name for entry in data['skills'].values() for name in entry['files']))
+        with self.assertRaisesRegex(MigrationError, 'binding changed'):
+            check_binding(self.binding)
+        updated = self.root / 'deep-binding.json'
+        bind(self.upstream, updated)
+        self.assertEqual(check_binding(updated), data)
+        physical.write_bytes(b'changed deep reference')
+        with self.assertRaisesRegex(MigrationError, 'binding changed'):
+            check_binding(updated)
 
     def test_rejects_stale_source_unready_or_missing_semantics(self):
         self.unit['status'] = 'needs_analysis'

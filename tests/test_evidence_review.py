@@ -81,6 +81,21 @@ class EvidenceReviewTests(unittest.TestCase):
         journal_path = self.project / 'spec/state/journal.json'
         dispatch_path = self.project / 'spec/state/dispatch.json'
         journal, dispatch = read_json(journal_path), read_json(dispatch_path)
+        if os.name == 'nt':
+            # The real original binary now records an extended Windows plan
+            # address. Its ordinary spelling must identify that same run.
+            original_path = dispatch['waves']['domains']['plan_path'].replace('\\', '/')
+            self.assertTrue(original_path.startswith('//?/'), original_path)
+            ordinary = str((self.project / 'spec/waves/plan-domains.json').resolve())
+            plain_journal, plain_dispatch = copy.deepcopy(journal), copy.deepcopy(dispatch)
+            plain_journal['workflow_status'][0]['plan_path'] = ordinary
+            plain_dispatch['waves']['domains']['plan_path'] = ordinary
+            def read_plain(path):
+                if Path(path) == journal_path: return plain_journal
+                if Path(path) == dispatch_path: return plain_dispatch
+                return read_json(path)
+            with patch('hmigbot_ios.page_evidence.read_json', side_effect=read_plain):
+                self.assertEqual(summary(self.project)['axes']['generation']['status'], 'generated')
         mutations = [
             ('missing workflow identity', lambda j, d: j.update(workflow_status=[])),
             ('wrong journal contract', lambda j, d: j['workflow_status'][0].update(contract_hash='sha256:' + '0' * 64)),
@@ -88,6 +103,10 @@ class EvidenceReviewTests(unittest.TestCase):
             ('missing dispatch identity', lambda j, d: d.update(waves={})),
             ('wrong dispatch contract', lambda j, d: d['waves']['domains'].update(contract_hash='sha256:' + '0' * 64)),
             ('wrong dispatch plan', lambda j, d: d['waves']['domains'].update(plan_path='elsewhere/plan-domains.json')),
+            ('wrong extended journal plan', lambda j, d: j['workflow_status'][0].update(
+                plan_path='\\\\?\\' + str(self.root / 'elsewhere/plan-domains.json'))),
+            ('wrong extended dispatch plan', lambda j, d: d['waves']['domains'].update(
+                plan_path='\\\\?\\' + str(self.root / 'elsewhere/plan-domains.json'))),
             ('unlanded new attempt', lambda j, d: d['waves']['domains']['dispatched']['counter'].update(attempts=2)),
             ('wrong resume key', lambda j, d: d['waves']['domains']['dispatched']['counter'].update(resume_key='domains:other')),
         ]

@@ -2,7 +2,7 @@
 from pathlib import Path
 import re
 
-from .core import MigrationError, digest, json_bytes, read_json, safe_child
+from .core import MigrationError, digest, io_path, json_bytes, read_json, safe_child
 
 
 def generation(project, source_sha):
@@ -38,7 +38,7 @@ def generation(project, source_sha):
     def current_run(row):
         try:
             return (row.get('contract_hash') == plan['contract_hash']
-                    and Path(row.get('plan_path', '')).resolve() == plan_path.resolve())
+                    and io_path(Path(row.get('plan_path', ''))).resolve() == io_path(plan_path).resolve())
         except (ValueError, TypeError): return False
     run_current = len(workflows) == 1 and current_run(workflows[0]) and current_run(dispatch)
     records, by_id = {}, {t['id']: t for t in plan['tasks']}
