@@ -14,6 +14,8 @@ description: "复用 HMigBot 目标骨架、接线、孤立 VM、装配、占位
 python <skill>/scripts/structural_loop.py iterate --project-root <target> --mode slice --target 1 --state-file <state.json> --output-json <result.json>
 ```
 
+自定义 `--state-file` / `--output-json` 的 JSON 数据直接放在 `spec/execution/autofix-log/round-<正整数>/`；basename 可用字母、数字、下划线、连字符、点（不以点或连字符开头）。该平层 JSON 命名空间是派生证据，名称不必匹配固定前缀；不授权产品、脚本、嵌套任意 JSON、相邻目录或自定义 `.log/.md` 名称，原有明确日志模式保持。轮次不含0或前导0，不使用路径穿越。
+
 stage 模式额外传 --diff-base 与 --handoffs；group 模式传 --slices 1,2；
 pipeline 模式 target=final，覆盖完整目标。参数来自当前计划，不能硬编码另一项目 ID。
 --max-iter 为重试上限，不是忽略失败条件。收口用 finalize，实际参数先核对 --help。

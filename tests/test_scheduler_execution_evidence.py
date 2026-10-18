@@ -8,8 +8,8 @@ import unittest
 ROOT = Path(os.environ.get('HMIGBOT_TEST_RUNTIME', Path(__file__).resolve().parents[1])).resolve()
 sys.path.insert(0, str(ROOT / 'src'))
 
-from hmigbot_ios.core import EXCLUDED, MigrationError, digest, json_bytes, read_json, write_json
-from hmigbot_ios.ios_scheduler import execution_files, baseline_inputs, generate, step, replan
+from hmigbot_ios.core import EXCLUDED, MigrationError, digest, json_bytes, read_json, snapshot, write_json
+from hmigbot_ios.ios_scheduler import _execution_evidence, execution_files, baseline_inputs, generate, step, replan
 import test_plan_contract as plan_fixture
 import test_ios_harness as harness_fixture
 
@@ -28,6 +28,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
 
     def test_named_pipeline_and_execution_evidence_are_not_product_changes(self):
         before = execution_files(self.project)
+        raw_before = snapshot(self.project)['sha256']
         source_exclusions = set(EXCLUDED)
         for path in [
             'work/pipeline-20261017/run.py',
@@ -48,6 +49,11 @@ class ExecutionEvidenceTests(unittest.TestCase):
             'spec/execution/autofix-log/round-1/loop-state-pipeline-final.json',
             'spec/execution/autofix-log/round-1/loop-result-latest-pipeline-final.json',
             'spec/execution/autofix-log/round-1/capability-manifest.json',
+            'spec/execution/autofix-log/round-1/stage1-state.json',
+            'spec/execution/autofix-log/round-1/stage1-iteration-1.json',
+            'spec/execution/autofix-log/round-1/stage1-trace-probe-state.json',
+            'spec/execution/autofix-log/round-1/stage1-trace-probe.json',
+            'spec/execution/autofix-log/round-18/user-chosen.v2.json',
             'spec/reports/product-literals.json',
             'spec/reports/visual-verify-report.md',
             'spec/reports/derived/round-1/spec-summary.json',
@@ -79,6 +85,10 @@ class ExecutionEvidenceTests(unittest.TestCase):
         ]:
             self.put(path)
         self.assertEqual(before, execution_files(self.project))
+        raw_after = snapshot(self.project)
+        self.assertNotEqual(raw_before, raw_after['sha256'])
+        self.assertIn('spec/execution/autofix-log/round-1/stage1-state.json',
+                      {item['path'] for item in raw_after['files']})
         self.assertEqual(source_exclusions, EXCLUDED)
 
     def test_unowned_code_resources_configuration_and_unlisted_specs_remain_visible(self):
@@ -103,7 +113,7 @@ class ExecutionEvidenceTests(unittest.TestCase):
             'spec/execution/autofix-log/round-18/native-pipeline-raw/loop-state-pipeline-final-iter0-f868b7e4576547a6947ded2660584571/unknown.json',
             'spec/execution/autofix-log/round-18/native-pipeline-raw/loop-state-pipeline-final-iter0-f868b7e4576547a6947ded2660584571/unsupported-pipeline-iter9.json',
             'spec/execution/autofix-log/round-18/native-pipeline-raw/loop-state-pipeline-final-iter0-f868b7e4576547a6947ded2660584571/nested/result.json',
-            'spec/execution/autofix-log/round-18/extra.json',
+            'spec/execution/autofix-log/round-18/nested/extra.json',
             'spec/execution/autofix-log/round-18/native-pipeline-dispositions-iter0.yaml',
             'spec/unauthorized.md',
             '.migbot/config.json',
@@ -116,6 +126,19 @@ class ExecutionEvidenceTests(unittest.TestCase):
         after = execution_files(self.project)
         changed = {p for p in before.keys() | after.keys() if before.get(p) != after.get(p)}
         self.assertEqual(changed, set(paths))
+
+    def test_custom_round_names_reject_invalid_rounds_and_path_traversal(self):
+        for path in ('spec/execution/autofix-log/round-0/stage1-state.json',
+                     'spec/execution/autofix-log/round-01/audit-state.json',
+                     'spec/execution/autofix-log/round-x/stage1-state.json',
+                     'spec/execution/autofix-log/round--1/stage1-state.json',
+                     'spec/execution/autofix-log/round-1/../stage1-state.json',
+                     'spec/execution/autofix-log/round-1/./stage1-state.json',
+                     'spec/execution/autofix-log/round-1/.hidden.json',
+                     'spec/execution/autofix-log/round-1/state.json.ets',
+                     r'spec\execution\autofix-log\round-1\state.json'):
+            with self.subTest(path=path):
+                self.assertFalse(_execution_evidence(path))
 
     def test_core_progress_is_mutable_but_business_contract_is_not(self):
         before = execution_files(self.project)
@@ -161,10 +184,21 @@ class LandingEvidenceTests(unittest.TestCase):
             log.write_text('actual invocation output', encoding='utf-8')
             write_json(log.with_name('20261017T021327973146-945af9.json'), {'exit_code': 0})
             (project / 'spec/pipeline-run-20261017.md').write_text('# Actual calls\n', encoding='utf-8')
+            for name in ('stage1-state', 'stage1-iteration-1', 'stage1-trace-probe-state', 'stage1-trace-probe'):
+                write_json(project / f'spec/execution/autofix-log/round-1/{name}.json', {'fixture': 'structural CLI output'})
             for relative in ('spec/execution/briefs/Hidden.ets',
                              'work/pipeline-20261017/support/Hidden.ets',
                              'spec/state/fence-snapshot/entry/Hidden.ets',
-                             'spec/execution/resources/color.json', 'spec/unauthorized.md'):
+                             'spec/execution/resources/color.json', 'spec/unauthorized.md',
+                             'spec/execution/autofix-log/round-1/Hidden.ets',
+                             'spec/execution/autofix-log/round-1/build-wrapper.bat',
+                             'spec/execution/autofix-log/round-1/arbitrary.js',
+                             'spec/execution/autofix-log/round-1/app_icon.png',
+                             'spec/execution/autofix-log/round-1/build-profile.json5',
+                             'spec/execution/autofix-log/round-1/resources/color.json',
+                             'spec/execution/autofix-log/neighbor/stage1-state.json',
+                             'spec/execution/source-understanding/Base1-source-notes-r2.md',
+                             'spec/reports/derived/stage1-singlepass/build-wrapper.bat'):
                 unowned = project / relative
                 unowned.parent.mkdir(parents=True, exist_ok=True)
                 unowned.write_text('unowned product change', encoding='utf-8')
