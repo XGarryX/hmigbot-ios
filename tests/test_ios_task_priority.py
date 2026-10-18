@@ -125,6 +125,27 @@ func f() {
 ''')
         self.assertEqual(constraints(graph), [], 'comments and string literals must not create constraints')
 
+    def test_unknown_qualified_task_callees_keep_constraints(self):
+        graph, _ = extract_case('''func layout(layoutAPI: LayoutAPI) {
+    layoutAPI.Task(priority: .required)
+    layoutAPI.Task.detached(priority: .required)
+    layoutAPI.Task.init(priority: .required)
+    Swift.Task(priority: .high)
+}
+''')
+        self.assertEqual(len([f for f in constraints(graph) if f['symbol'] == 'priority']), 4)
+
+    def test_nested_unknown_call_and_later_arguments_are_isolated(self):
+        graph, _ = extract_case('''func go() {
+    Task.detached(operation: { configure(priority: .required) }, priority: .high)
+    Task.init(operation: make([1, 2], { () }), priority: .low)
+    layoutAPI.Task(operation: make([1, 2]), priority: .required)
+}
+''')
+        priorities = [f for f in constraints(graph) if f['symbol'] == 'priority']
+        self.assertEqual(len(priorities), 2)
+        self.assertEqual([f['anchor']['line'] for f in priorities], [2, 4])
+
 
 if __name__ == '__main__':
     unittest.main()
