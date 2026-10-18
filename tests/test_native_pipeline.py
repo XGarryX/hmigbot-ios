@@ -8,7 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
-from hmigbot_ios.core import MigrationError
+from hmigbot_ios.core import MigrationError, digest, snapshot
 from hmigbot_ios.native_pipeline import configure, index_source, check_source, source_paths, resolve, findings_module
 
 
@@ -47,8 +47,18 @@ class NativeSourceTests(unittest.TestCase):
         index_source(self.project)
         self.assertIn('IOS.SOURCE_UNACCOUNTED', [f['rule'] for f in check_source(self.project)[0]['findings']])
         disposition = self.project / 'spec/baseline/ios-source-disposition.json'
-        disposition.write_text(json.dumps({'files': [{'path': 'Extra.swift', 'disposition': 'test', 'reason': 'Fixture only'}]}))
+        reviewed = {'source_sha256': snapshot(self.source)['sha256'], 'files': [{
+            'path': 'Extra.swift', 'disposition': 'test', 'reason': 'Fixture only',
+            'line': 1, 'end_line': 1, 'source_sha256': digest((self.source / 'Extra.swift').read_bytes())}]}
+        # Evidence without the literal exclusion proof fails at this gate, not in Stage 0.
+        incomplete = json.loads(json.dumps(reviewed))
+        for field in ('line', 'end_line', 'source_sha256'):
+            del incomplete['files'][0][field]
+        disposition.write_text(json.dumps(reviewed))
         self.assertEqual(check_source(self.project)[1], 0)
+        for stale in (incomplete, {**reviewed, 'source_sha256': '0' * 64}):
+            disposition.write_text(json.dumps(stale))
+            self.assertEqual(check_source(self.project)[1], 2)
         disposition.write_text('{"files": [null]}')
         self.assertEqual(check_source(self.project)[1], 2)
 

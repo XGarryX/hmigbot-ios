@@ -13,7 +13,7 @@ import uuid
 from .analyze import analyze
 from .core import MigrationError, read_json, safe_child, snapshot, write_json, digest, json_bytes, atomic_write, SOURCE_SUFFIXES, SOURCE_NAMES
 from .native_semantics import validate_native_facts
-from .native_contract import source_truth, validate_disposition
+from .native_contract import source_truth, validate_literal_exclusion
 
 ROOT = Path(__file__).resolve().parents[2]
 CODE = {'.swift', '.m', '.mm', '.h', '.c', '.cpp', '.storyboard', '.xib'}
@@ -200,13 +200,20 @@ def check_source(project: Path, *, after_repair=False, report_only=False):
     disposition = read_json(disposition_path) if disposition_path.exists() else {'files': []}
     if not isinstance(disposition, dict) or not isinstance(disposition.get('files'), list):
         raise MigrationError('Source dispositions must be an object containing a files list')
+    if disposition_path.exists():
+        # Reuse the walk above when the index exists; the scope binds the live whole-source digest.
+        whole = current['sha256'] if index_path.is_file() else snapshot(source)['sha256']
+        if disposition.get('source_sha256') != whole:
+            fail('IOS.STALE_DISPOSITION', disposition_path.relative_to(project).as_posix(),
+                 'Disposition scope requires the current whole-source source_sha256 at the top level; '
+                 'each entry keeps its own file byte hash')
     dispositions = disposition['files']
     for item in dispositions:
         if not isinstance(item, dict):
             fail('IOS.INVALID_DISPOSITION', str(item), 'Disposition entry must be an object')
             continue
         try:
-            validate_disposition(item, known)
+            validate_literal_exclusion(source, known, item)
             ownership.add(item['path'])
         except MigrationError as exc:
             fail('IOS.INVALID_DISPOSITION', str(item.get('path')), str(exc))
