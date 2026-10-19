@@ -106,6 +106,7 @@ def check(project: Path, *, report_only=False):
     issues = []
     excluded_obligations = set()
     preview_cache = {}
+    extraction_dispositions = []
 
     def fail(rule, subject, detail):
         issues.append(queue.make(rule, 'spec', subject, detail))
@@ -117,13 +118,17 @@ def check(project: Path, *, report_only=False):
         result, _ = check_source(project, report_only=True)
         issues.extend(result['findings'])
         graph, obs = validate_graph(source, project)
+        from .manifest_scope import issue_dispositions
+        extraction_dispositions = issue_dispositions(graph)
+        for disposition in extraction_dispositions:
+            if disposition['blocking']:
+                issue = disposition['issue']
+                fail('IOS.EXTRACTION_UNRESOLVED', str(issue.get('path', 'project')), str(issue))
         from .expertise import check as check_expertise
         expertise = check_expertise(project, source, graph)
         from .ios_literals import extract as extract_literals
         if read_json(project / 'spec/baseline/literal-ledger.json') != extract_literals(source):
             raise MigrationError('Literal ledger must be extracted from current iOS source; spec-only empty scans are insufficient')
-        for issue in graph['issues']:
-            fail('IOS.EXTRACTION_UNRESOLVED', str(issue.get('path', 'project')), str(issue))
         facts = {f['id']: f for f in graph['facts']}
         semantics = read_json(project / 'spec/baseline/ios-semantics.json')
         if semantics.get('schema_version') != 2:
@@ -185,7 +190,8 @@ def check(project: Path, *, report_only=False):
         queue.replace_section(str(project), 'spec.ios-harness', issues)
     report = {'schema_version': 2, 'status': 'FAIL' if issues else 'PASS', 'findings': issues,
               'scope': 'source contract and obligation coverage', 'behavior_verified': False,
-              'excluded_obligation_ids': sorted(excluded_obligations)}
+              'excluded_obligation_ids': sorted(excluded_obligations),
+              'extraction_issue_dispositions': extraction_dispositions}
     if not report_only:
         write_json(project / 'spec/reports/ios-harness-check.json', report)
     return report, 2 if issues else 0

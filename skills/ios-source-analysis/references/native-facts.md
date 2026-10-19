@@ -53,3 +53,25 @@ page/feature Markdown 头部增加 `source_platform: ios`、`ios_frameworks`、
 `source_languages` 与 `source_anchors`；“iOS 原生语义”节引用同 ID facts。
 目标映射写独立节：源概念、保留的行为、候选 ArkUI/ArkTS 表达、证据和待决策项。
 不能把 SwiftUI 的状态所有权用目标装饰器名称覆盖。
+
+## Selected Xcode product / Package relevance
+
+`project-targets` facts retain the complete repository dependency inventory and every original issue.
+The automatically derived `dependency_scope` classifies only `Package.swift` relevance to the current
+project-declared product closure. It neither executes that manifest nor excludes its Core implementations.
+`complete_graph=false`, `effective_build=unresolved`, header/include and conditional-build limits remain.
+Repository and selected-build continue to require the original manifest evidence.
+
+A nonblocking classification requires the same `project_scope` derivation, no package product/reference,
+script/rule/external-product bridge, no per-file compiler flags, supported unconditional configuration,
+and only the bounded known SDK import names. Unknown settings, modules, headers and compiler/search/link
+bridges keep the original issue blocking. This is a narrow static configuration profile, not effective
+Xcode settings evaluation. Known BUNDLE_PREFIX/CUIKE_APP_GROUP metadata does not permit arbitrary macros.
+
+Each recursively read xcconfig/include has a canonical local path and SHA256; missing optional includes
+have explicit absence evidence, even in an inventory-excluded directory. Macro/conditional includes,
+continuations, escaping paths and external symlinks/junctions are unsupported. Appearance/change of any
+include, source, project, manifest or classification must invalidate old facts; the normal source-check
+re-extracts and compares them before consuming dispositions. No user-maintained allowlist or edited
+issue list is accepted. Read `extraction_issue_dispositions` in the existing harness report alongside
+the original facts issues and their classification basis digest; partial source readiness is not a spec PASS.
