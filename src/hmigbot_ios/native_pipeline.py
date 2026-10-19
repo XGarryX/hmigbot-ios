@@ -13,6 +13,7 @@ import uuid
 from .analyze import analyze
 from .core import MigrationError, read_json, safe_child, snapshot, write_json, digest, json_bytes, atomic_write, SOURCE_SUFFIXES, SOURCE_NAMES
 from .native_semantics import validate_native_facts
+from . import doctor as doctor_module
 from .native_contract import source_truth, validate_literal_exclusion
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -338,6 +339,15 @@ def main(argv=None):
     resolver = commands.add_parser('resolve')
     resolver.add_argument('--source', required=True, type=Path)
     resolver.add_argument('--anchor', required=True)
+    doc = commands.add_parser('doctor', help='Read-only environment diagnostic: what works, what is missing, next actions')
+    doc.add_argument('--project', type=Path, default=Path('.'), help='Project root to inspect (default: cwd)')
+    doc.add_argument('--config', type=Path, help='Optional migration config to validate')
+    doc.add_argument('--node', help='Explicit node path')
+    doc.add_argument('--hvigor', help='Explicit hvigorw path')
+    doc.add_argument('--ohpm', help='Explicit ohpm path')
+    doc.add_argument('--java', help='Explicit java path')
+    doc.add_argument('--sdk', help='Explicit HarmonyOS SDK path')
+    doc.add_argument('--text', action='store_true', help='Also print human-readable report to stderr')
     args = parser.parse_args(argv)
     try:
         code = 0
@@ -479,6 +489,13 @@ def main(argv=None):
             result, code = step(args.project, args.wave, landing=args.command == 'land-results')
         elif args.command == 'validate': result, code = validate_tools(args.project)
         elif args.command == 'build': result, code = build_project(args.project)
+        elif args.command == 'doctor':
+            result = doctor_module.doctor(args.project, config=args.config, node_path=args.node,
+                                          hvigor_path=args.hvigor, ohpm_path=args.ohpm,
+                                          java_path=args.java, sdk_path=args.sdk)
+            if args.text:
+                print(doctor_module.render_text(result), file=sys.stderr)
+            code = 0 if result.get('status') == 'diagnostic_complete' else 2
         else: result, code = resolve(args.source, args.anchor)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return code

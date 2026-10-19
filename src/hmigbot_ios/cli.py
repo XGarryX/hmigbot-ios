@@ -20,6 +20,7 @@ from . import cloud
 from .iphone import inspect_ipa
 from .capture import capture
 from . import hmigbot
+from . import doctor
 
 
 def parser():
@@ -129,6 +130,15 @@ def parser():
     for name in ('source', 'provider-config', 'output'):
         cap.add_argument('--' + name, type=Path, required=True)
     cap.add_argument('--kind', choices=sorted(KINDS), required=True)
+    doc = sub.add_parser('doctor', help='Read-only environment diagnostic: what works, what is missing, next actions')
+    doc.add_argument('--project', type=Path, default=Path('.'), help='Project root to inspect (default: cwd)')
+    doc.add_argument('--config', type=Path, help='Optional migration config to validate')
+    doc.add_argument('--node', help='Explicit node path')
+    doc.add_argument('--hvigor', help='Explicit hvigorw path')
+    doc.add_argument('--ohpm', help='Explicit ohpm path')
+    doc.add_argument('--java', help='Explicit java path')
+    doc.add_argument('--sdk', help='Explicit HarmonyOS SDK path')
+    doc.add_argument('--text', action='store_true', help='Also print human-readable report to stderr')
     return cli
 
 
@@ -225,6 +235,13 @@ def dispatch(args):
     if command == "check-facts":
         report = validate_facts(read_json(args.input))
         return {"contract_valid": True, "facts": len(report["facts"]), "behavior": "not_verified"}
+    if command == "doctor":
+        report = doctor.doctor(args.project, config=args.config, node_path=args.node,
+                               hvigor_path=args.hvigor, ohpm_path=args.ohpm,
+                               java_path=args.java, sdk_path=args.sdk)
+        if args.text:
+            print(doctor.render_text(report), file=sys.stderr)
+        return report
     raise MigrationError("Unknown command")
 
 

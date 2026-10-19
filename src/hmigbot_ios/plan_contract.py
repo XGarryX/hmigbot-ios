@@ -30,6 +30,7 @@ def contract_revision(project):
     root = Path(__file__).resolve().parents[2]
     paths = [root / 'schemas/ios-harness-v2.schema.json', Path(__file__),
              root / 'src/hmigbot_ios/ios_scheduler.py', root / 'src/hmigbot_ios/harness_schema.py',
+             root / 'src/hmigbot_ios/capability_contract.py',
              root / 'skills/a2h-plan/references/plan-delivery-contract.md']
     paths += sorted((root / 'skills/a2h-plan/templates').glob('*.md'))
     return digest(json_bytes({'artifacts': revision(Path(project)),
@@ -556,5 +557,9 @@ def validate_plan(project, request):
         result['task_inputs'][ident] = task_inputs(project, by_task[ident], [active[ref] for ref in sorted(refs)])
     if {ac for item in active.values() for ac in item['ac_ids']} != set(features):
         raise MigrationError('Markdown plan omitted or added acceptance criteria')
+    from .capability_contract import validate_declarations
+    capabilities = validate_declarations(project, projections, units)
+    if capabilities is not None:
+        result['capability_declarations'] = capabilities
     result.update(contract_revision=contract_revision(project), plan_items=len(active), tasks=len(tasks))
     return result

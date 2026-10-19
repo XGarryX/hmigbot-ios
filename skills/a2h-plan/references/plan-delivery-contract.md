@@ -90,3 +90,33 @@ profile 2 的单元格进度豁免以随包 `schemas/spec-plan-artifacts.json` �
 UI概要表ac_ids使用JSON数组（如`["F001-AC01"]`），owning_slice精确等于feature-index“创建页面”唯一creator；不按关联页或拓扑顺序猜创建者。Slice各步骤page_ids的并集与所属feature“关联页面”集合相等，共页多feature合法。索引的F-ID排序依赖必须进入Slice项DAG；base/Base表示所有活动BASE项先于该Slice。契约依赖为真实存在的`路径#精确标题`并进入读取传递闭包，兼容F-ID引用也只表示读取，不自动串行。
 
 受管进度块只允许空行、`N of M`、`generation|acceptance|features|pages|registered|resolved: N`或`N/M`，以及`generation|compilation|behavior|visual: pending|not_run|running|passed|failed|stale|blocked|generated|unverified`；可带`- `前缀。竖线在此表示枚举选择，N/M为非负整数及可选总数。其它语句/表格/JSON/合同均拒绝；不能通过把业务文字藏入该块获得冻结豁免。
+
+
+## 可选能力声明的计划静态引用
+
+profile 2 的 domains 计划可在本轮已验证的权威计划文件（索引 feature-plan.md、
+Base、已索引 Slice 等）中使用一个闭合的 `capability-declarations` 围栏；
+整个已验证 projections 文件集合全局恰好一个，不扫描其它任意 Markdown。
+正文为 JSON 对象，仅含 `declarations` 与 `seams`。同文件或跨文件重复均拒绝；
+没有该围栏保持既有计划校验行为，普通代码围栏内嵌的示例不视为声明。
+本轮仅支持 `"seams": "none"`，其它形态明确拒绝。声明数组必须非空，
+每项恰有 key/kind/symbol/path/slot/lifecycle/provider/provenance 八个字符串字段；
+kind 为 runtime-slot、scoped 或 artifact-only。仅非 runtime-slot 的 slot 可为空；
+其余字段非空，key 不重复。坏 JSON、重复 JSON 键、多声明围栏、不闭合围栏、
+未知字段（如 phase）均拒绝，不静默跳过。
+
+provider 使用 `<项目相对POSIX文件>#<完整item_id>`，例如
+`spec/baseline/plans/base-plan.md#BASE:Base-1` 或
+`spec/baseline/plans/slices/slice-01-F001.md#SLICE:F001:3c`。
+仅当已验证责任文件中 basename 唯一时，可缩写为 `base-plan.md#BASE:Base-1`。
+文件及 item_id 精确匹配，不接受大小写/前缀/全文包含猜测；责任须为 product，
+声明 path 须为该精确责任的 ownership 成员，仅属于全局写权不够。
+文件与 path 都须为规范相对 POSIX 路径，禁止绝对路径、目录穿越和通配符。
+责任表/聚合投影/索引 detail 仍先通过原校验；新模块也纳入 contract_revision，
+冻结后规则变化仍须正式审阅与 replan。常见拒绝包括
+capability-declaration-invalid、capability-declaration-ambiguous、
+capability-provider-unknown、capability-provider-ambiguous 和
+capability-provider-owner-mismatch。
+
+此处只验证计划引用，不生成 manifest、不证明运行实例/初始化或生命周期闭集，
+不把行为未验证升级为通过；behavior_verified 保持 false。
