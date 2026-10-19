@@ -80,3 +80,5 @@ Clang AST 与 SourceKit-LSP 的输出也不能冒充运行行为。
 源码变化时按快照差异重读受影响调用链，再更新相关事实；保留旧版本和变更原因。
 只刷新 hash 不能关闭过期 source finding。路径歧义必须回到真实目录消歧。
 最终返回已分析范围、语言/框架、证据来源、未知项和待决策项。
+
+已审Spec变更与旧在途形成死锁时，先停止worker、固定review v1，仅用[可执行协议](references/harness-v2.md)的`recover-blocked`显式失败终止，再正常replan；不得回退Spec、手写三账本或把blocked伪装PASS。普通冻结检查保持。

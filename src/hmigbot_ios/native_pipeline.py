@@ -292,9 +292,11 @@ def main(argv=None):
     init.add_argument('--source', required=True, type=Path)
     init.add_argument('--project', required=True, type=Path)
     commands.add_parser('expertise-audit')
-    for name in ('source-index', 'source-refresh', 'source-check', 'spec-check', 'spec-authoring', 'spec-summary', 'migration-report', 'spec-upgrade', 'validate', 'build', 'literals', 'product-literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-check', 'plan-ir', 'replan', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query', 'manifest-evaluate'):
+    for name in ('source-index', 'source-refresh', 'source-check', 'spec-check', 'spec-authoring', 'spec-summary', 'migration-report', 'spec-upgrade', 'validate', 'build', 'literals', 'product-literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-check', 'plan-ir', 'replan', 'recover-blocked', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query', 'manifest-evaluate'):
         p = commands.add_parser(name)
         p.add_argument('--project', required=True, type=Path)
+        if name == 'recover-blocked':
+            p.add_argument('--review', type=Path, required=True)
         if name == 'source-check':
             p.add_argument('--after-repair', action='store_true')
             p.add_argument('--report-only', action='store_true')
@@ -481,6 +483,9 @@ def main(argv=None):
         elif args.command in {'plan-check', 'plan-ir'}:
             from .ios_scheduler import generate
             result = generate(args.project, args.input, validate_only=args.command == 'plan-check')
+        elif args.command == 'recover-blocked':
+            from .replan_recovery import recover_blocked
+            result = recover_blocked(args.project, args.review)
         elif args.command == 'replan':
             from .ios_scheduler import replan
             result = replan(args.project, args.input)

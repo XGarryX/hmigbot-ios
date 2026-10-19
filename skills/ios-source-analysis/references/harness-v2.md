@@ -90,3 +90,85 @@ summary 的逐页关联包含 `page_id`、`plan_item_refs`、`task_ids`、`targe
 源码变化后 `facts` 归档旧图并重提取，重审覆盖、规格和计划。冻结计划不会自动重写；续跑前对变更及已落账范围做明确重排，不继承过期回执。失败按原 finding owner 处理，复跑产生该 finding 的检查才能关闭。
 
 源索引更新使用 `source-refresh --review <review.json>`，必填 reviewer/reason/previous_source_sha256/source_sha256；仍须重审并复跑门禁。已冻结计划用 `replan --input <typed-plan.json>`，附 replan_review 的 reviewer/reason。在途任务须先落账或明确终止，旧三账和任务书归档，新 run 不继承旧成功。行为用例必须携 target_hashes，执行前后核对实际目标输入未变。
+
+
+## 显式终止旧在途 blocked attempt（review v1）
+
+已审 Spec 更正后，普通 `land-results` 仍先检查旧冻结输入，`replan` 仍拒在途。
+确认所有相关 worker 已停后，独立审阅者固定下列 JSON 原字节，执行：
+
+```text
+python scripts/a2h_ios.py recover-blocked --project <target> --review <review.json>
+python scripts/a2h_ios.py replan --project <target> --input <target>/spec/ref/replan-request.json
+python scripts/a2h_ios.py next-batch --project <target> --wave domains
+```
+
+review v1 为严格对象（未知/缺失字段拒绝），字段如下。所有 `*_sha256` 和
+`contract_revision` 是非空64位小写十六进制；输入集合摘要为 `digest(json_bytes(mapping))`，
+沿用 core.json_bytes 的排序和换行，不能用文件大小或手工拼接替代。
+
+```json
+{
+  "version": 1,
+  "wave": "domains",
+  "task_id": "original-task-id",
+  "attempt": 1,
+  "reviewer": "具体独立审阅者及已审记录身份",
+  "reason": "具体已审差异与失败终止原因",
+  "workers_stopped": true,
+  "old": {
+    "plan_sha256": "<原plan文件摘要>",
+    "contract_sha256": "<原contracts.json摘要>",
+    "dispatch_sha256": "<原dispatch.json摘要>",
+    "dispatch_evidence_sha256": "<原ios-dispatch-wave.json摘要>",
+    "receipt_sha256": "<原诚实blocked收据摘要>",
+    "source_sha256": "<原合同source_sha256>",
+    "graph_sha256": "<原合同graph_sha256>",
+    "baseline_inputs_sha256": "<原合同input_hashes集合摘要>",
+    "contract_revision": "<原合同工具revision>"
+  },
+  "new": {
+    "contract_revision": "<当前已审工具contract_revision>",
+    "baseline_inputs_sha256": "<当前baseline_inputs集合摘要>"
+  },
+  "changes": [{
+    "path": "spec/baseline/ui/page_0001_Example.md",
+    "old_sha256": "<原input_hashes值>",
+    "new_sha256": "<当前input_hashes值>"
+  }],
+  "replan_request": {
+    "path": "spec/ref/replan-request.json",
+    "sha256": "<真实且经plan-check完整验证的新版计划请求原字节摘要>"
+  }
+}
+```
+
+这是字段示意，不是可直接提交的伪摘要。仅支持**唯一在途的 attempt 1**：旧收据协议
+无 attempt 字段，后续 attempt 无法可靠区分陈旧收据，因此保守拒绝。Spec差异只允许
+原已冻结的 `spec/baseline/**/*.md`，逐项旧/新摘要恰好覆盖全部baseline差异；必要派生
+文件仅允许一个实际通过新版 `plan-check` 的 `spec/ref/*.json` replan request。
+不支持其它派生差异时应保留阻断，不能扩写review允许表来授权App、配置或控制面修改。
+
+源/图、六件原合同、plan IR、prompt、dispatch身份、完整封存fence、receipt身份与
+ownership/文件摘要/AC均须吻合；工具升级精确绑定旧/新revision，普通冻结检查不变。
+恢复前所有校验均完成，首次证据保存在
+`spec/reports/ios-blocked-recovery/<review内容摘要>/`；原控制文件、原收据、旧新输入
+集合、真实原writer结果均保留。只调用原 `land_results --missing-as-failed` writer；
+结果 `blocked_attempt_terminated` 仅表示失败终止，绝不是生成/构建/行为通过。
+相同完成请求重放只读返回首次结果；中断后只有不完整归档则拒绝自动重试，交人工审计。
+随后正常replan归档旧控制面并新冻结，旧成功状态不继承。此入口不自动停止worker，
+不代表平台自动恢复或实际设备验收。
+
+
+唯一可选字段 `authoring_rebind` 用于原生作者输入的库存绑定更新：
+`{"path":"spec/ref/native-authoring-reviewed-input.json","previous_copy":"<已保存旧原件的绝对路径>","old_sha256":"<dispatch.before_files原摘要>","new_sha256":"<现原字节摘要>"}`。
+仅此精确路径；旧副本须匹配原dispatch可信摘要，删去`inventory_sha256`后的JSON须深相等，
+新库存摘要由现有native_authoring._inventory重新计算且source仍绑定原图。其它正文/配置/
+disposition改动一律拒绝。旧新原件纳入首次归档；不全局豁免该输入文件。
+
+
+完成缓存只有在最后写入的`seal.json`完整列举首次文件集合及原字节摘要时才可只读重放；
+同时核固定失败结果/false布尔、review与task/attempt身份、原blocked收据和原writer归档
+journal/state/action一致。单改result或同步改seal仍伪装成功均拒绝；不把损坏字段改回false
+后静默接受。缺seal或首证据不完整保留拒绝，不迁移/补写/覆盖旧归档。seal是本地完整性
+与事故取证边界，不能代替独立审阅或防御对整份历史及审阅输入的恶意一致重写。

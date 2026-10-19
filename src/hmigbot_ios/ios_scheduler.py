@@ -81,6 +81,7 @@ def _execution_evidence(path):
         r'spec/reports/scheduler/[a-z_]+\.(?:(?:stdout|stderr)\.log|failure\.json)',
         r'spec/reports/scheduler/[a-z_]+\.cleanup-[0-9a-f]{32}\.json',
         r'spec/reports/static-runtime/land-[a-z0-9_-]+\.json',
+        r'spec/reports/ios-blocked-recovery/[0-9a-f]{64}/[a-z-]+\.json',
         r'spec/reports/ios-blocked-receipts/(?:understand|domains)/[a-z0-9_-]+/[0-9a-f]{64}\.json',
         r'spec/reports/derived/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:json|md)',
         r'spec/reports/behavior/[A-Za-z0-9_-]+/(?:stdout|stderr)\.log',
