@@ -103,6 +103,21 @@ python .hmigbot-ios/plugin/scripts/a2h_ios.py spec-summary --project '.' --outpu
 python .hmigbot-ios/plugin/scripts/a2h_ios.py migration-report --project '.' --output './spec/migration-report.md' --brief
 ```
 
+### 只读环境诊断 doctor
+
+`doctor` 是纯静态、只读的环境诊断，回答“当前能做什么、缺什么、下一步动作”，不构建、不安装、不执行 Swift 或任何外部工具。两个公开入口都提供同一 `doctor` 子命令：
+
+```powershell
+# a2h 原生入口
+python .hmigbot-ios/plugin/scripts/a2h_ios.py doctor --project '.' [--config '.migbot/config.json'] [--text]
+# iOS 适配器入口
+python .hmigbot-ios/plugin/scripts/ios2harmony.py doctor --project '.' [--config '.migbot/config.json'] [--text]
+```
+
+`--project` 是被检查的真实工程根，即原生流水线实际使用的 HarmonyOS 目标；`--config` 显式指定配置时以其为准，缺失或非法直接失败而不回落到默认配置。诊断边界：iOS 源不得等于、包含或被包含于 `--project`，配置的 `harmonyos` 目标须与真实 `--project` 规范化相等，否则不得掩盖源嵌入目标的事实。
+
+静态诊断限制（如实）：退出码 0 只表示“诊断完成”，不代表环境就绪；就绪与否看报告 `overall` 字段——边界或配置错误时 `overall=config_error`，即使进程正常结束。存在性 ≠ 版本兼容 / 可执行 / 已验证；源根出现 `Package.swift` 只报 `pending_evidence`，正式计划门禁仍需真实的 SwiftPM 求值证据，doctor 只 stat 源根自身清单、不递归、不代执行、不复用旧 PASS。
+
 ## 迁移流水线、细分步骤与阶段交接
 
 以下路径均相对**鸿蒙目标项目根目录**。`<runtime>` 在安装后为 `.hmigbot-ios/plugin`。
