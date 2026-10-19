@@ -120,3 +120,104 @@ capability-provider-owner-mismatch。
 
 此处只验证计划引用，不生成 manifest、不证明运行实例/初始化或生命周期闭集，
 不把行为未验证升级为通过；behavior_verified 保持 false。
+
+
+## 版本2：能力声明义务的静态闭集
+
+旧八字段格式仍仅作引用校验，不生成闭集manifest。现代gen/gate要求全局唯一
+`capability-declarations` JSON围栏，`capability_schema`严格为整数2。扫描范围仅为
+原`plan_units/_projection`已验证的索引/Base/UI/已索引Slice计划，不搜索任意MD。
+
+严格字段如下（对象不接受额外字段、JSON不接受重复键）：
+
+| 对象 | 恰有字段与类型 |
+|---|---|
+| 顶层 | capability_schema:2、declarations:非空数组、initialization:对象、seams:"none"、absence:"none" |
+| 每个声明 | key/kind/symbol/path/slot/provider/provenance/materialization:字符串；lifecycle:不重复方法名字符串数组 |
+| kind | runtime-slot、scoped、artifact-only、framework-created；框架类别必须由精确SDK基类与注册共同证明 |
+| materialization | materialized或pending；除非runtime-slot，slot须为空；runtime-slot槽名保持实际产品拼写 |
+| initialization | hosts、chains、injections三个数组；hosts/chains不可空 |
+| host/chain规则 | path、owner、method三个字符串，calls/guards数组，result；owner为空表示该文件的真实export function |
+| call | receiver、method、slot字符串及arguments字符串数组；receiver是源码表达式，slot是目标规范槽；this本地调用或export function的slot为空 |
+| guard | mode:"if"或"early-return"，condition:源码表达式字符串 |
+| injection | slot、dependency、field字符串，parameter:从0开始的整数 |
+
+`result`只支持四形态：字符串`"none"`；
+`{"mode":"return-call","call":<上述call>}`；
+`{"mode":"expression","expression":"this.library.error === null"}`；
+`{"mode":"boolean-state","field":"error","error_method":"describe","early_returns":[{"condition":"this.opened","expression":"this.error === null"}]}`。
+boolean-state检查同一真实方法的try成功返回true/状态清空，以及catch记录字符串错误后返回false；
+不会因其它方法有return true而通过。guard必须真实控制该规则中的调用；额外的未声明条件、
+闭包/复杂控制包装等不能仅凭token同现放行。方法阶段由精确path+owner+method指定；
+安装/根生命周期不按install/hydrate前缀推断，不强迫在Ability中重复启动页面根。
+
+义务集合为product `BASE:Base-1..6` 与 `SLICE:*:3c` 的确切.ets ownership；
+Base-0/6.5/7不是能力义务。每个义务path至少一个真实导出声明，同path多导出合法。
+provider仍绑定精确责任及该责任ownership，不能用全局ownership或excluded reason豁免。
+absence与seams本轮只能none，不接受P-ID/D-ID批准缺席结构，不将未知结构当已验证。
+
+从Base-6.5 ownership中定位唯一顶层export const capabilityTable，要求直接对象字面量
+`slot: variable`，变量是顶层const（支持类型标注）并直接new解析到真实path+symbol。
+支持相对import别名，注释/局部同名表、null、错模块同名类、表内外重复规范new均拒绝。
+所有构造参数按injections逐位置绑定规范变量及同一构造字段，不允许换一个Preferences。
+scoped需要真实外部consumer的局部方法/函数或非static实例字段构造；顶层或static字段全局
+实例不能冒充scoped。artifact可为真实enum/interface/@Builder导出函数/纯static类，
+不强制new；自实例/自返回静态factory拒绝。只覆盖声明symbol，不枚举文件内每个DTO为能力。
+
+生命周期数组中的方法须在真实声明类存在且由hosts/chains的规范receiver调用覆盖。
+规范this字段、表导入及构造注入须解析到同一实例，guards和返回来源按受限结构校验。
+工具不是完整ArkTS编译器；无法绑定的构造器/表表达式、复杂控制结构或未知schema明确非零，
+不会把无法理解当静态闭集PASS。framework-created仅支持下述两个SDK基类/注册模式，其它明确unsupported。
+
+公开协议保持`gen_capability_manifest.py --project-root <project> [--output-json <file>]`
+与`capability_ledger_gate.py --project-root <project> [--output-json <file>]`。
+gen默认写spec/execution/capability-manifest.json，非空声明与义务全覆盖后可列pending；
+缺规范源码时明确pending canonical evidence，不声称已实现。gate默认pending失败，重新派生
+真值，已有manifest只对账摘要。input_digest含合同、计划原字节及工具contract_revision；
+source_digest另含本轮已声明模块main/ets证据原字节，不能将计划摘要冒充源码证据。
+现代--emit-interface明确exit2，不生成空实现；正常现代消费链不需要这个选项。
+legacy profile/help的原argv/stdout/stderr/exit透传不改。
+
+一次性pipeline的stage_runtime同时写gen/gate适配器，使用同一模型；失败保留非零、
+passed=false、summary.FAIL/WARN与findings.kind。其它13-detector语义与原finalize引擎不改，
+不制造CONVERGED。完整原应用pipeline/编译/运行仍各凭实际证据，不由本静态门替代。
+全部结果runtime_verified=false，不能据此认领行为或视觉完成。
+
+普通checkout可执行的完整不同命名示例在tests/test_capability_contract_v2.py：
+`python -m unittest discover -s tests -p test_capability_contract_v2.py -v`。
+真实C7集成另用显式HMIGBOT_C7_SOURCE冻结快照；未提供时明确skip，绝不报已验证C7。
+
+
+### framework-created两个必要模式
+
+框架能力slot为空且无任何产品侧同path+symbol人工new。导出class实际extends的别名
+须从正确SDK具名import解析，不接受同名本地类、目录标签或注释：
+
+- `@kit.FormKit`的`FormExtensionAbility`：在所属已声明模块的module.json5中，
+  module.extensionAbilities恰有一条srcEntry精确指向该源，type严格为form。
+- `@kit.AbilityKit`的`InsightIntentEntryExecutor<T>`：支持实际`<void>`等单一具名类型参数；
+  同一个class必须实际使用由该SDK导入的`InsightIntentEntry`装饰器（支持别名），并在
+  resources/base/profile/insight_intent.json的insightIntentsSrcEntry中恰一条srcEntry精确匹配。
+
+srcEntry允许规范`ets/...`或`./ets/...`，不按basename/大小写/类名猜注册。
+消费的module/profile JSON原字节与build-profile.json5均进入source_evidence/source_digest；
+更改/删除注册、错srcEntry/type、假SDK基类/装饰器或人工new均非零。其它framework基类、
+复杂未支持generic/JSON5写法明确unsupported；当前读取JSON-compatible JSON5，不执行SDK。
+规则依据本轮本机SDK具名导出及基类定义，不声称所有SDK版本或运行时发现/权限均已验证。
+
+
+表达式证据不会比较被lexer遮蔽的字面量内容：合同中的字符串/模板等表达式或常量布尔/
+数字guard明确unsupported，不能把if(false)登记为绿色初始化。规范表为静态只读映射：
+属性写入/删除、整表别名/传递或未支持的动态键非零，不凭初始字面量掩盖之后修改。
+构造链只接受规范变量参数；复杂alias链/反射/未解析构造器及未声明的调用控制包装均不算证明。
+
+静态路径证明的保守边界（C31定向修正）：注入构造器只支持简单命名类型参数和直接的
+`this.field = parameter;`序列；分支、提前返回、参数替换或字段再次写入明确非零。
+boolean-state的成功清空必须是try成功块中的直接语句，所声明错误字段只能在该清空与
+对应catch各写一次；其它直接/复合/更新写入（包括其它成员内写入）不支持。catch必须
+结束该方法，finally及未理解出口明确非零。规范表slot的复合赋值、前后更新、delete与
+带括号的写目标同样拒绝；只读访问不受影响。这些限制是受限源码静态检查，不是完整AST。
+
+词法位置只用同一lexer的源码字符区间区分真实相邻`!=`/`!==`比较与非空断言后
+分离的`! =`、`!/*注释*/=`或换行赋值；后者不能冒充比较绕开规范表写保护。
+原token的value/line/literal及相等语义保持，新增位置元数据也进入工具合同revision。

@@ -86,13 +86,14 @@ detail: plans/base-plan.md
   - item_id: Base-6.5
   - output: `entry/src/main/ets/AppAssembly.ets`——导出 `capabilityTable: CapabilityTable`
     **直接对象字面量**（每键 = 能力清单一项，值 = 规范实例；禁函数间接构造、禁 as）；
-    含生命周期装配方法（hydrate/install 族）的能力另导出 `installCapabilities(ctx)`，
-    由 EntryAbility.onCreate 调用
+    使用plan-delivery-contract版本2结构化initialization声明真实宿主/阶段/调用/守卫/返回链；
+    实际方法可以是open/installRoot/disposeRoot等，不按名字强制放在EntryAbility.onCreate
   - 能力清单 = 机械生成闭集（Base-1..6 单元 + 各 slice Step 3c scope + contracts seam 渠道符号；
     `gen_capability_manifest.py` 产出，闸每轮重新生成防篡改）
   - **消费方从组装根取依赖；组装根之外禁止 new 槽位类**（双实例=闸 FAIL）
-  - 能力不可用只有一种合法表达：**槽位缺席 + registry P-ID 行（kind=handoff）绑 D-编号，
-    且该 D 正文点名祝福此键**——禁止 Unavailable*/Noop* 空对象类冒充实现
+  - 现代声明全局一个capability_schema:2围栏，runtime-slot/scoped/artifact-only按真实职责区分。
+    absence/seams本轮仅none，批准缺席结构明确unsupported；禁止Unavailable*/Noop*空对象凑门。
+    未来未物化项gen可列pending，最终ledger默认失败；不可删责任或创建空类抹平缺失
   - 验收：`capability_ledger_gate.py`（arkts-structural-closure，FV-1 pipeline 自动跑）
 - Base-7: 编译验证 — Base 层全量编译
   - item_id: Base-7

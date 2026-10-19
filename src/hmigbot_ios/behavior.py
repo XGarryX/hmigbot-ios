@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .core import MigrationError, digest, json_bytes, read_json, safe_child, snapshot, write_json
@@ -14,6 +14,8 @@ class _TargetToken:
     value: str
     line: int
     literal: bool = False
+    start: int = field(default=-1, compare=False, repr=False)
+    end: int = field(default=-1, compare=False, repr=False)
 
 
 def _target_tokens(text):
@@ -94,15 +96,15 @@ def _target_tokens(text):
             pos = comment_end(pos)
         elif char in '\'"`':
             pos = quoted_end(pos)
-            result.append(_TargetToken('<literal>', start_line, True))
+            result.append(_TargetToken('<literal>', start_line, True, start, pos))
         elif (char == '/' and (not result or result[-1].value in expression_prefix)
               and (end := regexp_end(pos)) is not None):
             pos = end
-            result.append(_TargetToken('<literal>', start_line, True))
+            result.append(_TargetToken('<literal>', start_line, True, start, pos))
         else:
             match = re.match(r'[$\w]+|=>', text[pos:])
             value = match.group() if match else char
-            result.append(_TargetToken(value, start_line))
+            result.append(_TargetToken(value, start_line, False, start, start + len(value)))
             pos += len(value)
         line += text[start:pos].count('\n')
     return result

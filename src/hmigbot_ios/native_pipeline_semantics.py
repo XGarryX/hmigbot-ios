@@ -804,6 +804,12 @@ def stage_runtime(skills, root=None):
     """Install adapters only in a disposable original-engine scripts layout."""
     root = Path(root) if root else Path(__file__).resolve().parents[2]
     scripts = Path(skills) / 'arkts-structural-closure/scripts'
+    for filename, kind in [('gen_capability_manifest.py', 'gen'), ('capability_ledger_gate.py', 'gate')]:
+        legacy = root / 'vendor/hmigbot/skills/arkts-structural-closure/scripts' / filename
+        (scripts / filename).write_text('import sys\n'
+            f'sys.path.insert(0, {str(root / "src")!r})\n'
+            'from hmigbot_ios.capability_manifest import main\n'
+            f'raise SystemExit(main({kind!r}, {str(legacy)!r}))\n', encoding='utf-8')
     (scripts / 'assembly_gate.py').write_text('import sys\n'
         f'sys.path.insert(0, {str(root / "src")!r})\n'
         'from hmigbot_ios.native_pipeline_semantics import assembly_main\n'

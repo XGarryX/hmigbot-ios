@@ -46,3 +46,17 @@ NATIVE_INPUT_REQUIRED/输入错误：回到资源/源事实/结构输入的责�
 原 verify_slice_wiring 能拦截孤立 VM，但可能接受只有空 handler 的页面；
 因此结构 PASS 不证明 AC 行为通过，必须继续独立源真值的 unit/UI/device 验证。
 原闭包修复结束后由 hmos-fix-build-errors 做终态全量编译，最后交 a2h-verify。
+
+
+## 现代计划的能力静态义务
+
+profile 2使用plan-delivery-contract的capability_schema:2声明；先核已验证责任集合的
+Base1..6/Slice3c ownership全覆盖，再核真实规范表、scoped消费者及结构化初始化。
+调用现有gen_capability_manifest.py/capability_ledger_gate.py的--project-root/--output-json，
+不另造无人消费CLI；gen默认spec/execution/capability-manifest.json。现代--emit-interface
+明确不支持，不生成/覆盖产品接口；按声明真实导出接线。缺声明不回退旧空成功，pending不等于
+实现，gate重新派生并核摘要。stage_runtime的一次性pipeline也消费同一模块，保留失败；
+不得忽略ledger或以其它detector通过制造CONVERGED。legacy原协议透传；framework-created仅支持已核SDK的FormExtensionAbility与
+InsightIntentEntryExecutor模式，必须真实导入/装饰器/精确注册且无产品new。参见a2h-plan/references/plan-delivery-contract.md
+的严格字段/支持语法与普通checkout可运行示例。始终runtime_verified=false；静态门不证明
+编译、设备、行为或视觉。本机C7集成必须显式提供冻结快照，缺输入只可标skip/未验证。
