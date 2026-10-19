@@ -29,7 +29,7 @@ def contract_revision(project):
     from .artifact_contract import revision
     root = Path(__file__).resolve().parents[2]
     paths = [root / 'schemas/ios-harness-v2.schema.json', Path(__file__),
-             root / 'src/hmigbot_ios/ios_scheduler.py', root / 'src/hmigbot_ios/harness_schema.py',
+             root / 'src/hmigbot_ios/ios_scheduler.py', root / 'src/hmigbot_ios/replan_recovery.py', root / 'src/hmigbot_ios/harness_schema.py',
              root / 'src/hmigbot_ios/capability_contract.py',
              root / 'src/hmigbot_ios/capability_manifest.py', root / 'src/hmigbot_ios/capability_runtime.py',
              root / 'src/hmigbot_ios/behavior.py',
