@@ -31,6 +31,12 @@ def contract_revision(project):
     paths = [root / 'schemas/ios-harness-v2.schema.json', Path(__file__),
              root / 'src/hmigbot_ios/ios_scheduler.py', root / 'src/hmigbot_ios/harness_schema.py',
              root / 'src/hmigbot_ios/capability_contract.py',
+             root / 'src/hmigbot_ios/capability_manifest.py', root / 'src/hmigbot_ios/capability_runtime.py',
+             root / 'src/hmigbot_ios/behavior.py',
+             root / 'src/hmigbot_ios/native_pipeline_semantics.py',
+             root / 'skills/arkts-structural-closure/scripts/gen_capability_manifest.py',
+             root / 'skills/arkts-structural-closure/scripts/capability_ledger_gate.py',
+             root / 'skills/arkts-structural-closure/SKILL.md',
              root / 'skills/a2h-plan/references/plan-delivery-contract.md']
     paths += sorted((root / 'skills/a2h-plan/templates').glob('*.md'))
     return digest(json_bytes({'artifacts': revision(Path(project)),
@@ -387,15 +393,9 @@ def task_inputs(project, task, items=None):
     return [consumed[key] for key in sorted(consumed)]
 
 
-def validate_plan(project, request):
-    """Return a read-only PASS report or raise MigrationError before state writes."""
+def plan_units(project):
+    """Load the same bounded indexed responsibility authority used by validate_plan."""
     project = Path(project)
-    from .harness_schema import validate
-    validate(request, 'planRequest')
-    version = profile(project)
-    result = {'status': 'PASS', 'spec_contract_version': version, 'task_inputs': {}, 'behavior_verified': False}
-    if version < 2 or request.get('wave') != 'domains':
-        return result
     from .artifact_contract import catalog
     projections = {}
     for artifact in catalog()['plan']['artifacts']:
@@ -424,6 +424,19 @@ def validate_plan(project, request):
             if not ident.startswith(expected) or ident in units:
                 raise MigrationError('Duplicate or misplaced plan item: ' + ident)
             units[ident] = item
+    return projections, units
+
+
+def validate_plan(project, request):
+    """Return a read-only PASS report or raise MigrationError before state writes."""
+    project = Path(project)
+    from .harness_schema import validate
+    validate(request, 'planRequest')
+    version = profile(project)
+    result = {'status': 'PASS', 'spec_contract_version': version, 'task_inputs': {}, 'behavior_verified': False}
+    if version < 2 or request.get('wave') != 'domains':
+        return result
+    projections, units = plan_units(project)
     active = {ident: item for ident, item in units.items() if item['scope'] == 'product'}
     for ident in ('FV:FV-1', 'FV:FV-2'):
         if ident not in active or active[ident]['verification'] != 'compile' or active[ident]['ownership']:
