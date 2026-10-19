@@ -172,6 +172,8 @@ struct CoverDemo {
 
 **结构修正**：给每个需要独立存活的弹层一个**不同且稳定的宿主**——外层只承载 cover，内层保留原内容与其它 sheet，原内容 / Navigation / 业务 / 回调都不动，只多包一层无条件外层 `Stack`。
 
+示意：复用组件已有 `@Builder`，省略其定义。
+
 ```typescript
 @ComponentV2
 struct Index {
@@ -203,6 +205,6 @@ struct Index {
 
 - **V2 一律 UIContext 形式**：`this.getUIContext().getPromptAction()` —— 不要用已废弃的全局 `promptAction.showToast(...)` / `AlertDialog.show(...)`。
 - `bindSheet` / `bindContentCover` 的第一参用 **`$$this.isShow`** 双向绑定，关闭时回写 `false`（或在 `onDisappear` 里同步），否则二次打开失效。
-- 同一宿主节点上并列 `bindSheet` 与 `bindContentCover` 会互踩，排查呈现失败按 §4.1；`$$` 回写是真实关闭同步，不能为绕过失败而删除。
+- 同一宿主节点上并列 `bindSheet` 与 `bindContentCover` 可能互踩（尤其初始为 false 的 sheet 关闭时），排查呈现失败按 §4.1；`$$` 回写是真实关闭同步，不能为绕过失败而删除。
 - `@CustomDialog` 弹窗内的状态用其自身组件装饰器；跨弹窗共享状态用 `AppStorageV2` / `@Provider`。
 - 选 Sheet 还是 ContentCover：半屏可交互保留背景上下文 → bindSheet；全屏独立流程 → bindContentCover。
