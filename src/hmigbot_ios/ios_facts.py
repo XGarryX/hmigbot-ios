@@ -87,9 +87,10 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
     variant = variant or {'scope': 'repository', 'effective_build': 'unresolved'}
     if not isinstance(variant, dict) or variant.get('scope') not in {'repository', 'selected-build', 'project-targets'}:
         raise MigrationError('Variant must declare repository, selected-build or project-targets scope')
+    project_context = None
     if variant['scope'] == 'project-targets':
         from .project_scope import resolve
-        variant = resolve(source, variant)
+        variant, project_context = resolve(source, variant, _context=True)
     if variant['scope'] == 'selected-build':
         # Membership needs an explicit path set; caller cannot promote guessed settings.
         if not isinstance(variant.get('source_files'), list) or not variant.get('evidence_path'):
@@ -265,6 +266,9 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
             'project': project, 'dependencies': dependencies, 'assets': assets,
             'capabilities': {'syntax': 'token_signal', 'symbol_binding': 'unresolved',
                              'effective_build': 'unresolved', 'runtime': 'unavailable'}}
+    if project_context is not None:
+        from .manifest_scope import classify
+        graph['dependency_scope'] = classify(source, snap, variant, project_context)
     if evidence_ref is not None:
         graph['manifest_evidence'] = evidence_ref
     return graph
@@ -368,6 +372,7 @@ def view(project, source, scope):
              'facts': [f for f in graph['facts'] if f['kind'] in selections[scope]]}
     if scope == 'project':
         value.update(project=graph['project'], dependencies=graph['dependencies'], assets=graph['assets'])
+        if 'dependency_scope' in graph: value['dependency_scope'] = graph['dependency_scope']
     ids = {f['id'] for f in value['facts']}
     value['obligations'] = [o for o in obs['obligations'] if o['fact_id'] in ids]
     write_json(project / f'spec/ref/ios-{scope}-signals.json', value)

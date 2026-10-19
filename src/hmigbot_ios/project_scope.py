@@ -18,7 +18,7 @@ DERIVED_FIELDS = {'source_files', 'source_membership', 'excluded_sources', 'sour
                   'project_sha256', 'target_closure', 'evidence', 'effective_build', 'limitations'}
 
 
-def resolve(source: Path, variant: dict) -> dict:
+def resolve(source: Path, variant: dict, *, _context=False) -> dict:
     """Return derived membership, rejecting partial, stale or edited derivatives.
 
     Callers initially provide only scope/project_path/targets/configuration. A
@@ -62,12 +62,14 @@ def resolve(source: Path, variant: dict) -> dict:
     if supplied_derived and variant != result:
         changed = sorted(k for k in result if variant.get(k) != result[k])
         raise MigrationError(f'Stale or modified derived project membership: {changed}')
-    return result
+    return (result, graph) if _context else result
 
 
 class _Project:
     def __init__(self, source, path, document):
         self.source, self.path = source, path
+        self.selected_configs = []
+        self.selected_closure = set()
         if not isinstance(document, dict) or not isinstance(document.get('objects'), dict):
             raise MigrationError('Project objects must be a dictionary')
         self.objects = document['objects']
@@ -151,10 +153,13 @@ class _Project:
         config = candidates[0]
         if not isinstance(config.get('buildSettings', {}), dict):
             raise MigrationError(f'Invalid configuration settings for {owner}')
+        actual = None
         if config.get('baseConfigurationReference'):
             actual = self.file_path(config['baseConfigurationReference'])
             if not actual.is_file():
                 raise MigrationError(f'Base configuration does not exist: {actual}')
+        self.selected_configs.append({'owner': owner, 'name': name, 'settings': config.get('buildSettings', {}),
+                                      'base_path': actual.relative_to(self.source).as_posix() if actual else None})
 
     def phases(self, target):
         for key in self.list_value(target.get('buildPhases', []), f'{target["name"]} build phases'):
@@ -269,6 +274,7 @@ class _Project:
             roots.append(key)
         self.configuration(self.project, configuration, 'project')
         closure = self.closure(roots, configuration)
+        self.selected_closure = closure
         memberships = self.memberships()
         disk = {item['path']: item for item in snap['files']
                 if Path(item['path']).suffix.lower() in COMPILE_SUFFIXES and Path(item['path']).name != 'Package.swift'}
