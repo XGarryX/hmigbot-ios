@@ -10,7 +10,7 @@ import re
 
 from .artifact_contract import markdown_tables, validate_json
 from .core import MigrationError, digest, json_bytes, read_json, safe_child, snapshot
-from .native_contract import source_truth, validate_disposition
+from .native_contract import source_truth, validate_literal_exclusion
 from .native_semantics import COMMON, PAGE, FEATURE, SWIFTUI, UIKIT, SWIFT, OBJC, required_facts, validate_native_payload
 
 
@@ -106,7 +106,13 @@ def prepare(project):
                       for dimension in doc['required_common_facts']}})
     return {'schema_version': 1, 'status': 'needs_authoring', **inventory, 'input_template': template,
             'disposition_contract': {'schema': 'schemas/spec-artifacts.schema.json#/$defs/source_disposition',
-                                     'required_entry_fields': ['path', 'disposition', 'reason'],
+                                     'required_entry_fields': ['path', 'disposition', 'reason', 'line', 'end_line', 'source_sha256'],
+                                     'entry_example': {'path': '<source-relative indexed file>', 'disposition': 'test',
+                                                       'reason': '<independent reviewed reason>', 'line': 1,
+                                                       'end_line': '<inclusive last reviewed line>',
+                                                       'source_sha256': '<sha256 of this file current bytes>'},
+                                     'source_sha256_levels': 'top level binds the whole-source snapshot; each entry binds its own file bytes',
+                                     'evidence': 'line/end_line and the per-file hash are checked against the current source before planning',
                                      'owner_mapping_destination': 'page/feature source_anchors; never disposition.files'},
             'spec_complete': False, 'behavior_verified': False}
 
@@ -143,13 +149,15 @@ def render(project, request):
                     or any(not isinstance(f, str) for f in claim['fact_ids'])):
                 raise MigrationError('Known native claim requires typed value and current fact_ids: ' + doc['id'] + ':' + dimension)
     dispositions = request.get('dispositions')
-    validate_json({'files': dispositions}, 'source_disposition')
+    if not isinstance(dispositions, list):
+        raise MigrationError('Authoring dispositions must be a list of reviewed exclusions')
     seen = set()
     for item in dispositions:
-        validate_disposition(item, known)
+        validate_literal_exclusion(source, known, item)
         if item['path'] in seen:
             raise MigrationError('Duplicate source disposition: ' + item['path'])
         seen.add(item['path'])
+    validate_json({'source_sha256': inventory['source_sha256'], 'files': dispositions}, 'source_disposition')
     unaccounted = set(inventory['unaccounted_sources']) - seen
     if unaccounted:
         raise MigrationError('Source files still need reviewed ownership/disposition: ' + ', '.join(sorted(unaccounted)))

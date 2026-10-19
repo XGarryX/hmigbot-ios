@@ -17,8 +17,8 @@ python <runtime>/scripts/a2h_ios.py spec-authoring --project <target> --output <
 ## 字段和锚点单源
 
 - `documents` 必须与清单的 page/F ID 一一对应。8页和5功能即13份，不能复制示例的2份，也不能用重复ID凑数。
-- `dispositions` 只写经审阅的范围处置。每条含 `path`、`disposition`、`reason`；disposition 取 dependency/test/not_applicable。owner映射写对应页面/功能的 source_anchors。不能按目录名自动判定测试/依赖。
-- 字面量排除还需原消费者要求的当前文件 `source_sha256`、`line/end_line`；整件 source_disposition 的 `source_sha256` 是源快照摘要，二者不同。
+- `dispositions` 只写经审阅的范围处置。每条含 `path`、`disposition`、`reason`、`line`、`end_line`、`source_sha256`；disposition 取 dependency/test/not_applicable。owner映射写对应页面/功能的source_anchors。不能按目录名自动判定测试/依赖。
+- 每条都是字面量排除证据：`line/end_line` 是该文件当前行内的闭区间，条目 `source_sha256` 是这一个文件当前字节的摘要；顶层 `source_sha256` 是整件源快照摘要，二者不同且都必填。生成器与 source-check 在规划前就按真实文件核对，缺字段、越界/逆序区间和过期摘要都不再等到 Stage0 才被拒绝。
 - `truth_anchors` 每项含 `ac_id/path/line`。为每个源真值AC选择该功能 `allowed_sources` 内的实际文件与行。工具生成 `真:src:路径:行`；路径、行号及归属校验与 source-check 共用。已有 test/trace/device/decision 真值保留，不自动改为源真值。
 - 源或MD变化后重新生成清单并重审；旧 inventory_sha256 不可沿用。禁止手改摘要或增添无关anchors来迎合校验。
 

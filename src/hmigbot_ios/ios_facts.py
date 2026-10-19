@@ -15,6 +15,72 @@ RULES = read_json(Path(__file__).with_name('ios_rules.json'))['rules']
 SOURCE_KINDS = {'.swift', '.m', '.mm', '.h', '.c', '.cpp'}
 
 
+def _is_task_priority_argument(values, index):
+    """True only when a 'priority' token is the keyword argument of a Task constructor.
+
+    Task.detached/Task/Task.init schedule work by priority; that is concurrency, not
+    layout, so the enclosing 'Task' token already emits the task/concurrency obligation
+    and its token window carries the priority literal. Every other 'priority' (property
+    access, unknown callee, non-call) keeps its original constraint signal: lexical context
+    alone cannot prove a scheduling meaning, so we do not exempt it.
+    """
+    if values[index] != 'priority' or index == 0 or index + 1 >= len(values):
+        return False
+    if values[index - 1] not in {'(', ','} or values[index + 1] != ':':
+        return False
+    open_index = index - 1
+    if values[open_index] == ',':  # Later argument: walk back past balanced groups to the call's '('.
+        depth, scan = 0, open_index - 1
+        while scan >= 0:
+            if values[scan] in {')', ']', '}'}:
+                depth += 1
+            elif values[scan] in {'(', '[', '{'}:
+                if depth == 0:
+                    break
+                depth -= 1
+            scan -= 1
+        else:
+            return False
+        open_index = scan
+    if values[open_index] != '(':
+        return False
+    if open_index >= 1 and values[open_index - 1] == 'Task':
+        head = open_index - 1  # Task(priority: ...) initializer
+    elif (open_index >= 3 and values[open_index - 1] in {'detached', 'init'}
+          and values[open_index - 2] == '.' and values[open_index - 3] == 'Task'):
+        head = open_index - 3  # Task.detached / Task.init
+    else:
+        return False
+    return head == 0 or values[head - 1] != '.'  # An unknown qualified callee keeps protection.
+
+
+def _is_button_cancel_role(values, index):
+    """Recognize only the exact .cancel value of a bare Button's role argument.
+
+    Calls, unknown member references and handler tokens keep their task signals.
+    The Button event still carries the role value in its evidence window.
+    """
+    if (index < 4 or values[index - 3:index + 1] != ['role', ':', '.', 'cancel']
+            or index + 1 >= len(values) or values[index + 1] not in {',', ')'}):
+        return False
+    open_index = index - 4
+    if values[open_index] == ',':
+        depth, scan = 0, open_index - 1
+        while scan >= 0:
+            if values[scan] in {')', ']', '}'}:
+                depth += 1
+            elif values[scan] in {'(', '[', '{'}:
+                if depth == 0:
+                    break
+                depth -= 1
+            scan -= 1
+        else:
+            return False
+        open_index = scan
+    return (open_index >= 1 and values[open_index] == '(' and values[open_index - 1] == 'Button'
+            and (open_index == 1 or values[open_index - 2] != '.'))
+
+
 def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Path | None = None):
     """Repository scope is explicit; effective configuration remains unresolved without tools."""
     snap = snapshot(source)
@@ -141,7 +207,8 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
                 if v in {'if', 'guard', 'switch', 'catch', 'throw'}:
                     add(file, 'branch', token.line, token.line, v, {'condition_tokens': window}, owner)
                 if v in {'task', 'Task', 'async', 'await', 'MainActor', 'cancel'}:
-                    add(file, 'task', token.line, token.line, v, {'tokens': window, 'binding': 'unresolved'}, owner)
+                    if not (v == 'cancel' and _is_button_cancel_role(values, i)):
+                        add(file, 'task', token.line, token.line, v, {'tokens': window, 'binding': 'unresolved'}, owner)
                 if v in {'NavigationLink', 'navigationDestination', 'sheet', 'fullScreenCover', 'pushViewController', 'present', 'performSegue'}:
                     add(file, 'navigation', token.line, token.line, v, {'tokens': window, 'destination': 'unresolved'}, owner)
                 if v in {'UserDefaults', 'AppStorage', 'SceneStorage', 'CoreData', 'SwiftData', 'Keychain', 'SecItemAdd', 'SecItemCopyMatching'}:
@@ -151,7 +218,8 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
                 if v in {'viewDidLoad', 'viewWillAppear', 'viewDidAppear', 'viewWillDisappear', 'viewDidDisappear', 'deinit', 'onAppear', 'onDisappear'}:
                     add(file, 'lifecycle', token.line, token.line, v, {'tokens': window}, owner)
                 if v in {'constraint', 'NSLayoutConstraint', 'priority'}:
-                    add(file, 'constraint', token.line, token.line, v, {'tokens': window, 'relation': 'unresolved'}, owner)
+                    if not (v == 'priority' and _is_task_priority_argument(values, i)):
+                        add(file, 'constraint', token.line, token.line, v, {'tokens': window, 'relation': 'unresolved'}, owner)
                 if v == 'ForEach' or v == 'id' and i and values[i - 1] == '.':
                     add(file, 'identity', token.line, token.line, v, {'tokens': window}, owner)
                 if v in {'VStack', 'HStack', 'ZStack', 'List', 'ScrollView', 'Text', 'Image', 'UIView', 'UILabel', 'UIButton', 'UIStackView'}:
