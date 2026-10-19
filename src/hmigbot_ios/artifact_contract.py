@@ -14,7 +14,7 @@ from .core import MigrationError, digest, json_bytes, read_json, safe_child
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG_PATH = ROOT / 'schemas/spec-plan-artifacts.json'
 SCHEMA_PATH = ROOT / 'schemas/spec-artifacts.schema.json'
-SOURCE_REF = re.compile(r'(?P<path>[^:\n;|`]+?\.(?:swift|mm|m|h|storyboard|xib|plist|entitlements|xcstrings|strings|json)):(?P<line>\d+)(?:-(?P<end>\d+))?')
+SOURCE_REF = re.compile(r'(?P<path>[^:\n;|`]+?\.(?:swift|mm|m|h|storyboard|xib|plist|entitlements|xcstrings|strings|json|pbxproj|xcconfig|xcprivacy)):(?P<line>\d+)(?:-(?P<end>\d+))?')
 NA = re.compile(r'^\s*(?:not_applicable|N/A|不适用)\s*[:：]', re.I)
 UNKNOWN = re.compile(r'(?im)^\s*(?:unknown|TBD|TODO|待确定|待补充)\s*[:：]|\b(?:TBD|TODO)\b')
 
@@ -533,11 +533,13 @@ def check_artifacts(project, source, fail, inputs):
                     continue
                 evidence_index = next((i for i, header in enumerate(table['headers']) if header in ('源证据', '源依据', '源文件:行')), None)
                 if evidence_index is not None:
-                    for row in table['rows']:
+                    for row_index, row in enumerate(table['rows'], 1):
                         try:
                             _evidence(source, row[evidence_index])
                         except (MigrationError, OSError, UnicodeError) as exc:
-                            fail('ARTIFACT_SOURCE', section_subject, str(exc))
+                            fail('ARTIFACT_SOURCE', section_subject,
+                                 f"Table data row {row_index} ({table['headers'][0]}: {row[0]}), "
+                                 f"{table['headers'][evidence_index]}: {exc}")
                 if requirement['title'] == '组件层级':
                     ids = [row[0] for row in table['rows']]
                     parents = {row[0]: row[1] for row in table['rows']}

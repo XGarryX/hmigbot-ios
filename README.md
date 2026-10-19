@@ -96,6 +96,13 @@ python .hmigbot-ios/plugin/scripts/a2h_ios.py init --source 'D:/Projects/MyNativ
 配置使用 `source_platform: ios`、`ios`、`harmonyos`；构建工具路径按实际环境填写。
 没有 Mac 仍可读源码和实施鸿蒙代码；源编译、iPhone 安装、源运行与双端验收单独记录。
 
+报告落盘推荐用 `--brief` 只保留小回执，完整内容在输出文件（不带 `--brief` 时 stdout 行为不变，`--check` 语义不变）：
+
+```powershell
+python .hmigbot-ios/plugin/scripts/a2h_ios.py spec-summary --project '.' --output './spec/reports/spec-summary.json' --brief
+python .hmigbot-ios/plugin/scripts/a2h_ios.py migration-report --project '.' --output './spec/migration-report.md' --brief
+```
+
 ## 迁移流水线、细分步骤与阶段交接
 
 以下路径均相对**鸿蒙目标项目根目录**。`<runtime>` 在安装后为 `.hmigbot-ios/plugin`。

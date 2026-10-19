@@ -84,7 +84,7 @@ def _execution_evidence(path):
         r'spec/reports/ios-blocked-receipts/(?:understand|domains)/[a-z0-9_-]+/[0-9a-f]{64}\.json',
         r'spec/reports/derived/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:json|md)',
         r'spec/reports/behavior/[A-Za-z0-9_-]+/(?:stdout|stderr)\.log',
-        r'spec/reports/host-oracle/(?:support/)?[A-Za-z0-9_.-]+\.(?:py|mjs|js|json|log|md)',
+        r'spec/reports/host-oracle/(?:support/)?[A-Za-z0-9_.-]+\.(?:py|cjs|mjs|js|json|log|md)',
         r'spec/pipeline-run-\d{8}\.md',
         r'spec/a2h/_work/expected_[A-Za-z0-9_-]+\.json',
         r'spec/fix/round-[1-9]\d*/patrol/arkts-(?:ui-build|ui-adapt|data-network|system-component|thirdparty-component)-(?:batch|group)-\d+\.md',
@@ -92,7 +92,13 @@ def _execution_evidence(path):
         r'spec/execution/writeback/writeback-(?:(?:batch|group)-\d+|base-\d+(?:[._]\d+)?|final)\.json',
         r'spec/execution/source-understanding/[A-Za-z0-9_-]+-source-notes\.md',
         r'spec/execution/theme-receipts/page_\d{4}\.json',
-        r'spec/execution/autofix-log/round-\d+/(?:loop-state|loop-result-latest|loops|audit|wiring|orphans|immersive|icon|ledger|assembly|binding|capability|theme|literal|deadshell|carrier|hittest|resname|native-images|memory)[A-Za-z0-9_.-]*\.(?:json|log|md)',
+        # Structural CLI state/output names are caller-selected JSON data in
+        # this flat round namespace; this grants no script or product ownership.
+        r'spec/execution/autofix-log/round-[1-9]\d*/[A-Za-z0-9_][A-Za-z0-9_.-]*\.json',
+        r'spec/execution/autofix-log/round-[1-9]\d*/(?:loop-state|loop-result-latest|loops|audit|wiring|orphans|immersive|icon|ledger|assembly|binding|capability|theme|literal|deadshell|carrier|hittest|resname|native-images|memory)[A-Za-z0-9_.-]*\.(?:json|log|md)',
+        r'spec/execution/autofix-log/round-[1-9]\d*/native-pipeline-dispositions-iter\d+\.json',
+        r'spec/execution/autofix-log/round-[1-9]\d*/native-pipeline-raw/loop-state-pipeline-final-iter\d+-[0-9a-f]{32}/(?:assembly|audit|binding|carrier|deadshell|hittest|icon|immersive|ledger|literal|orphans|resname|theme)-pipeline-iter\d+\.json',
+        r'spec/execution/autofix-log/round-[1-9]\d*/native-pipeline-raw/loop-state-pipeline-final-iter\d+-[0-9a-f]{32}/(?:state|result)\.json',
         r'work/pipeline-\d{8}/run\.py',
         r'work/pipeline-\d{8}/support/[A-Za-z0-9_.-]+\.(?:py|mjs|js|ps1|sh|md|txt|log)',
         r'work/pipeline-\d{8}/support/states/[A-Za-z0-9_.-]+\.json',

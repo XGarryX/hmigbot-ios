@@ -35,6 +35,7 @@ def product_literals(project):
     from .ios_facts import validate_graph
     from .ios_harness import ac_inventory
     from .ios_literals import extract
+    from .native_contract import validate_literal_exclusion
     from .source_scope import preview_lines
     source, project = context(Path(project))
     base = project / 'spec/baseline'
@@ -62,15 +63,9 @@ def product_literals(project):
         scope = read_json(scope_path)
         if scope.get('source_sha256') != graph['source_sha256']:
             raise MigrationError('Source disposition is stale; re-review the scope')
+        indexed = {f['path'] for f in snapshot(source)['files']}
         for item in scope.get('files', []):
-            path = safe_child(source, item.get('path', ''))
-            start, end = item.get('line'), item.get('end_line')
-            if (item.get('disposition') not in {'test', 'dependency', 'not_applicable'}
-                    or not isinstance(item.get('reason'), str) or not item['reason'].strip()
-                    or type(start) is not int or type(end) is not int
-                    or not 1 <= start <= end <= len(path.read_text(encoding='utf-8-sig').splitlines())
-                    or item.get('source_sha256') != digest(path.read_bytes())):
-                raise MigrationError('Literal exclusions need exact current file hashes, spans and reasons')
+            validate_literal_exclusion(source, indexed, item)
             dispositions.append(item)
     preview_cache, entries = {}, []
     for group in LITERAL_GROUPS:

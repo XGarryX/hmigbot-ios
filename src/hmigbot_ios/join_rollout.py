@@ -1,8 +1,8 @@
 """Audited scope projection for the original depth-two-only join consumer.
 
 Only real spawn results and tool status observations are projected. The original
-gate still owns expected-set/artifact validation and its join ledger. Agent prose
-and a missing live-agent row are never completion observations.
+gate owns normal joins and its ledger; verified exemptions additionally need the
+dispatcher's actual artifacts. Agent prose is never a completion observation.
 """
 from __future__ import annotations
 
@@ -209,6 +209,73 @@ def project_rollout(raw, source_path, expected):
     return projection, manifest, code
 
 
+def _exempt_verdicts(before, after, manifest, join_point, projection_path):
+    """Consume only this call's single append-only upstream ledger decision."""
+    if (not after.startswith(before) or len(after) == len(before)
+            or before and not before.endswith(b'\n')):
+        raise MigrationError('Exemption needs a new append-only original ledger record')
+    lines = [line for line in after[len(before):].splitlines() if line.strip()]
+    if len(lines) != 1:
+        raise MigrationError('Exemption needs one unambiguous new original ledger decision')
+    record = _object(lines[0].decode('utf-8'), 'original ledger record')
+    rollout = f"join-{join_point}-{manifest['source_sha256']}.log"
+    if (record.get('join_point') != join_point or projection_path.name != rollout
+            or record.get('rollouts') != [rollout]):
+        raise MigrationError('Original exemption ledger has a different join point or source projection')
+    verdicts = {}
+    for verdict in ('joined', 'exempt'):
+        names = record.get(verdict)
+        if not isinstance(names, list) or any(not isinstance(name, str) or not TASK.fullmatch(name) for name in names):
+            raise MigrationError('Original ledger verdict must list exact task identities')
+        for name in names:
+            if name in verdicts:
+                raise MigrationError('Duplicate original ledger task verdict: ' + name)
+            verdicts[name] = verdict
+    if set(verdicts) != {h['task_name'] for h in manifest['handles']} or 'exempt' not in verdicts.values():
+        raise MigrationError('Original exemption ledger does not exactly cover the expected handles')
+    return [{'task_name': h['task_name'], 'verdict': verdicts[h['task_name']],
+             'authority': 'new-original-ledger'} for h in manifest['handles']]
+
+
+def _exempt_artifacts(project, expected):
+    """Check the existing path/count/bytes/JSON contract only for new exemptions."""
+    artifacts = expected.get('artifacts')
+    if not isinstance(artifacts, list) or not artifacts:
+        raise MigrationError('Verified exemption requires a nonempty expected artifact contract')
+    reports = []
+    for artifact in artifacts:
+        if not isinstance(artifact, dict) or set(artifact) - {'path', 'count', 'min_count', 'min_bytes', 'json'}:
+            raise MigrationError('Unsupported expected artifact contract')
+        pattern = artifact.get('path')
+        if not isinstance(pattern, str) or not pattern:
+            raise MigrationError('Expected artifact needs a project-relative path or glob')
+        # Validate the portable path shape before globbing; validate every real
+        # match again after resolution, including links and directory junctions.
+        safe_child(project, re.sub(r'[*?\[\]]', '_', pattern))
+        minimum = artifact.get('min_count', 1)
+        size = artifact.get('min_bytes', 0)
+        exact = artifact.get('count')
+        if (type(minimum) is not int or minimum < 1 or type(size) is not int or size < 0
+                or 'count' in artifact and (type(exact) is not int or exact < minimum)
+                or type(artifact.get('json', False)) is not bool):
+            raise MigrationError('Invalid expected artifact count, byte limit or JSON flag type')
+        files = []
+        for match in sorted(project.glob(pattern)):
+            path = safe_child(project, match.relative_to(project).as_posix())
+            if not path.is_file():
+                continue
+            raw = path.read_bytes()
+            if len(raw) < size:
+                raise MigrationError('Expected artifact is undersized: ' + match.relative_to(project).as_posix())
+            if artifact.get('json', False):
+                read_json(path)
+            files.append({'path': match.relative_to(project).as_posix(), 'bytes': len(raw), 'sha256': digest(raw)})
+        if len(files) < minimum or exact is not None and len(files) != exact:
+            raise MigrationError('Expected artifact file count is not satisfied: ' + pattern)
+        reports.append({'pattern': pattern, 'files': files})
+    return reports
+
+
 def main(argv=None, *, helper=None, root=None):
     parser = argparse.ArgumentParser(description='Verified source-rollout scope adapter for the original join gate')
     parser.add_argument('--project', default='.')
@@ -255,23 +322,44 @@ def main(argv=None, *, helper=None, root=None):
                              '--rollout', str(projection_path), '--window-hours', str(args.window_hours)]
             if args.no_ledger:
                 original_args.append('--no-ledger')
+            ledger_path = None if args.no_ledger else safe_child(project, 'spec/a2h/_work/join-ledger.jsonl')
+            ledger_before = ledger_path.read_bytes() if ledger_path and ledger_path.exists() else b''
             result = subprocess.run(original_args, cwd=project, capture_output=True, timeout=60, shell=False,
                                     env={**os.environ, 'PYTHONUTF8': '1'})
             stdout, stderr = result.stdout.decode('utf-8', 'replace'), result.stderr.decode('utf-8', 'replace')
             count = re.search(r'句柄\s+(\d+)', stdout)
             recognized = int(count.group(1)) if count else 0
             code = result.returncode
-            if code == 0 and (recognized != len(manifest['handles']) or any(
-                    not re.search(r'joined\s+' + re.escape(h['task_name']) + r'(?:\s|$)', stdout)
-                    for h in manifest['handles'])):
-                code = 3
             manifest['original_gate'] = {'exit_code': result.returncode, 'recognized_handles': recognized,
                 'stdout': stdout, 'stderr': stderr, 'argv': original_args}
+            if code == 0:
+                if recognized != len(manifest['handles']):
+                    code = 3
+                elif any(not re.search(r'joined\s+' + re.escape(h['task_name']) + r'(?:\s|$)', stdout)
+                         for h in manifest['handles']):
+                    try:
+                        if ledger_path is None:
+                            raise MigrationError('Exemption has no authoritative original ledger in --no-ledger mode')
+                        after = ledger_path.read_bytes() if ledger_path.exists() else b''
+                        manifest['original_gate']['ledger'] = {'path': str(ledger_path),
+                            'before_sha256': digest(ledger_before), 'after_sha256': digest(after)}
+                        verdicts = _exempt_verdicts(ledger_before, after, manifest, args.join_point, projection_path)
+                        manifest['original_gate']['verdicts'] = verdicts
+                        if (read_json(expected_path) != expected
+                                or digest(expected_path.read_bytes()) != manifest['expected_sha256']
+                                or digest(projection_path.read_bytes()) != manifest['projection_sha256']):
+                            raise MigrationError('Expected contract or source projection changed during original join')
+                        manifest['exempt_artifacts'] = _exempt_artifacts(project, expected)
+                        manifest['join_status'] = ('exempt' if all(v['verdict'] == 'exempt' for v in verdicts)
+                                                   else 'joined-with-exempt')
+                    except (MigrationError, OSError, ValueError) as exc:
+                        code = 3
+                        manifest['original_gate']['verification_error'] = str(exc)
         else:
             manifest['original_gate'] = {'invoked': False}
         manifest['exit_code'] = code
         write_json(audit_path, manifest)
-        print(json.dumps({'status': 'joined' if code == 0 else 'rejected', 'exit_code': code,
+        print(json.dumps({'status': manifest.get('join_status', 'joined') if code == 0 else 'rejected', 'exit_code': code,
             'source_sha256': sha, 'handle_count': len(manifest['handles']),
             'handles': [{'task_name': h['task_name'], 'status': h['status']} for h in manifest['handles']],
             'audit_path': str(audit_path), 'projection_sha256': manifest['projection_sha256']}, ensure_ascii=False))

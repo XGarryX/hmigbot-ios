@@ -13,7 +13,7 @@ import uuid
 from .analyze import analyze
 from .core import MigrationError, read_json, safe_child, snapshot, write_json, digest, json_bytes, atomic_write, SOURCE_SUFFIXES, SOURCE_NAMES
 from .native_semantics import validate_native_facts
-from .native_contract import source_truth, validate_disposition
+from .native_contract import source_truth, validate_literal_exclusion
 
 ROOT = Path(__file__).resolve().parents[2]
 CODE = {'.swift', '.m', '.mm', '.h', '.c', '.cpp', '.storyboard', '.xib'}
@@ -200,13 +200,20 @@ def check_source(project: Path, *, after_repair=False, report_only=False):
     disposition = read_json(disposition_path) if disposition_path.exists() else {'files': []}
     if not isinstance(disposition, dict) or not isinstance(disposition.get('files'), list):
         raise MigrationError('Source dispositions must be an object containing a files list')
+    if disposition_path.exists():
+        # Reuse the walk above when the index exists; the scope binds the live whole-source digest.
+        whole = current['sha256'] if index_path.is_file() else snapshot(source)['sha256']
+        if disposition.get('source_sha256') != whole:
+            fail('IOS.STALE_DISPOSITION', disposition_path.relative_to(project).as_posix(),
+                 'Disposition scope requires the current whole-source source_sha256 at the top level; '
+                 'each entry keeps its own file byte hash')
     dispositions = disposition['files']
     for item in dispositions:
         if not isinstance(item, dict):
             fail('IOS.INVALID_DISPOSITION', str(item), 'Disposition entry must be an object')
             continue
         try:
-            validate_disposition(item, known)
+            validate_literal_exclusion(source, known, item)
             ownership.add(item['path'])
         except MigrationError as exc:
             fail('IOS.INVALID_DISPOSITION', str(item.get('path')), str(exc))
@@ -317,6 +324,8 @@ def main(argv=None):
             p.add_argument('--output', type=Path)
         if name in {'spec-summary', 'migration-report'}:
             p.add_argument('--build-evidence', type=Path)
+            p.add_argument('--brief', action='store_true',
+                           help='With --output, write the same full file but print only a small receipt (status/path/sha256/counts).')
         if name == 'migration-report':
             p.add_argument('--check', type=Path)
         if name == 'spec-upgrade':
@@ -374,6 +383,11 @@ def main(argv=None):
             from .quality_views import summary, render_report, validate_report
             if args.check and args.output:
                 raise MigrationError('Choose report output or report check')
+            if args.brief:
+                if args.check:
+                    raise MigrationError('--brief is not supported with --check; keep the check receipt unchanged')
+                if not args.output:
+                    raise MigrationError('--brief requires --output; refusing to discard the report body')
             if args.check:
                 validate_report(args.project, args.check.read_text(encoding='utf-8'), build_evidence=args.build_evidence)
                 result = {'status': 'current', 'report': str(args.check)}
@@ -383,14 +397,35 @@ def main(argv=None):
                 if args.output:
                     path = _derived_output(args.project, args.output, 'migration-report.md', migration=True)
                     atomic_write(path, text.encode('utf-8'))
-                result = {'status': 'generated', 'report': str(args.output) if args.output else None, 'markdown': text}
+                    if args.brief:
+                        body = path.read_bytes()
+                        counts = report.get('counts', {}) if isinstance(report, dict) else {}
+                        result = {'status': 'generated', 'mode': 'brief',
+                                  'output': str(path), 'sha256': digest(body), 'bytes': len(body),
+                                  'counts': {'acceptance': counts.get('acceptance'),
+                                             'features': counts.get('features'),
+                                             'pages': counts.get('pages')}}
+                    else:
+                        result = {'status': 'generated', 'report': str(args.output), 'markdown': text}
+                else:
+                    result = {'status': 'generated', 'report': None, 'markdown': text}
         elif args.command in {'product-literals', 'spec-summary'}:
             from .quality_views import product_literals, summary
+            if args.command == 'spec-summary' and args.brief and not args.output:
+                raise MigrationError('--brief requires --output; refusing to discard the summary')
             result = (product_literals(args.project) if args.command == 'product-literals'
                       else summary(args.project, build_evidence=args.build_evidence))
             if args.output:
                 output = _derived_output(args.project, args.output, args.command + '.json')
                 write_json(output, result)
+                if args.command == 'spec-summary' and args.brief:
+                    body = output.read_bytes()
+                    counts = result.get('counts', {}) if isinstance(result, dict) else {}
+                    result = {'status': 'generated', 'mode': 'brief',
+                              'output': str(output), 'sha256': digest(body), 'bytes': len(body),
+                              'counts': {'acceptance': counts.get('acceptance'),
+                                         'features': counts.get('features'),
+                                         'pages': counts.get('pages')}}
         elif args.command == 'spec-check':
             from .spec_contract import check as check_contract
             result, code = check_contract(args.project)

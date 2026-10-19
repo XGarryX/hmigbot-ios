@@ -43,12 +43,18 @@ python3 $SKILLS_ROOT/a2h-join/scripts/join_gate.py --project <目标工程> \
   `FINAL_ANSWER` 正文、代理自报列表、文件存在和 0 句柄都不能补造完成。
 - 投影保留原 call_id、记录顺序、状态及来源 SHA 映射，明确标记 derived；原文件持续追加时可按
   `source_bytes` 指定前缀复验 `source_sha256`。派生文件不能再次当作原始 rollout 输入。
-- 原 gate 继续验证原 expected-set 与真实产物，并负责追加原 join 账本。该入口要求全部 expected
+- 原 gate 继续验证普通 joined 的 expected-set 与真实产物，并负责追加原 join 账本。该入口要求全部 expected
   句柄有肯定 completed 证据；unknown/缺证据返回 3，running/failed/dead 或产物不全返回非 0。
 - exit 0 → 追加 `spec/a2h/_work/join-ledger.jsonl`；exit 1 → 打印缺口清单，
   **禁止发完成报告/进下一阶段**；exit 3 → 按提示补信息（如先调一次 list_agents）
 - 条款⑤ fire-and-forget 豁免 = 脚本内静态 allowlist（改表须过评审），
   正文 `[fire-and-forget]` 声明只是文档层，不能替代本封装非空 expected-set 的完成证据。
+- v2 仅凭本次原 gate 新追加的原账本裁决确认 exempt：账本须保留旧字节，并准确覆盖同 join 点、
+  带本次源 SHA 的投影文件及全部 expected 句柄，不能重用旧记录或仅凭 stdout 放行。
+  exempt 还需通过当前 expected 的非空 artifacts：安全工程相对路径/glob、文件数、min_bytes、
+  请求的 JSON 格式。支持 min_count（默认1）、可选精确 count、min_bytes（默认0）、json（默认false）；
+  不支持的字段/空合同及不合法类型拒绝。审计保留 exempt，不伪写 joined。
+  `--no-ledger` 下无可验证的原 exempt 裁决时保持拒绝，普通 joined 的该模式保持原行为。
 
 投影保存在 `spec/reports/host-oracle/support/join-<join点>-<源SHA>.log`，来源、身份映射、
 工具版本/文件 SHA、原 gate 退出码及输出保存在
