@@ -290,7 +290,8 @@ class JoinRolloutTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0, stdout=b'unit-commit\n' if 'rev-parse' in argv else b'', stderr=b'')
             return SimpleNamespace(returncode=0, stdout='句柄=0'.encode(), stderr=b'')
 
-        with patch('hmigbot_ios.join_rollout.subprocess.run', side_effect=invoke), redirect_stdout(StringIO()):
+        with patch('hmigbot_ios.join_rollout.subprocess.run', side_effect=invoke), \
+             patch('hmigbot_ios.scheduler_windows_runtime.run', side_effect=invoke), redirect_stdout(StringIO()):
             code = main(['--project', str(self.project), '--join-point', 'probe',
                 '--rollout', str(self.rollout), '--no-ledger'], root=ROOT)
         self.assertEqual(code, 3)

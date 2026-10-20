@@ -44,7 +44,8 @@ $env:HMIGBOT_STRUCTURAL_TIMEOUT_SECONDS = '1800'
 $env:HMIGBOT_LITERAL_TIMEOUT_SECONDS = '600'
 $env:HMIGBOT_ASSEMBLY_TIMEOUT_SECONDS = '600'
 # One shared deadline, computed once before the desired workflow:
-$env:HMIGBOT_DEADLINE_EPOCH_SECONDS = [string]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 7200)
+$deadlineEpochSeconds = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 7200
+$env:HMIGBOT_DEADLINE_EPOCH_SECONDS = [string]$deadlineEpochSeconds
 & D:/DevTools/hmigbot-test-20261020/Scripts/python.exe scripts/a2h_ios.py next-batch --project D:/Example/Harmony --wave domains
 ```
 

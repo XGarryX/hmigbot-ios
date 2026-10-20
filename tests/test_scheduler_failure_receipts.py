@@ -223,6 +223,7 @@ class SchedulerRuntimeCleanupTests(unittest.TestCase):
              patch('hmigbot_ios.ios_scheduler.shutil.copy2'), \
              patch('hmigbot_ios.ios_scheduler.shutil.rmtree', side_effect=cleanup), \
              patch('hmigbot_ios.ios_scheduler.subprocess.run', **run), \
+             patch('hmigbot_ios.scheduler_windows_runtime.run', **run), \
              patch('hmigbot_ios.ios_scheduler.write_json', side_effect=write), redirect_stderr(self.stderr):
             return scheduler.invoke(self.project, 'next_batch', [])
 
