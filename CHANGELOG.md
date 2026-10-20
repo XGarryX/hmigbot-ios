@@ -1,3 +1,12 @@
+# 0.10.0 — 2026-10-20
+
+- Add fresh source preparation and source-bound, unreviewed specification scaffolds.
+- Guard Unicode feature discovery, zero-object checks, input/output isolation and coverage ownership.
+- Keep target-specific extraction findings distinct; restore the original Swift string regression cases.
+- Project explicit decision consumers into task prompts while preserving shared decisions and full ledger hashes.
+- Add replayable usage and wall-time budgets, boot/host checks and isolated synthetic scale probes.
+- Preserve unknown/unsupported/unverified states. Application equivalence and end-to-end performance require separate evidence.
+
 # 0.9.2 — 2026-10-17
 
 - 精确识别Xcode自动自引用workspace、已知IDE检查缓存和直属xcuserdata；真实workspace引用、共享Scheme、锁文件、配置与源码继续使摘要过期。
@@ -97,12 +106,3 @@
 通用规则与业务示例分离。未知语法拒绝转换，旧配置冲突拒绝读取，生成不覆盖已有工程，旧摘要不能证明新源码，完整性/编译/行为验证状态分别记录。
 
 完整原生应用迁移、编译器语义 provider、UIKit 转换、跨端运行等价与 HMigBot 原五阶段集成尚未完成。具体证据见 docs/VALIDATION.md。
-# 0.10.0 — 2026-10-20
-
-- Add fresh source preparation and source-bound, unreviewed specification scaffolds.
-- Guard Unicode feature discovery, zero-object checks, input/output isolation and coverage ownership.
-- Keep target-specific extraction findings distinct; restore the original Swift string regression cases.
-- Project explicit decision consumers into task prompts while preserving shared decisions and full ledger hashes.
-- Add replayable usage and wall-time budgets, boot/host checks and isolated synthetic scale probes.
-- Preserve unknown/unsupported/unverified states. Application equivalence and end-to-end performance require separate evidence.
-
