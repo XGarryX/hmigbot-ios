@@ -782,6 +782,8 @@ def source_bounded_image(project, relative, line):
 
 
 def assembly_main(arguments=None):
+    from .runtime_timeouts import timeout_for, timeout_evidence
+    from .scheduler_windows_runtime import run as run_owned_process
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--project-root', type=Path, required=True)
     parser.add_argument('--output-json', type=Path, required=True)
@@ -790,7 +792,21 @@ def assembly_main(arguments=None):
     original = root / 'vendor/hmigbot/skills/arkts-structural-closure/scripts/assembly_gate.py'
     command = [sys.executable, str(original), '--project-root', str(args.project_root),
                '--output-json', str(args.output_json), *unknown]
-    process = subprocess.run(command, capture_output=True, encoding='utf-8', errors='replace', timeout=60)
+    try:
+        limit = timeout_for('assembly')
+        if os.name == 'nt':
+            raw = run_owned_process(command, cwd=None, env=os.environ.copy(), timeout=limit)
+            process = subprocess.CompletedProcess(raw.args, raw.returncode,
+                raw.stdout.decode('utf-8', errors='replace'), raw.stderr.decode('utf-8', errors='replace'))
+        else:
+            process = subprocess.run(command, capture_output=True, encoding='utf-8', errors='replace', timeout=limit)
+    except subprocess.TimeoutExpired as exc:
+        evidence = timeout_evidence(exc)
+        sys.stdout.write(evidence['stdout'])
+        sys.stderr.write(evidence['stderr'])
+        write_json(args.output_json, {'detector': 'assembly', 'passed': False, 'skipped': False,
+                                     'error': 'Original assembly detector timed out', 'process_output': evidence})
+        return 124
     sys.stdout.write(process.stdout)
     sys.stderr.write(process.stderr)
     if args.output_json.is_file():

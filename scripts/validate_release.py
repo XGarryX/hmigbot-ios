@@ -23,7 +23,9 @@ def main():
     output.mkdir(parents=True)
     checks = []
     def command(name, arguments):
-        env = {**os.environ, 'PYTHONUTF8': '1'}
+        env = {**os.environ, 'PYTHONUTF8': '1', 'PYTHONDONTWRITEBYTECODE': '1',
+               'HMIGBOT_TEST_RUNTIME': str(ROOT),
+               'PYTHONPATH': str(ROOT / 'src') + os.pathsep + os.environ.get('PYTHONPATH', '')}
         try:
             result = subprocess.run(arguments, cwd=ROOT, env=env, capture_output=True, timeout=600, shell=False)
             stdout, stderr, code = result.stdout, result.stderr, result.returncode
@@ -34,7 +36,11 @@ def main():
         (output / (name + '.stdout.log')).write_bytes(stdout)
         (output / (name + '.stderr.log')).write_bytes(stderr)
         checks.append({'name': name, 'passed': code == 0, 'exit_code': code})
-    command('unit-tests', [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover', '-s', 'tests', '-v'])
+    # Collect both unittest classes and function-style pytest tests (doctor,
+    # Swift boundaries). unittest discovery only imports the latter silently.
+    command('unit-tests', [sys.executable, '-X', 'utf8', '-m', 'pytest', 'tests',
+                          '-q', '-p', 'no:cacheprovider', '--basetemp', str(output / 'test-temp'),
+                          '--ignore=tests/fixtures', '--ignore=tests/evaluations'])
     command('upstream-resource-audit', [sys.executable, '-X', 'utf8', 'scripts/audit_upstream.py'])
     command('scheduler-resource-audit', [sys.executable, '-X', 'utf8', 'scripts/audit_scheduler.py'])
     command('external-expertise-audit', [sys.executable, '-X', 'utf8', 'scripts/a2h_ios.py', 'expertise-audit'])

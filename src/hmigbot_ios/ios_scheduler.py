@@ -84,6 +84,7 @@ def _execution_evidence(path):
         r'spec/reports/ios-blocked-recovery/[0-9a-f]{64}/[a-z-]+\.json',
         r'spec/reports/ios-blocked-receipts/(?:understand|domains)/[a-z0-9_-]+/[0-9a-f]{64}\.json',
         r'spec/reports/derived/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:json|md)',
+        r'spec/reports/derived/(?:[A-Za-z0-9_.-]+/)*usage-budget\.json\.lock',
         r'spec/reports/behavior/[A-Za-z0-9_-]+/(?:stdout|stderr)\.log',
         r'spec/reports/host-oracle/(?:support/)?[A-Za-z0-9_.-]+\.(?:py|cjs|mjs|js|json|log|md)',
         r'spec/pipeline-run-\d{8}\.md',
@@ -258,6 +259,8 @@ def _runtime_directory(project, program, *, windows, cleanup_reports=None):
 
 
 def invoke(project, program, args):
+    from .runtime_timeouts import timeout_for
+    from .scheduler_windows_runtime import run as run_owned_process
     env = {**os.environ, 'PYTHONUTF8': '1', 'ARKTS_SKILL_DIR': str(UPSTREAM.parent)}
     windows, cleanup_reports = os.name == 'nt', []
     if windows:
@@ -271,6 +274,7 @@ def invoke(project, program, args):
                 path = Path(args[index + 1])
                 args[index + 1] = os.fspath(io_path(path if path.is_absolute() else project / path))
     try:
+        timeout_for('scheduler', env=env)
         # Frozen upstream sys.executable points at a non-shipped python.exe beside
         # its binary on Windows. Stage unchanged payload plus the host interpreter;
         # never repair vendor bytes in place or replace original state algorithms.
@@ -281,18 +285,23 @@ def invoke(project, program, args):
                     raise MigrationError('Bundled Windows kernel requires x64')
                 directory = Path(temp) / '_entry.dist'
                 shutil.copytree(UPSTREAM / 'bin/windows-x64/_entry.dist', directory)
-                for name in ('python.exe', 'python3.exe'):
-                    shutil.copy2(sys.executable, directory / name)
-                for dll in Path(sys.base_prefix).glob('*.dll'):
-                    shutil.copy2(dll, directory / dll.name)
-                env['PATH'] = str(directory) + os.pathsep + env.get('PATH', '')
-                env['PYTHONHOME'] = sys.base_prefix
+                from .windows_python_runtime import stage_base_python
+                stage_base_python(directory, env)
                 command = [str(directory / '_entry.exe'), program, *args]
-            proc = subprocess.run(command,
-                                  cwd=project, env=env, capture_output=True, timeout=60, shell=False)
+            limit = timeout_for('scheduler', env=env)
+            if windows:
+                proc = run_owned_process(command, cwd=project, env=env, timeout=limit)
+            else:
+                proc = subprocess.run(command,
+                                      cwd=project, env=env, capture_output=True, timeout=limit, shell=False)
     except (subprocess.TimeoutExpired, OSError) as exc:
+        directory = project / 'spec/reports/scheduler'
+        atomic_write(directory / (program + '.stdout.log'), getattr(exc, 'output', None) or b'')
+        atomic_write(directory / (program + '.stderr.log'), getattr(exc, 'stderr', None) or b'')
         log = project / 'spec/reports/scheduler' / (program + '.failure.json')
-        report = {'program': program, 'error': str(exc), 'status': 'FAIL'}
+        report = {'program': program, 'error': str(exc), 'status': 'FAIL',
+                  'process_tree': getattr(exc, 'ios_process_tree', None),
+                  'timeout_policy': getattr(exc, 'ios_timeout_policy', None)}
         if cleanup_reports:
             report['runtime_cleanup'] = cleanup_reports
         write_json(log, report)
@@ -395,6 +404,8 @@ def generate(project, input_path, *, validate_only=False):
     parallel = request.get('max_parallel', 1)
     if type(parallel) is not int or not 1 <= parallel <= 8:
         raise MigrationError('max_parallel must be 1..8; serial is the default')
+    from .prompt_inputs import project_inputs
+    prompt_inputs = project_inputs(graph['facts'], planned, request.get('decisions', []))
     if validate_only:
         return {'status': 'request_validated', 'source_sha256': graph['source_sha256'], 'plan_contract': plan_contract}
     plan_path = project / f'spec/waves/plan-{wave}.json'
@@ -419,12 +430,14 @@ def generate(project, input_path, *, validate_only=False):
         write_json(blueprint / name, value)
     if not (blueprint / 'decision-ledger.md').exists():
         atomic_write(blueprint / 'decision-ledger.md', b'# iOS decisions\n\nNo implicit platform decisions.\n')
+    decision_ledger_sha256 = digest((blueprint / 'decisions.json').read_bytes())
     warnings = []
     nodes = []
     for t in planned:
         prompt = f'spec/waves/prompts/{wave}/{t["id"]}.txt'
         receipt = f'spec/waves/results/{wave}/{t["id"]}.json'
-        facts = [f for f in graph['facts'] if f['id'] in t['fact_ids']]
+        inputs = prompt_inputs[t['id']]
+        facts = inputs['facts']
         consumer_inputs = plan_contract['task_inputs'].get(t['id'], [])
         body = ('Use the assigned bundled role and iOS skill protocol. You share the codebase; preserve others\' edits.\n'
                 'Read spec/ref/ios-expertise-plan.json and ios-expertise-reviews.json when present.\n'
@@ -439,7 +452,13 @@ def generate(project, input_path, *, validate_only=False):
                 + json_bytes(consumer_inputs).decode() + '\n'
                 +
                 f'Receipt path: {receipt}\nUse ios-receipt v2 with source_sha256, plan_sha256, task_id, files hashes, ac_ids and findings.\n'
-                'Facts:\n' + json_bytes(facts).decode() + '\nDecisions:\n' + json_bytes(request.get('decisions', [])).decode())
+                'Facts:\n' + json_bytes(facts).decode() + '\nDecisions:\n' + json_bytes(inputs['decisions']).decode()
+                + '\nDecision projection: ' + json_bytes({
+                    'full_ledger': 'spec/blueprint/decisions.json',
+                    'sha256': decision_ledger_sha256,
+                    'omitted_explicitly_scoped_decisions': inputs['omitted_decisions'],
+                    'scope_semantics': 'explicit task/ac/fact consumer union; unscoped decisions always included',
+                }).decode())
         atomic_write(safe_child(project, prompt), body.encode())
         nodes.append({'id': t['id'], 'kind': 'agent', 'agent': t['role'] + '@0.6.0',
                       'model': t.get('model', 'inherit'), 'schema': 'fixResult',
@@ -459,9 +478,13 @@ def generate(project, input_path, *, validate_only=False):
             'state_writer': 'original state_update.py', 'behavior_verified': False}
 
 
-def step(project, wave, *, landing=False):
+def step(project, wave, *, landing=False, usage_ledger=None, usage_run_id=None):
     from .native_pipeline import context
     source, project = context(project)
+    if (usage_ledger is None) != (usage_run_id is None):
+        raise MigrationError('Select both usage_ledger and usage_run_id')
+    if landing and usage_ledger is not None:
+        raise MigrationError('Usage dispatch checks belong to next-batch; landing remains available')
     if wave not in {'understand', 'domains'}:
         raise MigrationError('Unsupported adapter wave')
     plan_path = project / f'spec/waves/plan-{wave}.json'
@@ -540,6 +563,16 @@ def step(project, wave, *, landing=False):
             if any((row.get('status') == 'failed' and not str(row.get('reason', '')).startswith('RETRY_NEEDED'))
                    or row.get('status') == 'folded' or row.get('final_state') == 'BLOCKED' for row in rows):
                 raise MigrationError('Native failed/blocked tasks cannot advance; repair and explicitly review replan')
+        usage_observation = None
+        if usage_ledger is not None:
+            from .usage_budget import check_for_dispatch
+            ledger = Path(usage_ledger)
+            if not ledger.is_absolute():
+                ledger = safe_child(project, ledger.as_posix())
+            usage_observation = check_for_dispatch(ledger, run_id=usage_run_id, project_root=project)
+            if not usage_observation['can_continue']:
+                reasons = usage_observation['reasons'] or ['no_remaining_dispatch_budget']
+                raise MigrationError('Usage budget refused dispatch: ' + ', '.join(reasons))
         before = execution_files(project)
         evidence_path = project / f'spec/reports/ios-dispatch-{wave}.json'
         prior = read_json(evidence_path) if evidence_path.exists() else None
@@ -558,6 +591,8 @@ def step(project, wave, *, landing=False):
         expected_fence = {prefix + path: digest(safe_child(project, path).read_bytes())
                           for path in kernel()._scope_files(os.fspath(io_path(project)))}
         action = invoke(project, 'next_batch', ['--plan', str(plan_path), '--state', 'spec/state/state.json', '--json'])
+        if usage_observation is not None:
+            action['usage_budget'] = dict(usage_observation, ledger=str(ledger), scope='supplied evidence before dispatch; no reservation')
         if action.get('action') == 'dispatch':
             generated_fence = _fence_files(project)
             if any(path != prefix + '.manifest.json'

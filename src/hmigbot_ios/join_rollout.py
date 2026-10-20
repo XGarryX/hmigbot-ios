@@ -324,8 +324,15 @@ def main(argv=None, *, helper=None, root=None):
                 original_args.append('--no-ledger')
             ledger_path = None if args.no_ledger else safe_child(project, 'spec/a2h/_work/join-ledger.jsonl')
             ledger_before = ledger_path.read_bytes() if ledger_path and ledger_path.exists() else b''
-            result = subprocess.run(original_args, cwd=project, capture_output=True, timeout=60, shell=False,
-                                    env={**os.environ, 'PYTHONUTF8': '1'})
+            from .runtime_timeouts import timeout_for
+            from .scheduler_windows_runtime import run as run_owned_process
+            env = {**os.environ, 'PYTHONUTF8': '1'}
+            limit = timeout_for('join', env=env)
+            if os.name == 'nt':
+                result = run_owned_process(original_args, cwd=project, env=env, timeout=limit)
+            else:
+                result = subprocess.run(original_args, cwd=project, capture_output=True, timeout=limit,
+                                        shell=False, env=env)
             stdout, stderr = result.stdout.decode('utf-8', 'replace'), result.stderr.decode('utf-8', 'replace')
             count = re.search(r'句柄\s+(\d+)', stdout)
             recognized = int(count.group(1)) if count else 0
@@ -365,6 +372,10 @@ def main(argv=None, *, helper=None, root=None):
             'audit_path': str(audit_path), 'projection_sha256': manifest['projection_sha256']}, ensure_ascii=False))
         return code
     except (MigrationError, OSError, ValueError, subprocess.SubprocessError) as exc:
-        print(json.dumps({'status': 'unverified', 'exit_code': 3, 'error': str(exc)}, ensure_ascii=False))
+        failure = {'status': 'unverified', 'exit_code': 3, 'error': str(exc)}
+        if isinstance(exc, subprocess.TimeoutExpired):
+            from .runtime_timeouts import timeout_evidence
+            failure['process_output'] = timeout_evidence(exc)
+        print(json.dumps(failure, ensure_ascii=False))
         return 3
 

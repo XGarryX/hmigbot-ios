@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 
 from .core import MigrationError, digest, json_bytes, read_json, snapshot, write_json
 from .swiftui import tokenize
+from .computed_properties import computed_property
 from .source_scope import import_token_lines
 from .xcode import project_inventory, dependency_inventory
 from .resources import asset_inventory
@@ -81,6 +82,55 @@ def _is_button_cancel_role(values, index):
             and (open_index == 1 or values[open_index - 2] != '.'))
 
 
+class _FileViews:
+    """Bytes, text and lines for the file currently being scanned, read at most once each.
+
+    A fact anchor needs a line window, so add() used to re-read and re-decode the whole file
+    per fact. The cache binds its one byte read to the snapshot's expected content hash,
+    and is dropped as soon as another file or expected hash is requested. Token text and
+    snippets share those verified bytes; a transient A -> B -> A edit cannot bind B to A.
+    """
+    __slots__ = ('_key', '_path', '_expected_sha256', '_raw', '_text', '_lines', '_decode_error')
+
+    def __init__(self):
+        self._key = self._path = self._raw = self._text = self._lines = self._decode_error = None
+        self._expected_sha256 = None
+
+    def _select(self, key, path, expected_sha256):
+        if (key, path, expected_sha256) != (self._key, self._path, self._expected_sha256):
+            self._key, self._path, self._expected_sha256 = key, path, expected_sha256
+            self._raw = self._text = self._lines = self._decode_error = None
+
+    def _read(self):
+        if self._raw is None:
+            raw = self._path.read_bytes()
+            if digest(raw) != self._expected_sha256:
+                raise MigrationError('Source content changed while reading snapshot file: ' + str(self._key))
+            self._raw = raw
+        return self._raw
+
+    def text(self, key, path, expected_sha256):
+        self._select(key, path, expected_sha256)
+        if self._text is None and self._decode_error is None:
+            try:
+                raw = self._read().decode('utf-8-sig')
+            except UnicodeError as exc:
+                self._decode_error = exc
+                raise
+            # Path.read_text applies universal newlines, so reproduce it rather than re-read.
+            self._text = raw.replace('\r\n', '\n').replace('\r', '\n')
+        if self._decode_error is not None:
+            raise self._decode_error
+        return self._text
+
+    def lines(self, key, path, expected_sha256):
+        self._select(key, path, expected_sha256)
+        text = self.text(key, path, expected_sha256)
+        if self._lines is None:
+            self._lines = text.splitlines()
+        return self._lines
+
+
 def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Path | None = None):
     """Repository scope is explicit; effective configuration remains unresolved without tools."""
     snap = snapshot(source)
@@ -104,6 +154,35 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
         manifest = read_json(bundle / 'manifest.json')
         if captured['kind'] != 'source_build' or 'artifacts/source-files.json' not in manifest['artifacts'] or membership.get('source_files') != variant['source_files']:
             raise MigrationError('Selected membership must match hashed source-build evidence')
+        if membership.get('kind') == 'source_build_membership':
+            from .source_build_membership import validate as validate_membership
+            checked = validate_membership(source, membership, capture=bundle / 'artifacts')
+            if checked['membership_status'] != 'complete':
+                raise MigrationError('Selected build requires complete captured compiler membership')
+            selection = membership['selection']
+            if 'selection' in variant and variant['selection'] != selection:
+                raise MigrationError('Selected build identity differs from captured membership')
+            for key in ('scheme', 'configuration', 'sdk', 'product', 'xcode_version', 'toolchain', 'targets', 'architectures'):
+                if key in variant and variant[key] != selection.get(key):
+                    raise MigrationError('Selected build identity differs from capture: ' + key)
+            if 'target' in variant and selection['targets'] != [variant['target']]:
+                raise MigrationError('Single target identity does not match the captured target set')
+            pinned = {'selection': selection, 'source_membership': 'captured_compiler_inputs',
+                      'membership_status': 'complete', 'effective_build': 'unresolved',
+                      'evidence_manifest_sha256': digest((bundle / 'manifest.json').read_bytes()),
+                      'membership_sha256': digest((bundle / 'artifacts/source-files.json').read_bytes())}
+            for key, expected in pinned.items():
+                if key in variant and variant[key] != expected:
+                    raise MigrationError('Selected build evidence reference changed: ' + key)
+            variant = {**variant, **pinned}
+        elif set(membership) != {'source_files'}:
+            # The previous unversioned source_files-only shape remains readable;
+            # malformed modern evidence cannot bypass validation as legacy data.
+            raise MigrationError('Unsupported source build membership contract')
+        elif (set(variant) & {'selection', 'source_membership', 'membership_status',
+                              'evidence_manifest_sha256', 'membership_sha256'}
+              or variant.get('effective_build', 'unresolved') != 'unresolved'):
+            raise MigrationError('Legacy membership cannot claim captured compiler identity or verified build')
     evaluated_manifests, evidence_ref = None, None
     if manifest_evidence is not None:
         from .manifest_evidence import validate
@@ -114,15 +193,14 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
         evidence_ref = {'path': str(report_path), 'report_sha256': digest(report_path.read_bytes())}
     facts, issues = [], []
     occurrence = {}
+    views = _FileViews()
 
     def add(file, kind, line, end, symbol, value, owner='unresolved', evidence='token_signal'):
         key = (file['path'], kind, owner, symbol)
         occurrence[key] = occurrence.get(key, 0) + 1
         ident = 'IF-' + digest(json_bytes([*key, occurrence[key]]))[:16]
-        raw = (source / file['path']).read_bytes()
         try:
-            text = raw.decode('utf-8-sig')
-            snippet = '\n'.join(text.splitlines()[line - 1:end])
+            snippet = '\n'.join(views.lines(file['path'], source / file['path'], file['sha256'])[line - 1:end])
         except UnicodeError:
             if kind != 'resource':
                 raise MigrationError('Non-text source needs an explicit parser: ' + file['path'])
@@ -142,21 +220,34 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
                 and file['path'] not in variant['source_files']):
             continue  # Declared product membership; implicit headers remain conservatively included.
         if path.suffix in SOURCE_KINDS:
-            text = path.read_text(encoding='utf-8-sig')
+            text = views.text(file['path'], path, file['sha256'])
             tokens = tokenize(text)
             import_lines = import_token_lines(tokens)
             values = [t.value for t in tokens]
             owner, pending_owner, depth, stack, wrapper_vars = 'file', None, 0, [], set()
+            computed_scopes, pending_computed_scope, computed_members = [], None, []
             storage = {'State', 'StateObject', 'ObservedObject', 'EnvironmentObject', 'Environment', 'Binding', 'AppStorage', 'SceneStorage'}
             for i, token in enumerate(tokens):
                 v = token.value
                 if v in {'class', 'struct', 'enum', 'extension'} and i + 1 < len(tokens):
                     pending_owner = values[i + 1]
+                # Separate lexical membership tracking avoids treating `class func`
+                # or `class var` modifiers as type declarations. Legacy owners/IDs
+                # remain unchanged; protocols are tracked only to exclude requirements.
+                if (token.kind != 'string' and v in {'class', 'struct', 'enum', 'extension', 'protocol'}
+                        and i + 1 < len(tokens) and tokens[i + 1].kind == 'identifier'
+                        and values[i + 1] not in {'func', 'var', 'let', 'subscript'}):
+                    pending_computed_scope = v
                 if v == '{':
                     depth += 1
+                    if pending_computed_scope:
+                        computed_scopes.append((depth, pending_computed_scope))
+                        pending_computed_scope = None
                     if pending_owner:
                         stack.append((depth, owner)); owner = pending_owner; pending_owner = None
                 if v == '}':
+                    if computed_scopes and computed_scopes[-1][0] == depth:
+                        computed_scopes.pop()
                     if stack and stack[-1][0] == depth:
                         _, owner = stack.pop()
                     depth -= 1
@@ -199,6 +290,11 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
                         k = decl.index('=')
                         type_ = ' '.join(decl[decl.index(':') + 1:k]) if ':' in decl else None
                         add(file, 'state', token.line, token.line, decl[0], {'storage': 'stored_property', 'type': type_, 'initializer': ' '.join(decl[k + 1:])}, owner)
+                    elif (path.suffix == '.swift' and computed_scopes
+                          and depth == computed_scopes[-1][0] and computed_scopes[-1][1] != 'protocol'):
+                        derived = computed_property(tokens, i)
+                        if derived is not None:
+                            computed_members.append((derived, owner))
                 if v in {'Button', 'onTapGesture', 'addTarget', 'IBAction'}:
                     add(file, 'event', token.line, min(tokens[min(i + 12, len(tokens) - 1)].line, token.line + 3), v,
                         {'trigger': v, 'tokens': window, 'handler_resolution': 'unresolved'}, owner)
@@ -235,6 +331,13 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
                     add(file, 'ownership', token.line, token.line, v, {'tokens': window}, owner)
                 if v in {'delegate', 'dataSource', 'performSelector', 'valueForKey', 'setValue'}:
                     add(file, 'delegate', token.line, token.line, v, {'tokens': window, 'receiver': 'unresolved'}, owner)
+            # Append after legacy facts so a conditional declaration with the same
+            # owner/name cannot change an existing fact's occurrence-based ID.
+            for derived, derived_owner in computed_members:
+                value = {key: val for key, val in derived.items()
+                         if key not in {'symbol', 'line', 'end_line', 'resolution'}}
+                add(file, 'state', derived['line'], derived['end_line'], derived['symbol'], value,
+                    derived_owner, evidence='token_signal')
             if depth != 0:
                 issues.append({'rule': 'IOS.TOKEN_BALANCE', 'path': file['path'], 'message': 'Use a syntax provider; token scope is incomplete'})
             if any(ord(t.value[0]) > 127 and t.kind != 'string' for t in tokens if t.value):
@@ -242,17 +345,18 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
             if re.search(r'^\s*#\s*(if|ifdef|ifndef)', text, re.M):
                 issues.append({'rule': 'IOS.CONDITIONAL_BUILD', 'path': file['path'], 'message': 'Resolve active branches using selected configuration'})
         elif path.suffix in {'.storyboard', '.xib'}:
-            text = path.read_text(encoding='utf-8-sig')
+            text = views.text(file['path'], path, file['sha256'])
             if '<!DOCTYPE' in text or '<!ENTITY' in text:
                 raise MigrationError('Interface Builder DTD/entities are not supported')
             try:
                 tree = ET.fromstring(text)
+                lines = views.lines(file['path'], path, file['sha256'])
                 for element in tree.iter():
                     kind = {'action': 'event', 'segue': 'navigation', 'constraint': 'constraint'}.get(element.tag)
                     if kind:
                         # XML parser verifies structure; textual location is a locator only.
                         ident = element.get('id', element.get('selector', element.tag))
-                        line = next((n for n, s in enumerate(text.splitlines(), 1) if ident in s), 1)
+                        line = next((n for n, s in enumerate(lines, 1) if ident in s), 1)
                         add(file, kind, line, line, ident, dict(element.attrib), evidence='structured_xml')
             except ET.ParseError as exc:
                 issues.append({'rule': 'IOS.IB_PARSE', 'path': file['path'], 'message': str(exc)})
@@ -281,6 +385,49 @@ def obligations(graph):
                              **RULES[fact['kind']]} for fact in graph['facts']]}
 
 
+def _capture_providers(project, source, graph, provider_plan):
+    """Run each planned provider into its own attempt directory; return saved references and issues.
+
+    Only a published artifact becomes a graph reference. A failed try keeps its diagnostics under
+    a fresh attempt path, so the same source and configuration can be retried without deleting
+    evidence and without reusing an unverified capture.
+    """
+    from .atoms import run_atom
+    from .provider_runs import ProviderRun, retained_failures
+    providers = read_json(provider_plan)
+    if not isinstance(providers, dict) or providers.get('schema_version') != 2 or not isinstance(providers.get('providers'), list):
+        raise MigrationError('Provider plan requires v2 providers array')
+    artifacts, issues = [], []
+    for provider in providers['providers']:
+        if provider.get('operation') not in {'swift-syntax', 'clang-ast', 'build-settings', 'interface-builder', 'asset-inventory', 'localization-inventory'}:
+            raise MigrationError('Unsupported source provider operation')
+        name = provider['operation']
+        config = Path(provider['config']) if provider.get('config') else None
+        input_path = Path(provider['input']) if provider.get('input') else None
+        run = ProviderRun(project, name, graph['source_sha256'], config=config, input_path=input_path)
+        reused = run.reusable()
+        if reused is not None:
+            report = reused['report']
+            artifacts.append({key: reused[key] for key in ('path', 'sha256', 'operation', 'run')})
+        else:
+            try:
+                run.reserve()
+                with run.fixed_inputs() as (fixed_config, fixed_input):
+                    report = run_atom(name, source, run.directory, provider_config=fixed_config, input_path=fixed_input)
+                    artifact = run.publish(report)
+            except (MigrationError, OSError, ValueError) as exc:
+                if run.reserved and not run.finished:
+                    run.fail(exc)
+                if str(exc).startswith('Source changed while extracting;'):
+                    raise MigrationError('Source changed while extracting; retained diagnostics: ' + str(run.directory)) from exc
+                raise MigrationError('Provider failed; retained diagnostics: ' + str(run.directory)) from exc
+            artifacts.append(artifact)
+        issues.extend({'rule': 'IOS.PROVIDER_UNRESOLVED', 'operation': name, 'detail': issue} for issue in report.get('issues', []))
+        issues.extend({'rule': 'IOS.PROVIDER_RETRY', 'operation': name, 'detail': failure}
+                      for failure in retained_failures(project / artifacts[-1]['path']))
+    return artifacts, issues
+
+
 def refresh(project, source, variant=None, provider_plan=None, manifest_evidence=None):
     if manifest_evidence is not None:
         manifest_evidence = Path(manifest_evidence).resolve()
@@ -288,29 +435,10 @@ def refresh(project, source, variant=None, provider_plan=None, manifest_evidence
             raise MigrationError('Manifest evidence must be under project/spec/ref/ios-manifest-evidence for pinned consumption')
     graph = extract(source, variant, manifest_evidence=manifest_evidence)
     if provider_plan:
-        from .atoms import run_atom
-        providers = read_json(provider_plan)
-        if not isinstance(providers, dict) or providers.get('schema_version') != 2 or not isinstance(providers.get('providers'), list):
-            raise MigrationError('Provider plan requires v2 providers array')
-        graph['provider_artifacts'] = []
-        for provider in providers['providers']:
-            if provider.get('operation') not in {'swift-syntax', 'clang-ast', 'build-settings', 'interface-builder', 'asset-inventory', 'localization-inventory'}:
-                raise MigrationError('Unsupported source provider operation')
-            name = provider['operation']
-            output = project / 'spec/ref/provider-runs' / name / graph['source_sha256']
-            if output.exists():
-                raise MigrationError('Existing provider capture is immutable; choose fresh source or review retained artifacts')
-            try:
-                config = Path(provider['config']) if provider.get('config') else None
-                input_path = Path(provider['input']) if provider.get('input') else None
-                report = run_atom(name, source, output, provider_config=config, input_path=input_path)
-            except (MigrationError, OSError, ValueError) as exc:
-                write_json(output / 'failure.json', {'operation': name, 'status': 'failed', 'source_sha256': graph['source_sha256'], 'error': str(exc)})
-                raise MigrationError('Provider failed; retained diagnostics: ' + str(output)) from exc
-            artifact = (output / 'artifact.json').relative_to(project).as_posix()
-            graph['provider_artifacts'].append({'path': artifact, 'sha256': digest((output / 'artifact.json').read_bytes()), 'operation': name})
-            if report.get('issues'):
-                graph['issues'].extend({'rule': 'IOS.PROVIDER_UNRESOLVED', 'operation': name, 'detail': issue} for issue in report['issues'])
+        graph['provider_artifacts'], provider_issues = _capture_providers(project, source, graph, provider_plan)
+        graph['issues'].extend(provider_issues)
+    if snapshot(source)['sha256'] != graph['source_sha256']:
+        raise MigrationError('Source changed while extracting; the previous baseline stays published and nothing new is written')
     base = project / 'spec/baseline'
     if (base / 'ios-facts.json').exists():
         previous = read_json(base / 'ios-facts.json')
@@ -340,6 +468,7 @@ def validate_graph(source, project):
     current = extract(source, graph.get('variant'), manifest_evidence=evidence_path)
     if graph.get('provider_artifacts'):
         from .core import safe_child
+        from .provider_runs import retained_failures
         current['provider_artifacts'] = graph['provider_artifacts']
         for item in graph['provider_artifacts']:
             path = safe_child(project, item['path'])
@@ -349,6 +478,8 @@ def validate_graph(source, project):
             if report.get('source_sha256') != current['source_sha256']:
                 raise MigrationError('Provider evidence source is stale')
             current['issues'].extend({'rule': 'IOS.PROVIDER_UNRESOLVED', 'operation': item['operation'], 'detail': issue} for issue in report.get('issues', []))
+            current['issues'].extend({'rule': 'IOS.PROVIDER_RETRY', 'operation': item['operation'], 'detail': failure}
+                                     for failure in retained_failures(path))
     if graph != current:
         raise MigrationError('Source facts are stale or edited; re-extract and re-review affected coverage')
     expected = obligations(graph)

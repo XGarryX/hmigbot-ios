@@ -23,6 +23,7 @@ from .core import io_path, snapshot, write_json
 from .native_structural_evidence import product_source_roots, SKIP, TEST_PARTS
 from .swiftui import tokenize
 from .scheduler_windows_runtime import run as run_owned_process
+from .runtime_timeouts import timeout_for, timeout_evidence
 
 ROOT = Path(__file__).resolve().parents[2]
 LEDGER = 'spec/baseline/literal-ledger.json'
@@ -386,8 +387,9 @@ def _original(project, output):
     # the structural pipeline's different sibling-library root.
     env['ARKTS_SKILL_DIR'] = str(ROOT / 'vendor/hmigbot/skills/a2h-execute/scripts')
     if os.name == 'nt':
-        return run_owned_process(command, cwd=project, env=env, timeout=60)
-    return subprocess.run(command, cwd=project, env=env, capture_output=True, timeout=60, shell=False)
+        return run_owned_process(command, cwd=project, env=env, timeout=timeout_for('literal', env=env))
+    return subprocess.run(command, cwd=project, env=env, capture_output=True,
+                          timeout=timeout_for('literal', env=env), shell=False)
 
 
 def _detector(project, output):
@@ -477,6 +479,8 @@ def main(arguments=None):
         result = {'detector': 'literal', 'passed': False, 'skipped': False, 'error': str(exc),
             'findings': [{'severity': 'FAIL', 'code': 'native-literal-input-error', 'message': str(exc)}],
             'warnings': []}
+        if isinstance(exc, subprocess.TimeoutExpired):
+            result['process_output'] = timeout_evidence(exc)
     if args.output_json:
         write_json(args.output_json, result)
     print(json.dumps(result, ensure_ascii=False))

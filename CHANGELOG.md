@@ -1,3 +1,18 @@
+# 0.10.0 — 2026-10-20
+
+- Add fresh source preparation and source-bound, unreviewed specification scaffolds.
+- Guard Unicode feature discovery, zero-object checks, input/output isolation and coverage ownership.
+- Keep target-specific extraction findings distinct; restore the original Swift string regression cases.
+- Project explicit decision consumers into task prompts while preserving shared decisions and full ledger hashes.
+- Add replayable usage and wall-time budgets, boot/host checks and isolated synthetic scale probes.
+- Check explicitly selected usage budgets before scheduler dispatch; preserve landing after exhaustion.
+- Make subprocess limits configurable by stage with a shared deadline; isolate default pytest collection from vendor archives.
+- Add three neutral host behavior baselines with separate business/guard denominators and explicit runtime selection.
+- Bind per-file fact caches to content hashes and preserve concurrent provider attempts and their exact inputs.
+- Capture actual Xcode compiler membership and pin its identity when a selected-build scope consumes it.
+- Save reviewed Harmony build diagnostics, reject contradictory success logs and stage the real base Python on Windows.
+- Preserve unknown/unsupported/unverified states. Application equivalence and end-to-end performance require separate evidence.
+
 # 0.9.2 — 2026-10-17
 
 - 精确识别Xcode自动自引用workspace、已知IDE检查缓存和直属xcuserdata；真实workspace引用、共享Scheme、锁文件、配置与源码继续使摘要过期。

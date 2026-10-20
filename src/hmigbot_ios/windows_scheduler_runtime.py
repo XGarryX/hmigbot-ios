@@ -12,11 +12,12 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
-import sys
 
 from .core import MigrationError, atomic_write, io_path, write_json
 from . import ios_scheduler as original
 from .scheduler_windows_runtime import run as run_owned_process
+from .windows_python_runtime import stage_base_python
+from .runtime_timeouts import timeout_for
 
 
 def install():
@@ -36,6 +37,7 @@ def invoke(project, program, args):
     env = {**os.environ, 'PYTHONUTF8': '1'}
     cleanup_reports = []
     try:
+        timeout_for('scheduler', env=env)
         with original._runtime_directory(project, program, windows=True, cleanup_reports=cleanup_reports) as temp:
             if platform.machine().lower() not in {'amd64', 'x86_64', 'x64'}:
                 raise MigrationError('Bundled Windows kernel requires x64')
@@ -50,22 +52,19 @@ def invoke(project, program, args):
             (scripts / 'static_runtime_lint.py').write_text(shim, encoding='utf-8')
             directory = scripts / 'bin/windows-x64/_entry.dist'
             shutil.copytree(original.UPSTREAM / 'bin/windows-x64/_entry.dist', directory)
-            for name in ('python.exe', 'python3.exe'):
-                shutil.copy2(sys.executable, directory / name)
-            for dll in Path(sys.base_prefix).glob('*.dll'):
-                shutil.copy2(dll, directory / dll.name)
-            env['PATH'] = str(directory) + os.pathsep + env.get('PATH', '')
-            env['PYTHONHOME'] = sys.base_prefix
+            stage_base_python(directory, env)
             env['ARKTS_SKILL_DIR'] = str(scripts.parent)
             command = [str(directory / '_entry.exe'), program, *args]
-            process = run_owned_process(command, cwd=project, env=env, timeout=60)
+            process = run_owned_process(command, cwd=project, env=env,
+                                        timeout=timeout_for('scheduler', env=env))
     except (subprocess.TimeoutExpired, OSError) as exc:
         directory = project / 'spec/reports/scheduler'
         atomic_write(directory / (program + '.stdout.log'), getattr(exc, 'output', None) or b'')
         atomic_write(directory / (program + '.stderr.log'), getattr(exc, 'stderr', None) or b'')
         log = directory / (program + '.failure.json')
         report = {'program': program, 'error': str(exc), 'status': 'FAIL',
-                  'process_tree': getattr(exc, 'ios_process_tree', None)}
+                  'process_tree': getattr(exc, 'ios_process_tree', None),
+                  'timeout_policy': getattr(exc, 'ios_timeout_policy', None)}
         if cleanup_reports:
             report['runtime_cleanup'] = cleanup_reports
         write_json(log, report)

@@ -126,9 +126,12 @@ class SourceInputIntegrationTests(unittest.TestCase):
             (source / 'Bridge.h').write_text('#if FEATURE\nint run(void);\n#endif\n', encoding='utf-8')
             normalized = {'scope': 'project-targets', 'source_files': ['Product.swift'], 'effective_build': 'unresolved'}
             try:
-                with patch('hmigbot_ios.project_scope.resolve', return_value=normalized):
+                # _context=True returns both normalized membership and parser
+                # context; this isolated test does not exercise dependencies.
+                with patch('hmigbot_ios.project_scope.resolve', return_value=(normalized, None)) as resolve:
                     graph = extract(source, {'scope': 'project-targets', 'project_path': 'Product.xcodeproj/project.pbxproj',
                                              'targets': ['Product'], 'configuration': 'Release'})
+                self.assertTrue(resolve.call_args.kwargs['_context'])
             except (ImportError, AttributeError, MigrationError) as exc:
                 self.fail('Facts cannot use project-declared product membership: ' + str(exc))
             self.assertFalse(any(i.get('path') == 'Oracle.swift' for i in graph['issues']))

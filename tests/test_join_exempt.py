@@ -93,7 +93,10 @@ class JoinExemptionTests(unittest.TestCase):
         argv = ['--project', str(self.project), '--join-point', self.point, '--rollout', str(self.rollout)]
         if no_ledger:
             argv.append('--no-ledger')
-        with patch('hmigbot_ios.join_rollout.subprocess.run', side_effect=invoke), redirect_stdout(buffer):
+        # Git probes and POSIX use subprocess.run; Windows owns the gate via
+        # the Job runner. Inject the same adversarial result at both boundaries.
+        with patch('hmigbot_ios.join_rollout.subprocess.run', side_effect=invoke), \
+             patch('hmigbot_ios.scheduler_windows_runtime.run', side_effect=invoke), redirect_stdout(buffer):
             code = main(argv, root=ROOT)
         result = json.loads(buffer.getvalue())
         audit = self.project / f'spec/reports/derived/a2h-join/{self.point}/{self.sha}.json'

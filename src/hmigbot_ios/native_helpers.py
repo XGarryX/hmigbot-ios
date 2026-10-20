@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import os
+
+from .runtime_timeouts import timeout_for
+from .scheduler_windows_runtime import run as run_owned_process
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -12,7 +16,16 @@ def original(skill, helper, arguments, *, cwd=None):
     path = ROOT / 'vendor/hmigbot/skills' / skill / 'scripts' / helper
     if not path.is_file():
         raise ValueError('Complete bundled helper is missing: ' + helper)
-    return subprocess.run([sys.executable, str(path), *map(str, arguments)], cwd=cwd,
+    stage = {'structural_loop.py': 'structural', 'assembly_gate.py': 'assembly',
+             'literal_gate.py': 'literal'}.get(helper, 'helper')
+    # Preserve historically unbounded helpers unless an explicit cap/deadline is supplied.
+    limit = timeout_for(stage, default=None)
+    command = [sys.executable, str(path), *map(str, arguments)]
+    if os.name == 'nt':
+        result = run_owned_process(command, cwd=cwd, env=os.environ.copy(), timeout=limit)
+        return subprocess.CompletedProcess(result.args, result.returncode,
+            result.stdout.decode('utf-8', errors='replace'), result.stderr.decode('utf-8', errors='replace'))
+    return subprocess.run(command, cwd=cwd, timeout=limit,
                           capture_output=True, encoding='utf-8', errors='replace', shell=False)
 
 

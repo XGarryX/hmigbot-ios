@@ -15,6 +15,7 @@ from .core import MigrationError, read_json, safe_child, snapshot, write_json, d
 from .native_semantics import validate_native_facts
 from . import doctor as doctor_module
 from .native_contract import source_truth, validate_literal_exclusion
+from .cli_output import configure_utf8, emit_json
 
 ROOT = Path(__file__).resolve().parents[2]
 CODE = {'.swift', '.m', '.mm', '.h', '.c', '.cpp', '.storyboard', '.xib'}
@@ -76,6 +77,8 @@ def index_source(project: Path):
         raise MigrationError('Source index exists: review changes and preserve it before refreshing')
     facts = analyze(source)
     current = snapshot(source)
+    if facts['source_snapshot']['sha256'] != current['sha256']:
+        raise MigrationError('Source changed while indexing; no source index was published')
     data = {'version': 1, 'source_platform': 'ios', 'source_sha256': current['sha256'],
             'files': current['files'], 'excluded_directories': current['excluded_directories'],
             'facts': facts['facts'], 'scope': 'Repository inventory and lexical/structured hints; not complete semantics'}
@@ -286,25 +289,40 @@ def build_project(project: Path):
 
 
 def main(argv=None):
+    configure_utf8(sys.stdout, sys.stderr)
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     init = commands.add_parser('init')
     init.add_argument('--source', required=True, type=Path)
     init.add_argument('--project', required=True, type=Path)
     commands.add_parser('expertise-audit')
-    for name in ('source-index', 'source-refresh', 'source-check', 'spec-check', 'spec-authoring', 'spec-summary', 'migration-report', 'spec-upgrade', 'validate', 'build', 'literals', 'product-literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-check', 'plan-ir', 'replan', 'recover-blocked', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query', 'manifest-evaluate'):
+    for name in ('source-index', 'source-analysis', 'spec-scaffold', 'source-refresh', 'source-check', 'spec-check', 'spec-authoring', 'spec-summary', 'migration-report', 'spec-upgrade', 'validate', 'build', 'literals', 'product-literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-check', 'plan-ir', 'replan', 'recover-blocked', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query', 'manifest-evaluate', 'usage-start', 'usage-record', 'usage-summary', 'usage-check', 'usage-finish'):
         p = commands.add_parser(name)
         p.add_argument('--project', required=True, type=Path)
+        if name.startswith('usage-'):
+            p.add_argument('--ledger', type=Path, help='Project spec/reports/derived/.../usage-budget.json')
+            if name in {'usage-start', 'usage-finish'}:
+                p.add_argument('--run-id', required=True)
+            if name == 'usage-start':
+                p.add_argument('--token-limit', type=int, default=19_900_000)
+                p.add_argument('--walltime-limit-seconds', type=int, default=7200)
+            if name == 'usage-record':
+                p.add_argument('--input', type=Path, required=True, help='Call identity, normalization_mode and raw_usage JSON')
         if name == 'recover-blocked':
             p.add_argument('--review', type=Path, required=True)
         if name == 'source-check':
             p.add_argument('--after-repair', action='store_true')
             p.add_argument('--report-only', action='store_true')
             p.add_argument('--harness', action='store_true')
-        if name == 'facts':
+        if name in {'facts', 'source-analysis'}:
             p.add_argument('--variant', type=Path)
             p.add_argument('--providers', type=Path)
             p.add_argument('--manifest-evidence', type=Path)
+        if name == 'source-analysis':
+            p.add_argument('--apply-scaffold', action='store_true', help='Create only missing canonical, unreviewed scaffold files')
+        if name == 'spec-scaffold':
+            p.add_argument('--apply', type=Path, help='Apply a previously derived candidate; never approves it')
+            p.add_argument('--brief', action='store_true', help='With --output, print only the artifact receipt')
         if name == 'manifest-evaluate':
             p.add_argument('--config', required=True, type=Path)
             p.add_argument('--output', required=True, type=Path)
@@ -323,7 +341,7 @@ def main(argv=None):
             p.add_argument('--request', type=Path, required=True)
         if name == 'source-refresh':
             p.add_argument('--review', type=Path, required=True)
-        if name in {'literals', 'product-literals', 'spec-summary', 'migration-report', 'spec-upgrade', 'spec-authoring'}:
+        if name in {'literals', 'product-literals', 'spec-summary', 'migration-report', 'spec-upgrade', 'spec-authoring', 'spec-scaffold'}:
             p.add_argument('--output', type=Path)
         if name in {'spec-summary', 'migration-report'}:
             p.add_argument('--build-evidence', type=Path)
@@ -338,6 +356,9 @@ def main(argv=None):
             selection.add_argument('--all-candidates', action='store_true')
         if name in {'next-batch', 'land-results'}:
             p.add_argument('--wave', default='domains')
+        if name == 'next-batch':
+            p.add_argument('--usage-ledger', type=Path, help='Check supplied usage before dispatch; requires --usage-run-id')
+            p.add_argument('--usage-run-id', help='Expected run identity for --usage-ledger')
     resolver = commands.add_parser('resolve')
     resolver.add_argument('--source', required=True, type=Path)
     resolver.add_argument('--anchor', required=True)
@@ -353,7 +374,30 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         code = 0
-        if args.command == 'expertise-audit':
+        if args.command.startswith('usage-'):
+            from . import usage_budget
+            project = args.project.resolve()
+            ledger = _derived_output(project, args.ledger or project / 'spec/reports/derived/usage-budget.json', 'usage-budget.json')
+            if ledger.name != 'usage-budget.json':
+                raise MigrationError('Usage ledger must be named usage-budget.json within spec/reports/derived')
+            if args.command == 'usage-start':
+                result = usage_budget.start(ledger, args.run_id, project_root=project,
+                                            token_limit=args.token_limit, walltime_limit_seconds=args.walltime_limit_seconds)
+            elif args.command == 'usage-record':
+                request = read_json(args.input)
+                required = {'call_id', 'raw_usage', 'run_id', 'normalization_mode', 'stage', 'agent', 'provider'}
+                if not isinstance(request, dict) or not required <= request.keys() or request.keys() - required - {'attempt'}:
+                    raise MigrationError('Usage record needs exact call identity, raw_usage and normalization_mode fields')
+                result = usage_budget.record(ledger, **request)
+                if not result['can_continue']:
+                    code = 2 if result['status'] == 'FAIL' else 3
+            else:
+                result = (usage_budget.finish(ledger, run_id=args.run_id) if args.command == 'usage-finish'
+                          else usage_budget.check(ledger))
+                if args.command != 'usage-summary':
+                    code = {'PASS': 0, 'FAIL': 2, 'UNKNOWN': 3}[result['status']]
+            result['ledger'] = str(ledger)
+        elif args.command == 'expertise-audit':
             from .expertise import audit
             manifest, files = audit()
             result = {'status': 'passed', 'packs': len(manifest['packs']), 'files': len(files)}
@@ -368,6 +412,31 @@ def main(argv=None):
             result = capture(args.project, args.server, args.request)
         elif args.command == 'init': result = configure(args.source, args.project)
         elif args.command == 'source-index': result = index_source(args.project)
+        elif args.command == 'source-analysis':
+            from .source_analysis import run
+            result = run(args.project, variant=read_json(args.variant) if args.variant else None,
+                         providers=args.providers, manifest_evidence=args.manifest_evidence,
+                         apply_scaffold=args.apply_scaffold)
+        elif args.command == 'spec-scaffold':
+            from .native_scaffold import scaffold, apply_scaffold
+            if args.apply:
+                if args.output or args.brief:
+                    raise MigrationError('Choose scaffold apply or candidate output')
+                result = apply_scaffold(args.project, read_json(args.apply))
+                result['status'] = 'refused' if result.get('refused') else 'applied_candidate'
+                code = 2 if result.get('refused') else 0
+            else:
+                if args.brief and not args.output:
+                    raise MigrationError('--brief requires --output; keep the full scaffold candidate')
+                result = scaffold(args.project)
+                if args.output:
+                    output = _derived_output(args.project, args.output, 'spec-scaffold.json')
+                    write_json(output, result)
+                    if args.brief:
+                        body = output.read_bytes()
+                        result = {'status': 'candidate', 'output': str(output), 'sha256': digest(body),
+                                  'bytes': len(body), 'counts': result['summary'],
+                                  'spec_complete': False, 'behavior_verified': False}
         elif args.command == 'source-refresh': result = refresh_source_index(args.project, args.review)
         elif args.command == 'literals':
             from .ios_literals import run
@@ -491,7 +560,9 @@ def main(argv=None):
             result = replan(args.project, args.input)
         elif args.command in {'next-batch', 'land-results'}:
             from .ios_scheduler import step
-            result, code = step(args.project, args.wave, landing=args.command == 'land-results')
+            options = ({'usage_ledger': args.usage_ledger, 'usage_run_id': args.usage_run_id}
+                       if args.command == 'next-batch' else {})
+            result, code = step(args.project, args.wave, landing=args.command == 'land-results', **options)
         elif args.command == 'validate': result, code = validate_tools(args.project)
         elif args.command == 'build': result, code = build_project(args.project)
         elif args.command == 'doctor':
@@ -502,8 +573,8 @@ def main(argv=None):
                 print(doctor_module.render_text(result), file=sys.stderr)
             code = 0 if result.get('status') == 'diagnostic_complete' else 2
         else: result, code = resolve(args.source, args.anchor)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        emit_json(result)
         return code
     except (MigrationError, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        print(json.dumps({'status': 'FAIL', 'error': str(exc)}, ensure_ascii=False))
+        emit_json({'status': 'FAIL', 'error': str(exc)}, indent=None)
         return 2
