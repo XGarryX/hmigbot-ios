@@ -11,6 +11,14 @@ import re
 
 from .core import MigrationError
 
+# Closed-grammar supported bounds. Swift itself permits deeper nesting, but the
+# deterministic lexer refuses to resolve beyond these bounds and reports a stable
+# "requires syntax provider" diagnostic instead of crashing (RecursionError) or
+# emitting a misleading "Unterminated ..." error. Deep nesting is legal Swift but
+# outside this grammar's resolve set, so it is reported, not silently accepted.
+SUPPORTED_INTERPOLATION_DEPTH = 64
+SUPPORTED_STRING_NESTING_DEPTH = 400
+
 
 @dataclass(frozen=True)
 class Token:
@@ -50,13 +58,17 @@ def _block_comment_end(text, start):
     return pos
 
 
-def _interpolation_end(text, start):
+def _interpolation_end(text, start, depth):
     """Skip a complete interpolation; its expressions stay inside the string token.
 
     This only preserves lexical boundaries. It does not bind/evaluate Swift
     expressions or claim their runtime value is known.
+
+    ``depth`` is the surrounding string/interpolation nesting depth, used to
+    bound recursion before Python's limit and to trigger the closed grammar's
+    capability protection for unsupported deep interpolation.
     """
-    depth, pos = 1, start
+    nest_depth, pos = 1, start
     while pos < len(text):
         if text.startswith('//', pos):
             end = text.find('\n', pos)
@@ -64,36 +76,74 @@ def _interpolation_end(text, start):
         elif text.startswith('/*', pos):
             pos = _block_comment_end(text, pos)
         elif _string_opening(text, pos) is not None:
-            pos, _, _ = _string_end(text, pos)
+            pos, _, _ = _string_end(text, pos, depth + 1)
         elif text[pos] == '(':
-            depth += 1
+            nest_depth += 1
+            if nest_depth > SUPPORTED_INTERPOLATION_DEPTH:
+                raise RequiresSyntaxProvider(
+                    f"interpolation nesting exceeds supported bound of "
+                    f"{SUPPORTED_INTERPOLATION_DEPTH}; requires syntax provider at line "
+                    f"{text.count(chr(10), 0, start) + 1}")
             pos += 1
         elif text[pos] == ')':
-            depth -= 1
+            nest_depth -= 1
             pos += 1
-            if not depth:
+            if not nest_depth:
                 return pos
         else:
             pos += 1
     raise MigrationError(f"Unterminated string interpolation at line {text.count(chr(10), 0, start) + 1}")
 
 
-def _string_end(text, start):
+def _string_end(text, start, depth=0):
     hashes, quotes = _string_opening(text, start)
     closing = '"' * quotes + '#' * hashes
     escape = '\\' + '#' * hashes
+    extended = hashes > 0
     pos = start + hashes + quotes
+    in_interpolation = depth > 0
     while pos < len(text):
         if text.startswith(closing, pos):
             return pos + len(closing), hashes, quotes
         if text.startswith(escape, pos):
             following = pos + len(escape)
+            if quotes == 1 and following < len(text) and text[following] == chr(10):
+                # A line continuation ('\' + newline) keeps a single-line string
+                # legal in Swift but is outside this closed grammar; report it as
+                # a stable "requires syntax provider" case rather than accepting
+                # a string that silently spans lines.
+                raise RequiresSyntaxProvider(
+                    f"single-line string line continuation requires syntax provider at line "
+                    f"{text.count(chr(10), 0, start) + 1}")
             if following < len(text) and text[following] == '(':
-                pos = _interpolation_end(text, following + 1)
+                if depth + 1 > SUPPORTED_STRING_NESTING_DEPTH:
+                    raise RequiresSyntaxProvider(
+                        f"string/interpolation nesting exceeds supported bound of "
+                        f"{SUPPORTED_STRING_NESTING_DEPTH}; requires syntax provider at line "
+                        f"{text.count(chr(10), 0, start) + 1}")
+                pos = _interpolation_end(text, following + 1, depth + 1)
             else:
                 pos = following + 1
         else:
+            if quotes == 1 and text[pos] == chr(10):
+                # A raw newline inside a single-line string means the closing
+                # quote is missing on this line: genuinely unterminated.
+                raise MigrationError(
+                    f"Unterminated string at line {text.count(chr(10), 0, start) + 1}")
             pos += 1
+    # Reached end of text while still scanning this string.
+    if extended:
+        # Extended-delimiter literals require the Swift semantic adapter / syntax
+        # provider; a malformed or unterminated one is reported as such rather
+        # than as a misleading "Unterminated string".
+        raise RequiresSyntaxProvider(
+            f"extended-delimiter string literal requires syntax provider at line "
+            f"{text.count(chr(10), 0, start) + 1}")
+    if in_interpolation:
+        # An open interpolation was never closed: the interpolation error is the
+        # specific, stable diagnostic (not the phantom nested string's error).
+        raise MigrationError(
+            f"Unterminated string interpolation at line {text.count(chr(10), 0, start) + 1}")
     raise MigrationError(f"Unterminated string at line {text.count(chr(10), 0, start) + 1}")
 
 
@@ -113,7 +163,7 @@ def tokenize(text: str) -> list[Token]:
             line += text[start:pos].count("\n")
         elif _string_opening(text, pos) is not None:
             start, start_line = pos, line
-            pos, hashes, quotes = _string_end(text, pos)
+            pos, hashes, quotes = _string_end(text, pos, 0)
             value = text[start:pos]
             line += value.count("\n")
             result.append(Token(value, start_line, "string", hashes, quotes, line, start, pos))
@@ -128,6 +178,13 @@ def tokenize(text: str) -> list[Token]:
 
 class Unsupported(MigrationError):
     pass
+
+
+class RequiresSyntaxProvider(MigrationError):
+    """A Swift construct that is legal but outside this closed grammar's resolve set.
+
+    It must be handled by the official SwiftSyntax provider, not by this lexer.
+    """
 
 
 class Parser:
