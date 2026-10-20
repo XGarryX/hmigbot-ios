@@ -7,6 +7,11 @@ without real ``source_anchors``. The scaffold derives real candidate skeletons
 (pages / components / bridges / extensions) straight from the reviewed source index
 and facts, so ``prepare`` can discover them.
 
+Classification is scoped to each declaration's OWN header tokens (comments and string
+literals are skipped by the tokenizer), so a model struct in the same file as a View,
+or ``: View`` / ``UIViewController`` appearing only in a comment or string, never
+becomes a UI page.
+
 Every artifact is explicitly unreviewed:
 
 * ``candidate = True``, ``needs_review = True``
@@ -14,13 +19,14 @@ Every artifact is explicitly unreviewed:
 * ``enterable_plan = False``
 
 so the spec/harness never mistakes a scaffold candidate for an enterable plan. Unknown
-templates (a struct with no UI signal) are listed in the candidate JSON but are never
-written as pages and never entered into ``ui-manifest.md``. No business behavior, AC or
-approval is fabricated.
+templates (a struct with no UI conformance/subclass/bridge) are listed in the candidate
+JSON but are never written as pages and never entered into ``ui-manifest.md``.
 
 The module only reads the source index and source files; it never changes the baseline,
-source, findings or scheduler ledger. ``apply_scaffold`` writes only missing files and
-refuses to overwrite existing authored documents.
+source, findings or scheduler ledger. ``apply_scaffold`` never trusts the supplied
+candidate: it re-derives the canonical candidate from the current reviewed source,
+compares identity / content / source hash against the supplied one, and refuses any
+foreign artifact, path escape, content/path change, stale index or duplicate FID.
 """
 from __future__ import annotations
 
@@ -47,17 +53,23 @@ UNKNOWN_BANNER = (
 
 
 # --------------------------------------------------------------------------- #
-# Source discovery
+# Source discovery (header-scoped, comment/string immune)
 # --------------------------------------------------------------------------- #
-def _top_level_types(text):
-    """Return ``(name, decl_kind, line)`` for each top-level type declaration.
+def _header_values(tokens, start, end):
+    """Non-string token values of a declaration header (keyword .. opening brace)."""
+    return [t.value for t in tokens[start:end] if t.kind != 'string']
 
-    Reuses the token stack discipline from ``ios_facts``: a declaration only becomes
-    a candidate when its opening brace lifts the depth from 0 to 1, so nested types
-    (which lift depth 1 -> 2) are ignored.
+
+def _top_level_types(text):
+    """Return ``(name, decl_kind, line, header_values)`` for each top-level type.
+
+    Uses the token stack discipline from ``ios_facts``: a declaration only becomes a
+    candidate when its opening brace lifts the depth 0 -> 1, so nested types are
+    ignored. ``header_values`` carries only the declaration's own signature tokens,
+    excluding comments and string literals.
     """
     tokens = tokenize(text)
-    found, pending_owner, decl_kind, depth = [], None, None, 0
+    found, pending_owner, decl_kind, decl_start, depth = [], None, None, None, 0
     for i, tok in enumerate(tokens):
         v = tok.value
         if v in DECL_KEYWORDS and i + 1 < len(tokens) and tokens[i + 1].kind != 'string':
@@ -69,11 +81,11 @@ def _top_level_types(text):
                     name = nxt.value
                     break
             if name:
-                pending_owner, decl_kind = name, v
+                pending_owner, decl_kind, decl_start = name, v, i
         if v == '{':
             depth += 1
             if pending_owner is not None and depth == 1:
-                found.append((pending_owner, decl_kind, tok.line))
+                found.append((pending_owner, decl_kind, tok.line, _header_values(tokens, decl_start, i)))
             pending_owner = None
         elif v == '}':
             if depth > 0:
@@ -81,19 +93,43 @@ def _top_level_types(text):
     return found
 
 
-def classify_type(name, decl_kind, text):
-    """Classify a discovered type into a candidate type.
+def _file_imports(text):
+    """Token-based file-level import detection (comment/string immune)."""
+    tokens = tokenize(text)
+    swiftui = uikit = False
+    for i, tok in enumerate(tokens):
+        if tok.value == 'import' and i + 1 < len(tokens) and tokens[i + 1].kind != 'string':
+            mod = tokens[i + 1].value
+            if mod == 'SwiftUI':
+                swiftui = True
+            elif mod == 'UIKit':
+                uikit = True
+    return swiftui, uikit
 
-    Returns a tuple ``(candidate_type, framework, confidence, is_ui, is_extension,
-    is_bridge, unknown_template)``. A type with no UI signal is ``unknown`` and is
-    excluded from page generation / the UI manifest so it cannot be mistaken for a
-    complete product page.
+
+def _has_conformance(header_values, name):
+    """True only if ``name`` is an inherited type in THIS declaration's header.
+
+    Conformances appear as ``: Name`` or ``, Name`` in the inheritance list, so the
+    preceding token must be ``:`` or ``,``. Comments/strings are already excluded.
     """
-    imports_swiftui = bool(re.search(r'^\s*import\s+SwiftUI\b', text, re.M))
-    imports_uikit = bool(re.search(r'^\s*import\s+UIKit\b', text, re.M))
-    is_view = imports_swiftui and bool(re.search(r':\s*View\b', text))
-    subclass_uikit = bool(re.search(r':\s*(?:' + '|'.join(UIKIT_BASE) + r')\b', text))
-    is_bridge = any(symbol in text for symbol in BRIDGE_SYMBOLS)
+    for i, v in enumerate(header_values):
+        if v == name and i > 0 and header_values[i - 1] in (':', ','):
+            return True
+    return False
+
+
+def classify_type(name, decl_kind, header_values, imports_swiftui, imports_uikit):
+    """Classify a single declaration from its OWN header evidence.
+
+    Returns ``(candidate_type, framework, confidence, is_ui, is_extension, is_bridge,
+    unknown_template)``. A declaration with no UI conformance / UIKit subclass / bridge
+    symbol is ``unknown`` even when the file imports SwiftUI/UIKit -- a model struct in
+    a UI file stays ``unknown`` and is never turned into a page.
+    """
+    is_view = imports_swiftui and _has_conformance(header_values, 'View')
+    subclass_uikit = any(_has_conformance(header_values, base) for base in UIKIT_BASE)
+    is_bridge = any(symbol in header_values for symbol in BRIDGE_SYMBOLS)
 
     if decl_kind == 'extension':
         return ('extension', 'unknown', 'low', False, True, False, False)
@@ -104,12 +140,9 @@ def classify_type(name, decl_kind, text):
         return ('page', 'uikit', 'low', True, False, False, False)
     if is_view:
         screenish = bool(re.search(r'(Screen|Page|ViewController|Root|Main|Home|Detail|Scene|Flow)$', name))
-        if screenish or any(k in text for k in ('NavigationView', 'TabView', 'NavigationStack', 'navigationDestination')):
+        if screenish:
             return ('page', 'swiftui', 'low', True, False, False, False)
         return ('component', 'swiftui', 'low', True, False, False, False)
-    if imports_swiftui or imports_uikit:
-        framework = 'swiftui' if imports_swiftui else 'uikit'
-        return ('component', framework, 'low', True, False, False, False)
     return ('unknown', 'unknown', 'none', False, False, False, True)
 
 
@@ -124,8 +157,10 @@ def discover_candidates(source, index):
         if not file.is_file():
             continue
         text = file.read_text(encoding='utf-8-sig')
-        for name, decl_kind, line in _top_level_types(text):
-            (ctype, framework, confidence, is_ui, is_ext, is_bridge, unknown) = classify_type(name, decl_kind, text)
+        imports_swiftui, imports_uikit = _file_imports(text)
+        for name, decl_kind, line, header in _top_level_types(text):
+            (ctype, framework, confidence, is_ui, is_ext, is_bridge, unknown) = classify_type(
+                name, decl_kind, header, imports_swiftui, imports_uikit)
             candidates.append({
                 'name': name, 'decl_kind': decl_kind,
                 'anchor': {'path': path, 'line': line, 'sha256': meta['sha256']},
@@ -171,11 +206,10 @@ def _yaml_block(anchor, candidate_type):
 
 
 def render_feature_md(c):
-    banner = SCAFFOLD_BANNER
     return (
         f"# {c['feature_id']}: {c['name']}\n\n"
         + _yaml_block(c['anchor']['path'], 'feature')
-        + f"> {banner}\n\n"
+        + f"> {SCAFFOLD_BANNER}\n\n"
         "## 范围\n"
         f"涉及页面: {c['page_id'] or '待审查'}。由审查者填写功能范围与依赖。\n\n"
         "## 对接点\n"
@@ -322,33 +356,92 @@ def scaffold(project, *, source_sha256=None):
     }
 
 
-def apply_scaffold(project, candidate):
-    """Write only missing scaffold files. Never overwrites existing documents.
+# --------------------------------------------------------------------------- #
+# Apply: re-derive and verify before writing anything
+# --------------------------------------------------------------------------- #
+_ALLOWED_INDEX = re.compile(r'^spec/baseline/(?:feature-index\.md|ui-manifest\.md)$')
+_ALLOWED_FEATURE = re.compile(r'^spec/baseline/features/F\d{3}-.+\.md$')
+_ALLOWED_PAGE = re.compile(r'^spec/baseline/ui/page_\d{4}_.+\.md$')
 
-    Path protection: output is restricted to ``spec/baseline``. Source-hash protection:
-    the current source snapshot must still match the candidate's ``source_sha256``; a
-    changed source is refused so no stale anchor is ever written.
+
+def _allowed_path(path):
+    return bool(_ALLOWED_INDEX.match(path) or _ALLOWED_FEATURE.match(path) or _ALLOWED_PAGE.match(path))
+
+
+def _fid_conflict(base, path):
+    """Return the occupied ID if a different main document already owns it."""
+    target = Path(path)
+    if _ALLOWED_FEATURE.match(path):
+        fid = target.stem.split('-', 1)[0]
+        for existing in (base / 'features').glob(f'{fid}-*.md'):
+            if existing.name != target.name:
+                return fid
+    elif _ALLOWED_PAGE.match(path):
+        pid = target.stem.split('_', 1)[0]
+        for existing in (base / 'ui').glob(f'{pid}_*.md'):
+            if existing.name != target.name:
+                return pid
+    return None
+
+
+def apply_scaffold(project, candidate):
+    """Materialize only missing scaffold files, never trusting the supplied candidate.
+
+    Security / integrity contract (per in-scope review):
+
+    * The supplied ``candidate`` is verified, never executed. The canonical candidate
+      is re-derived from the current reviewed source and compared against it.
+    * Any path outside the four allowed scaffold outputs (e.g. ``ios-semantics.json``
+      or other pseudo-approved artifacts) is rejected outright.
+    * Identity (``stable_key`` set), source hash and file content must match the
+      re-derived candidate exactly; a drift, hand-inserted baseline, stale index or
+      tampered content is refused.
+    * All paths and conflicts (duplicate FID / page_id owned by a different main
+      document) are pre-checked before any file is written, so apply is all-or-nothing.
+    * Existing documents are never overwritten; only same-content idempotent fills are
+      permitted.
     """
     source, project = context(project)
-    current = snapshot(source)
-    if candidate.get('source_sha256') != current['sha256']:
-        raise MigrationError('Source changed since scaffold was derived; re-run scaffold before applying')
+    if not isinstance(candidate, dict) or candidate.get('kind') != 'spec-scaffold-candidate':
+        raise MigrationError('apply requires a spec-scaffold-candidate produced by native_scaffold.scaffold')
+    # 1. reject foreign / pseudo-approved artifacts up front
+    for path in candidate.get('file_contents', {}):
+        if not _allowed_path(path):
+            raise MigrationError('Candidate carries non-scaffold artifact (possible pseudo-approved baseline): ' + path)
+    # 2. re-derive canonical candidate from current reviewed source
+    rederived = scaffold(project)
+    # 3. consistency: supplied candidate must match the derived identity/hash/content
+    if candidate.get('source_sha256') != rederived['source_sha256']:
+        raise MigrationError('Provided candidate source_sha256 does not match currently derived source')
+    if {c['stable_key'] for c in candidate.get('candidates', [])} != {c['stable_key'] for c in rederived['candidates']}:
+        raise MigrationError('Candidate identity drift vs derived source candidates; refuse apply')
+    expected = rederived['file_contents']
+    provided = candidate.get('file_contents', {})
+    if set(provided.keys()) != set(expected.keys()):
+        raise MigrationError('Candidate file set differs from derived source files; refuse apply')
+    for path, content in expected.items():
+        if provided.get(path) != content:
+            raise MigrationError('Candidate content differs from derived source content: ' + path)
+    # 4. pre-check every path / conflict, then write only missing (idempotent)
     baseline = (project / 'spec/baseline').resolve()
-    created, skipped, refused = [], [], []
-    for path, content in candidate.get('file_contents', {}).items():
-        try:
-            target = safe_child(project, path)
-        except MigrationError as exc:
-            refused.append({'path': path, 'reason': str(exc)})
-            continue
+    plan, skipped = [], []
+    for path, content in expected.items():
+        target = safe_child(project, path)
         if not target.is_relative_to(baseline):
-            refused.append({'path': path, 'reason': 'outside spec/baseline'})
-            continue
+            raise MigrationError('Scaffold path escapes spec/baseline: ' + path)
         if target.exists():
-            skipped.append(path)  # existing authored document is preserved
+            if target.read_text(encoding='utf-8-sig') != content:
+                raise MigrationError('Existing document conflicts with candidate (would overwrite): ' + path)
+            skipped.append(path)
             continue
+        fid = _fid_conflict(baseline, path)
+        if fid is not None:
+            raise MigrationError('Conflicting main document for ' + fid + '; refuse to create duplicate ID')
+        plan.append((target, content))
+    created = []
+    for target, content in plan:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding='utf-8')
-        created.append(path)
-    return {'created': sorted(created), 'skipped': sorted(skipped), 'refused': sorted(refused),
+        created.append(target.relative_to(project).as_posix())
+    return {'created': sorted(created), 'skipped': sorted(skipped), 'refused': [],
             'spec_complete': False, 'behavior_verified': False}
