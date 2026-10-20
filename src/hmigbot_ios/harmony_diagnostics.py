@@ -65,7 +65,7 @@ _GENERIC_HEADER = re.compile(
 
 _BUILD_SUCCESS = re.compile(r"BUILD SUCCESSFUL", re.IGNORECASE)
 _BUILD_FAILED = re.compile(r"BUILD FAILED", re.IGNORECASE)
-_LOG_ERROR = re.compile(r"\b(?:ERROR|FATAL)\b", re.IGNORECASE)
+_LOG_ERROR = re.compile(r"^\s*(?:(?:>\s*)?hvigor\s+)?(?:ERROR|FATAL)\b\s*[:\[]", re.IGNORECASE)
 
 _BARE_ERROR = re.compile(
     r"hvigorw[^\n]{0,40}is not recognized|is not recognized[^\n]{0,40}hvigorw|hvigorw: command not found",

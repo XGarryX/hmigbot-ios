@@ -101,3 +101,14 @@ def test_findings_cap_applies_to_both_streams_together(tmp_path):
     assert len(report['findings']) == 200
     assert report['summary']['truncated'] is True
     assert {item['log_ref']['stream'] for item in report['findings']} == {'stdout', 'stderr'}
+
+
+def test_success_summary_or_benign_error_word_is_not_a_compiler_error(tmp_path):
+    log = tmp_path / 'stdout.log'
+    log.write_text('INFO: error diagnostics enabled\nCOMPILE RESULT:SUCCESS {ERROR:0 WARN:0}\n'
+                   'WARNING: use a concrete error type\nBUILD SUCCESSFUL\n', encoding='utf-8')
+    report = analyze(log, returncode=0)
+    assert report['build_command_passed'] is True
+    assert report['status'] == 'build_command_passed'
+    assert report['summary']['errors'] == 0
+    assert report['overall_status'] == 'unknown'
