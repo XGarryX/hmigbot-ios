@@ -259,6 +259,8 @@ def _runtime_directory(project, program, *, windows, cleanup_reports=None):
 
 
 def invoke(project, program, args):
+    from .runtime_timeouts import timeout_for
+    from .scheduler_windows_runtime import run as run_owned_process
     env = {**os.environ, 'PYTHONUTF8': '1', 'ARKTS_SKILL_DIR': str(UPSTREAM.parent)}
     windows, cleanup_reports = os.name == 'nt', []
     if windows:
@@ -272,6 +274,7 @@ def invoke(project, program, args):
                 path = Path(args[index + 1])
                 args[index + 1] = os.fspath(io_path(path if path.is_absolute() else project / path))
     try:
+        timeout_for('scheduler', env=env)
         # Frozen upstream sys.executable points at a non-shipped python.exe beside
         # its binary on Windows. Stage unchanged payload plus the host interpreter;
         # never repair vendor bytes in place or replace original state algorithms.
@@ -285,11 +288,20 @@ def invoke(project, program, args):
                 from .windows_python_runtime import stage_base_python
                 stage_base_python(directory, env)
                 command = [str(directory / '_entry.exe'), program, *args]
-            proc = subprocess.run(command,
-                                  cwd=project, env=env, capture_output=True, timeout=60, shell=False)
+            limit = timeout_for('scheduler', env=env)
+            if windows:
+                proc = run_owned_process(command, cwd=project, env=env, timeout=limit)
+            else:
+                proc = subprocess.run(command,
+                                      cwd=project, env=env, capture_output=True, timeout=limit, shell=False)
     except (subprocess.TimeoutExpired, OSError) as exc:
+        directory = project / 'spec/reports/scheduler'
+        atomic_write(directory / (program + '.stdout.log'), getattr(exc, 'output', None) or b'')
+        atomic_write(directory / (program + '.stderr.log'), getattr(exc, 'stderr', None) or b'')
         log = project / 'spec/reports/scheduler' / (program + '.failure.json')
-        report = {'program': program, 'error': str(exc), 'status': 'FAIL'}
+        report = {'program': program, 'error': str(exc), 'status': 'FAIL',
+                  'process_tree': getattr(exc, 'ios_process_tree', None),
+                  'timeout_policy': getattr(exc, 'ios_timeout_policy', None)}
         if cleanup_reports:
             report['runtime_cleanup'] = cleanup_reports
         write_json(log, report)

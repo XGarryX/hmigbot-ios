@@ -20,6 +20,7 @@ import tempfile
 from .core import io_path
 from .scheduler_windows_runtime import run as run_owned_process
 from .windows_python_runtime import stage_base_python
+from .runtime_timeouts import timeout_for
 
 ROOT = Path(__file__).resolve().parents[2]
 VENDOR = ROOT / 'vendor/hmigbot/skills'
@@ -101,27 +102,35 @@ def _invoke_raw(arguments, original=None):
     # The suspended-process / host-interpreter repair is Windows-specific.
     # Preserve the established launcher on platforms that do not need it.
     if os.name != 'nt' and original is not None:
+        timeout_for('structural')  # Validate inherited policy before the legacy callback.
         return original('arkts-structural-closure', 'structural_loop.py', arguments)
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--project-root', type=Path)
     probe, _ = parser.parse_known_args(arguments)
     project = io_path(probe.project_root or Path.cwd()).resolve()
-    with runtime_layout() as (executable, env):
-        command = [str(executable), 'structural_loop', *arguments]
-        try:
+    command = ['structural_loop', *arguments]
+    tree = None
+    try:
+        timeout_for('structural')
+        with runtime_layout() as (executable, env):
+            command = [str(executable), 'structural_loop', *arguments]
+            limit = timeout_for('structural', env=env)
             if os.name == 'nt':
-                result = run_owned_process(command, cwd=project, env=env, timeout=180)
+                result = run_owned_process(command, cwd=project, env=env, timeout=limit)
             else:
                 result = subprocess.run(command, cwd=project, env=env, capture_output=True,
-                                        timeout=180, shell=False)
-        except subprocess.TimeoutExpired as exc:
-            # The owned runner already terminates and reaps its Job tree.
-            # Relay actual partial output instead of losing child evidence.
-            result = subprocess.CompletedProcess(command, 124, exc.output or b'',
-                (exc.stderr or b'') + b'\nOriginal structural pipeline timed out after 180 seconds.\n')
-    return subprocess.CompletedProcess(result.args, result.returncode,
+                                        timeout=limit, shell=False)
+    except subprocess.TimeoutExpired as exc:
+        # The Windows owned runner already terminates and reaps its Job tree.
+        tree = getattr(exc, 'ios_process_tree', None)
+        result = subprocess.CompletedProcess(command, 124, exc.output or b'',
+            (exc.stderr or b'') + f'\nOriginal structural pipeline timed out after {exc.timeout:g} seconds.\n'.encode())
+    decoded = subprocess.CompletedProcess(result.args, result.returncode,
         result.stdout.decode('utf-8', errors='replace'),
         result.stderr.decode('utf-8', errors='replace'))
+    if tree is not None:
+        decoded.ios_process_tree = tree
+    return decoded
 
 
 def invoke(arguments, original=None):
