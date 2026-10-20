@@ -395,6 +395,8 @@ def generate(project, input_path, *, validate_only=False):
     parallel = request.get('max_parallel', 1)
     if type(parallel) is not int or not 1 <= parallel <= 8:
         raise MigrationError('max_parallel must be 1..8; serial is the default')
+    from .prompt_inputs import project_inputs
+    prompt_inputs = project_inputs(graph['facts'], planned, request.get('decisions', []))
     if validate_only:
         return {'status': 'request_validated', 'source_sha256': graph['source_sha256'], 'plan_contract': plan_contract}
     plan_path = project / f'spec/waves/plan-{wave}.json'
@@ -419,12 +421,14 @@ def generate(project, input_path, *, validate_only=False):
         write_json(blueprint / name, value)
     if not (blueprint / 'decision-ledger.md').exists():
         atomic_write(blueprint / 'decision-ledger.md', b'# iOS decisions\n\nNo implicit platform decisions.\n')
+    decision_ledger_sha256 = digest((blueprint / 'decisions.json').read_bytes())
     warnings = []
     nodes = []
     for t in planned:
         prompt = f'spec/waves/prompts/{wave}/{t["id"]}.txt'
         receipt = f'spec/waves/results/{wave}/{t["id"]}.json'
-        facts = [f for f in graph['facts'] if f['id'] in t['fact_ids']]
+        inputs = prompt_inputs[t['id']]
+        facts = inputs['facts']
         consumer_inputs = plan_contract['task_inputs'].get(t['id'], [])
         body = ('Use the assigned bundled role and iOS skill protocol. You share the codebase; preserve others\' edits.\n'
                 'Read spec/ref/ios-expertise-plan.json and ios-expertise-reviews.json when present.\n'
@@ -439,7 +443,13 @@ def generate(project, input_path, *, validate_only=False):
                 + json_bytes(consumer_inputs).decode() + '\n'
                 +
                 f'Receipt path: {receipt}\nUse ios-receipt v2 with source_sha256, plan_sha256, task_id, files hashes, ac_ids and findings.\n'
-                'Facts:\n' + json_bytes(facts).decode() + '\nDecisions:\n' + json_bytes(request.get('decisions', [])).decode())
+                'Facts:\n' + json_bytes(facts).decode() + '\nDecisions:\n' + json_bytes(inputs['decisions']).decode()
+                + '\nDecision projection: ' + json_bytes({
+                    'full_ledger': 'spec/blueprint/decisions.json',
+                    'sha256': decision_ledger_sha256,
+                    'omitted_explicitly_scoped_decisions': inputs['omitted_decisions'],
+                    'scope_semantics': 'explicit task/ac/fact consumer union; unscoped decisions always included',
+                }).decode())
         atomic_write(safe_child(project, prompt), body.encode())
         nodes.append({'id': t['id'], 'kind': 'agent', 'agent': t['role'] + '@0.6.0',
                       'model': t.get('model', 'inherit'), 'schema': 'fixResult',
