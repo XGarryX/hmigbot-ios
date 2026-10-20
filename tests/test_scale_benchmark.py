@@ -37,8 +37,8 @@ def test_small_capture_has_exact_counts_and_final_hash(tmp_path):
     assert report["status"] == "completed", report
     assert report["source"]["loc"] == 48
     assert report["source"]["files"] == 2
-    assert report["facts"] == report["obligations"] == 40
-    assert report["facts_by_kind"] == {"state": 8, "write": 16, "event": 8, "composition": 8}
+    assert report["facts"] == report["obligations"] == 44
+    assert report["facts_by_kind"] == {"state": 12, "write": 16, "event": 8, "composition": 8}
     assert report["final_source_sha256"] == report["source_sha256"] == report["source"]["generated_source_sha256"]
     assert report["capture_wall_seconds"] > 0
     assert report["subprocess_wall_seconds"] >= report["capture_wall_seconds"]

@@ -24,6 +24,7 @@ def main():
     checks = []
     def command(name, arguments):
         env = {**os.environ, 'PYTHONUTF8': '1', 'PYTHONDONTWRITEBYTECODE': '1',
+               'HMIGBOT_TEST_RUNTIME': str(ROOT),
                'PYTHONPATH': str(ROOT / 'src') + os.pathsep + os.environ.get('PYTHONPATH', '')}
         try:
             result = subprocess.run(arguments, cwd=ROOT, env=env, capture_output=True, timeout=600, shell=False)

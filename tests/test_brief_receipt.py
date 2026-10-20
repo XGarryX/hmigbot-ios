@@ -37,8 +37,9 @@ class BriefReceiptTests(unittest.TestCase):
                                     '--output', str(report)])
         self.assertEqual(full_code, 0, full_out)
         full_bytes = report.read_bytes()
-        self.assertIn('迁移证据报告', full_out)
-        self.assertIn('markdown', full_out)
+        full_payload = json.loads(full_out)
+        self.assertIn('迁移证据报告', full_payload['markdown'])
+        self.assertEqual(full_payload['markdown'], full_bytes.decode('utf-8'))
 
         brief_code, brief_out = _run(['migration-report', '--project', str(self.project),
                                       '--output', str(report), '--brief'])
@@ -48,6 +49,7 @@ class BriefReceiptTests(unittest.TestCase):
         self.assertNotIn('迁移证据报告', brief_out)
         self.assertNotIn('| page_0001', brief_out)
         payload = json.loads(brief_out)
+        self.assertNotIn('markdown', payload)
         self.assertEqual(payload['status'], 'generated')
         self.assertEqual(payload['mode'], 'brief')
         self.assertEqual(payload['sha256'], digest(full_bytes))
