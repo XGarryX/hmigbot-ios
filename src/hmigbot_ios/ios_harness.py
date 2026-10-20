@@ -1,6 +1,7 @@
 """iOS contract gates shared by skills, dispatch and receipt landing."""
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -47,18 +48,81 @@ def initialize(project: Path, *, import_legacy=False):
 
 def ac_inventory(project):
     from .spec_contract import acceptance
+    from .native_pipeline import source_paths
+    from .artifact_contract import _primary_feature
     acs = {}
-    for doc in sorted((project / 'spec/baseline/features').glob('F*.md')):
-        for ident, body in acceptance(doc.read_text(encoding='utf-8-sig')):
+    documents = sorted((project / 'spec/baseline/features').glob('F*.md'))
+    owners = {}
+    for doc in documents:
+        if _primary_feature(doc):
+            feature = re.match(r'F\d+', doc.name)[0]
+            if feature in owners:
+                raise MigrationError('Duplicate feature owner: ' + feature)
+            owners[feature] = doc
+    for doc in documents:
+        text = doc.read_text(encoding='utf-8-sig')
+        feature = re.match(r'F\d+', doc.name)[0]
+        for ident, body in acceptance(text):
             if ident in acs:
                 raise MigrationError('Duplicate acceptance ID: ' + ident)
+            if ident.split('-AC', 1)[0] != feature or feature not in owners:
+                raise MigrationError('Acceptance ID must belong to its main feature: ' + ident)
             judgment = re.search(r'判:(static|unit|contract|route|ui|visual|device)\s*\|', body)
             if not judgment:
                 raise MigrationError('Missing judgment: ' + ident)
-            acs[ident] = {'judgment': judgment[1], 'body': body}
+            owner = owners[feature]
+            acs[ident] = {'judgment': judgment[1], 'body': body, 'feature_id': feature,
+                         'document': doc.relative_to(project).as_posix(),
+                         'owner_document': owner.relative_to(project).as_posix(),
+                         'source_paths': source_paths(owner.read_text(encoding='utf-8-sig'))}
     if not acs:
         raise MigrationError('No stable acceptance criteria exist')
     return acs
+
+
+def _coverage_source_paths(project, source, ident, ac):
+    """Declared ownership and exact shared contracts, never inferred prose meaning.
+
+    Referencing one shared section does not grant all anchors of its document.
+    Only real source evidence in that section (or an active action explicitly
+    bound to this AC) extends the feature's own file boundary. Existing contract
+    checks remain responsible for the rest of the shared contract's validity.
+    """
+    from .artifact_contract import SOURCE_REF, _anchor, _visible_lines, json_blocks, validate_json
+    from .spec_contract import references
+    paths = set(ac['source_paths'])
+    pending = [safe_child(project, path) for path in {ac['document'], ac['owner_document']}]
+    visited = set()
+    while pending:
+        document = pending.pop()
+        if document in visited:
+            continue
+        visited.add(document)
+        for target, _, body in references(project, document, document.read_text(encoding='utf-8-sig')):
+            # A precise contract_ref is the explicit consumer relationship.
+            # Ignore code examples; typed action fences have a separate reader.
+            for _, line in _visible_lines(body):
+                for match in SOURCE_REF.finditer(line):
+                    anchor = {'path': match['path'].strip(), 'line': int(match['line'])}
+                    _anchor(source, anchor)
+                    if match['end']:
+                        end = int(match['end'])
+                        if end < anchor['line']:
+                            raise MigrationError('Shared source range ends before it starts')
+                        _anchor(source, {**anchor, 'line': end})
+                    paths.add(anchor['path'])
+            for block in json_blocks(body):
+                if block['kind'] != 'action-contract':
+                    continue
+                value = json.loads(block['body'])
+                validate_json(value, 'action_contract')
+                if (value['scope'] == 'active' and value['owner'] == ac['feature_id']
+                        and ident in value['ac_ids']):
+                    for anchor in value['source_anchors']:
+                        _anchor(source, anchor)
+                        paths.add(anchor['path'])
+            pending.append(target)
+    return paths
 
 
 def validate_native_claims(project, graph, semantics, fail):
@@ -106,6 +170,7 @@ def check(project: Path, *, report_only=False):
     issues = []
     excluded_obligations = set()
     preview_cache = {}
+    coverage_paths = {}
     extraction_dispositions = []
 
     def fail(rule, subject, detail):
@@ -123,7 +188,8 @@ def check(project: Path, *, report_only=False):
         for disposition in extraction_dispositions:
             if disposition['blocking']:
                 issue = disposition['issue']
-                fail('IOS.EXTRACTION_UNRESOLVED', str(issue.get('path', 'project')), str(issue))
+                from .finding_identity import extraction_finding
+                issues.append(extraction_finding(queue, issue))
         from .expertise import check as check_expertise
         expertise = check_expertise(project, source, graph)
         from .ios_literals import extract as extract_literals
@@ -171,8 +237,15 @@ def check(project: Path, *, report_only=False):
                 else:
                     fail('IOS.PREVIEW_REVIEW_REQUIRED', ident, 'Keep the original obligation; exclude only exact Preview spans with current file hash, source review and skip-list heading, without product ACs')
                 continue
-            if not ids or any(a not in acs for a in ids):
+            if not isinstance(ids, list) or not ids or any(not isinstance(a, str) or a not in acs for a in ids):
                 fail('IOS.OBLIGATION_AC_MISSING', ident, 'Bind obligation to real stable acceptance criteria'); continue
+            for ac_id in ids:
+                if ac_id not in coverage_paths:
+                    coverage_paths[ac_id] = _coverage_source_paths(project, source, ac_id, acs[ac_id])
+                if anchor['path'] not in coverage_paths[ac_id]:
+                    fail('IOS.OBLIGATION_FEATURE_MISMATCH', ident + ':' + ac_id,
+                         anchor['path'] + ' is outside ' + acs[ac_id]['feature_id']
+                         + ' source anchors and its explicitly referenced shared source contracts')
             if not any(acs[a]['judgment'] in expected[ident]['judgments'] for a in ids):
                 fail('IOS.ORACLE_TOO_WEAK', ident, 'Required judgment: ' + '/'.join(expected[ident]['judgments']))
             # A signal is a review obligation, not a claim that token analysis bound its calls.
