@@ -81,6 +81,51 @@ def _is_button_cancel_role(values, index):
             and (open_index == 1 or values[open_index - 2] != '.'))
 
 
+class _FileViews:
+    """Bytes, text and lines for the file currently being scanned, read at most once each.
+
+    A fact anchor needs a line window, so add() used to re-read and re-decode the whole file
+    per fact. Caching the content is the fix; the cache is keyed by content location only and
+    is dropped as soon as another file is requested. mtime and size never stand in for content:
+    extract()/refresh() still compare a fresh whole-tree snapshot before accepting the result.
+    """
+    __slots__ = ('_key', '_path', '_raw', '_text', '_lines', '_decode_error')
+
+    def __init__(self):
+        self._key = self._path = self._raw = self._text = self._lines = self._decode_error = None
+
+    def _select(self, key, path):
+        if key != self._key:
+            self._key, self._path = key, path
+            self._raw = self._text = self._lines = self._decode_error = None
+
+    def _read(self):
+        if self._raw is None:
+            self._raw = self._path.read_bytes()
+        return self._raw
+
+    def text(self, key, path):
+        self._select(key, path)
+        if self._text is None and self._decode_error is None:
+            try:
+                raw = self._read().decode('utf-8-sig')
+            except UnicodeError as exc:
+                self._decode_error = exc
+                raise
+            # Path.read_text applies universal newlines, so reproduce it rather than re-read.
+            self._text = raw.replace('\r\n', '\n').replace('\r', '\n')
+        if self._decode_error is not None:
+            raise self._decode_error
+        return self._text
+
+    def lines(self, key, path):
+        self._select(key, path)
+        text = self.text(key, path)
+        if self._lines is None:
+            self._lines = text.splitlines()
+        return self._lines
+
+
 def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Path | None = None):
     """Repository scope is explicit; effective configuration remains unresolved without tools."""
     snap = snapshot(source)
@@ -114,15 +159,14 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
         evidence_ref = {'path': str(report_path), 'report_sha256': digest(report_path.read_bytes())}
     facts, issues = [], []
     occurrence = {}
+    views = _FileViews()
 
     def add(file, kind, line, end, symbol, value, owner='unresolved', evidence='token_signal'):
         key = (file['path'], kind, owner, symbol)
         occurrence[key] = occurrence.get(key, 0) + 1
         ident = 'IF-' + digest(json_bytes([*key, occurrence[key]]))[:16]
-        raw = (source / file['path']).read_bytes()
         try:
-            text = raw.decode('utf-8-sig')
-            snippet = '\n'.join(text.splitlines()[line - 1:end])
+            snippet = '\n'.join(views.lines(file['path'], source / file['path'])[line - 1:end])
         except UnicodeError:
             if kind != 'resource':
                 raise MigrationError('Non-text source needs an explicit parser: ' + file['path'])
@@ -142,7 +186,7 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
                 and file['path'] not in variant['source_files']):
             continue  # Declared product membership; implicit headers remain conservatively included.
         if path.suffix in SOURCE_KINDS:
-            text = path.read_text(encoding='utf-8-sig')
+            text = views.text(file['path'], path)
             tokens = tokenize(text)
             import_lines = import_token_lines(tokens)
             values = [t.value for t in tokens]
@@ -242,17 +286,18 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
             if re.search(r'^\s*#\s*(if|ifdef|ifndef)', text, re.M):
                 issues.append({'rule': 'IOS.CONDITIONAL_BUILD', 'path': file['path'], 'message': 'Resolve active branches using selected configuration'})
         elif path.suffix in {'.storyboard', '.xib'}:
-            text = path.read_text(encoding='utf-8-sig')
+            text = views.text(file['path'], path)
             if '<!DOCTYPE' in text or '<!ENTITY' in text:
                 raise MigrationError('Interface Builder DTD/entities are not supported')
             try:
                 tree = ET.fromstring(text)
+                lines = views.lines(file['path'], path)
                 for element in tree.iter():
                     kind = {'action': 'event', 'segue': 'navigation', 'constraint': 'constraint'}.get(element.tag)
                     if kind:
                         # XML parser verifies structure; textual location is a locator only.
                         ident = element.get('id', element.get('selector', element.tag))
-                        line = next((n for n, s in enumerate(text.splitlines(), 1) if ident in s), 1)
+                        line = next((n for n, s in enumerate(lines, 1) if ident in s), 1)
                         add(file, kind, line, line, ident, dict(element.attrib), evidence='structured_xml')
             except ET.ParseError as exc:
                 issues.append({'rule': 'IOS.IB_PARSE', 'path': file['path'], 'message': str(exc)})
@@ -281,6 +326,43 @@ def obligations(graph):
                              **RULES[fact['kind']]} for fact in graph['facts']]}
 
 
+def _capture_providers(project, source, graph, provider_plan):
+    """Run each planned provider into its own attempt directory; return saved references and issues.
+
+    Only a published artifact becomes a graph reference. A failed try keeps its diagnostics under
+    a fresh attempt path, so the same source and configuration can be retried without deleting
+    evidence and without reusing an unverified capture.
+    """
+    from .atoms import run_atom
+    from .provider_runs import ProviderRun, retained_failures
+    providers = read_json(provider_plan)
+    if not isinstance(providers, dict) or providers.get('schema_version') != 2 or not isinstance(providers.get('providers'), list):
+        raise MigrationError('Provider plan requires v2 providers array')
+    artifacts, issues = [], []
+    for provider in providers['providers']:
+        if provider.get('operation') not in {'swift-syntax', 'clang-ast', 'build-settings', 'interface-builder', 'asset-inventory', 'localization-inventory'}:
+            raise MigrationError('Unsupported source provider operation')
+        name = provider['operation']
+        config = Path(provider['config']) if provider.get('config') else None
+        input_path = Path(provider['input']) if provider.get('input') else None
+        run = ProviderRun(project, name, graph['source_sha256'], config=config, input_path=input_path)
+        reused = run.reusable()
+        if reused is not None:
+            report = reused['report']
+            artifacts.append({key: reused[key] for key in ('path', 'sha256', 'operation', 'run')})
+        else:
+            try:
+                report = run_atom(name, source, run.directory, provider_config=config, input_path=input_path)
+            except (MigrationError, OSError, ValueError) as exc:
+                run.fail(exc)
+                raise MigrationError('Provider failed; retained diagnostics: ' + str(run.directory)) from exc
+            artifacts.append(run.publish(report))
+        issues.extend({'rule': 'IOS.PROVIDER_UNRESOLVED', 'operation': name, 'detail': issue} for issue in report.get('issues', []))
+        issues.extend({'rule': 'IOS.PROVIDER_RETRY', 'operation': name, 'detail': failure}
+                      for failure in retained_failures(project / artifacts[-1]['path']))
+    return artifacts, issues
+
+
 def refresh(project, source, variant=None, provider_plan=None, manifest_evidence=None):
     if manifest_evidence is not None:
         manifest_evidence = Path(manifest_evidence).resolve()
@@ -288,29 +370,10 @@ def refresh(project, source, variant=None, provider_plan=None, manifest_evidence
             raise MigrationError('Manifest evidence must be under project/spec/ref/ios-manifest-evidence for pinned consumption')
     graph = extract(source, variant, manifest_evidence=manifest_evidence)
     if provider_plan:
-        from .atoms import run_atom
-        providers = read_json(provider_plan)
-        if not isinstance(providers, dict) or providers.get('schema_version') != 2 or not isinstance(providers.get('providers'), list):
-            raise MigrationError('Provider plan requires v2 providers array')
-        graph['provider_artifacts'] = []
-        for provider in providers['providers']:
-            if provider.get('operation') not in {'swift-syntax', 'clang-ast', 'build-settings', 'interface-builder', 'asset-inventory', 'localization-inventory'}:
-                raise MigrationError('Unsupported source provider operation')
-            name = provider['operation']
-            output = project / 'spec/ref/provider-runs' / name / graph['source_sha256']
-            if output.exists():
-                raise MigrationError('Existing provider capture is immutable; choose fresh source or review retained artifacts')
-            try:
-                config = Path(provider['config']) if provider.get('config') else None
-                input_path = Path(provider['input']) if provider.get('input') else None
-                report = run_atom(name, source, output, provider_config=config, input_path=input_path)
-            except (MigrationError, OSError, ValueError) as exc:
-                write_json(output / 'failure.json', {'operation': name, 'status': 'failed', 'source_sha256': graph['source_sha256'], 'error': str(exc)})
-                raise MigrationError('Provider failed; retained diagnostics: ' + str(output)) from exc
-            artifact = (output / 'artifact.json').relative_to(project).as_posix()
-            graph['provider_artifacts'].append({'path': artifact, 'sha256': digest((output / 'artifact.json').read_bytes()), 'operation': name})
-            if report.get('issues'):
-                graph['issues'].extend({'rule': 'IOS.PROVIDER_UNRESOLVED', 'operation': name, 'detail': issue} for issue in report['issues'])
+        graph['provider_artifacts'], provider_issues = _capture_providers(project, source, graph, provider_plan)
+        graph['issues'].extend(provider_issues)
+    if snapshot(source)['sha256'] != graph['source_sha256']:
+        raise MigrationError('Source changed while extracting; the previous baseline stays published and nothing new is written')
     base = project / 'spec/baseline'
     if (base / 'ios-facts.json').exists():
         previous = read_json(base / 'ios-facts.json')
@@ -340,6 +403,7 @@ def validate_graph(source, project):
     current = extract(source, graph.get('variant'), manifest_evidence=evidence_path)
     if graph.get('provider_artifacts'):
         from .core import safe_child
+        from .provider_runs import retained_failures
         current['provider_artifacts'] = graph['provider_artifacts']
         for item in graph['provider_artifacts']:
             path = safe_child(project, item['path'])
@@ -349,6 +413,8 @@ def validate_graph(source, project):
             if report.get('source_sha256') != current['source_sha256']:
                 raise MigrationError('Provider evidence source is stale')
             current['issues'].extend({'rule': 'IOS.PROVIDER_UNRESOLVED', 'operation': item['operation'], 'detail': issue} for issue in report.get('issues', []))
+            current['issues'].extend({'rule': 'IOS.PROVIDER_RETRY', 'operation': item['operation'], 'detail': failure}
+                                     for failure in retained_failures(path))
     if graph != current:
         raise MigrationError('Source facts are stale or edited; re-extract and re-review affected coverage')
     expected = obligations(graph)
