@@ -1,5 +1,6 @@
 """Supplied budgets stop real scheduler dispatch without preventing landing."""
 import io
+import json
 import os
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -81,7 +82,10 @@ class UsageDispatchTests(unittest.TestCase):
     def test_live_budget_dispatches_and_over_limit_work_can_still_land(self):
         ledger = self.start('live')
         self.record(ledger, {'input_tokens': 100, 'output_tokens': 20})
-        action, code = scheduler.step(self.project, 'domains', usage_ledger=ledger, usage_run_id='cuike')
+        with redirect_stdout(io.StringIO()) as output:
+            code = native_pipeline.main(['next-batch', '--project', str(self.project),
+                '--usage-ledger', ledger.relative_to(self.project).as_posix(), '--usage-run-id', 'cuike'])
+        action = json.loads(output.getvalue())
         self.assertEqual((code, action['action']), (0, 'dispatch'))
         self.assertEqual(action['usage_budget']['total_tokens'], 120)
         self.assertTrue(action['usage_budget']['can_continue'])

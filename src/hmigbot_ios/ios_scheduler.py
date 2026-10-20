@@ -556,7 +556,7 @@ def step(project, wave, *, landing=False, usage_ledger=None, usage_run_id=None):
             from .usage_budget import check_for_dispatch
             ledger = Path(usage_ledger)
             if not ledger.is_absolute():
-                ledger = safe_child(project, str(ledger))
+                ledger = safe_child(project, ledger.as_posix())
             usage_observation = check_for_dispatch(ledger, run_id=usage_run_id, project_root=project)
             if not usage_observation['can_continue']:
                 reasons = usage_observation['reasons'] or ['no_remaining_dispatch_budget']
