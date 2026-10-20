@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 import json
-import os
 from pathlib import Path
 import tempfile
 from contextlib import contextmanager
@@ -144,7 +143,7 @@ class ProviderRun:
         """
         if not self.reserved:
             raise MigrationError('Provider attempt must be reserved before fixing inputs')
-        temporary_root = Path('D:/Temp') if os.name == 'nt' else Path(tempfile.gettempdir())
+        temporary_root = Path(tempfile.gettempdir())
         with tempfile.TemporaryDirectory(prefix='hmigbot-provider-inputs-', dir=temporary_root) as directory:
             private = Path(directory)
             config, bundle = None, None

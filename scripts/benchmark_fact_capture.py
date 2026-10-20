@@ -216,7 +216,7 @@ def run_benchmark(runtime, output, lines, files, timeout):
               "final_source_sha256": None,
               "timing_scope": "extract + obligations + final snapshot; excludes generation, import and report serialization",
               "limitations": ["Synthetic token signals are not compiler or runtime proof.",
-                              "No functional, visual, end-to-end migration, 20M-line or two-hour acceptance.",
+                              "No functional, visual, end-to-end migration, 20M-token or two-hour acceptance.",
                               "Do not extrapolate these timings to end-to-end migration throughput."]}
     try:
         report["source"] = generate_source(output / "source", lines, files)
