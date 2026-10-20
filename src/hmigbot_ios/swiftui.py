@@ -17,7 +17,7 @@ from .core import MigrationError
 # emitting a misleading "Unterminated ..." error. Deep nesting is legal Swift but
 # outside this grammar's resolve set, so it is reported, not silently accepted.
 SUPPORTED_INTERPOLATION_DEPTH = 64
-SUPPORTED_STRING_NESTING_DEPTH = 400
+SUPPORTED_STRING_NESTING_DEPTH = 64
 
 
 @dataclass(frozen=True)
@@ -64,9 +64,9 @@ def _interpolation_end(text, start, depth):
     This only preserves lexical boundaries. It does not bind/evaluate Swift
     expressions or claim their runtime value is known.
 
-    ``depth`` is the surrounding string/interpolation nesting depth, used to
-    bound recursion before Python's limit and to trigger the closed grammar's
-    capability protection for unsupported deep interpolation.
+    ``depth`` counts surrounding nested strings; interpolation parentheses have
+    their own bound. Both limits protect the closed grammar before Python's
+    recursion limit, without declaring deeply nested Swift invalid.
     """
     nest_depth, pos = 1, start
     while pos < len(text):
@@ -75,6 +75,12 @@ def _interpolation_end(text, start, depth):
             pos = len(text) if end == -1 else end
         elif text.startswith('/*', pos):
             pos = _block_comment_end(text, pos)
+        elif text[pos] == '#' and re.match(r'#+/', text[pos:]):
+            # Regex contents can contain parentheses, quotes and comment-like
+            # text. This lexer cannot assign their expression boundaries.
+            raise RequiresSyntaxProvider(
+                f"Regex literal requires syntax provider at line "
+                f"{text.count(chr(10), 0, pos) + 1}")
         elif _string_opening(text, pos) is not None:
             pos, _, _ = _string_end(text, pos, depth + 1)
         elif text[pos] == '(':
@@ -92,14 +98,13 @@ def _interpolation_end(text, start, depth):
                 return pos
         else:
             pos += 1
-    raise MigrationError(f"Unterminated string interpolation at line {text.count(chr(10), 0, start) + 1}")
+    raise MigrationError(f"Unterminated interpolation at line {text.count(chr(10), 0, start) + 1}")
 
 
 def _string_end(text, start, depth=0):
     hashes, quotes = _string_opening(text, start)
     closing = '"' * quotes + '#' * hashes
     escape = '\\' + '#' * hashes
-    extended = hashes > 0
     pos = start + hashes + quotes
     in_interpolation = depth > 0
     while pos < len(text):
@@ -107,38 +112,28 @@ def _string_end(text, start, depth=0):
             return pos + len(closing), hashes, quotes
         if text.startswith(escape, pos):
             following = pos + len(escape)
-            if quotes == 1 and following < len(text) and text[following] == chr(10):
-                # A line continuation ('\' + newline) keeps a single-line string
-                # legal in Swift but is outside this closed grammar; report it as
-                # a stable "requires syntax provider" case rather than accepting
-                # a string that silently spans lines.
-                raise RequiresSyntaxProvider(
-                    f"single-line string line continuation requires syntax provider at line "
-                    f"{text.count(chr(10), 0, start) + 1}")
+            if quotes == 1 and following < len(text) and text[following] in '\r\n':
+                # Swift's escaped-newline production belongs only to multiline
+                # strings; an escape cannot continue a single-line literal.
+                raise MigrationError(
+                    f"Unterminated string at line {text.count(chr(10), 0, start) + 1}")
             if following < len(text) and text[following] == '(':
                 if depth + 1 > SUPPORTED_STRING_NESTING_DEPTH:
                     raise RequiresSyntaxProvider(
-                        f"string/interpolation nesting exceeds supported bound of "
+                        f"Deep string interpolation nesting exceeds supported bound of "
                         f"{SUPPORTED_STRING_NESTING_DEPTH}; requires syntax provider at line "
                         f"{text.count(chr(10), 0, start) + 1}")
-                pos = _interpolation_end(text, following + 1, depth + 1)
+                pos = _interpolation_end(text, following + 1, depth)
             else:
                 pos = following + 1
         else:
-            if quotes == 1 and text[pos] == chr(10):
+            if quotes == 1 and text[pos] in '\r\n':
                 # A raw newline inside a single-line string means the closing
                 # quote is missing on this line: genuinely unterminated.
                 raise MigrationError(
                     f"Unterminated string at line {text.count(chr(10), 0, start) + 1}")
             pos += 1
     # Reached end of text while still scanning this string.
-    if extended:
-        # Extended-delimiter literals require the Swift semantic adapter / syntax
-        # provider; a malformed or unterminated one is reported as such rather
-        # than as a misleading "Unterminated string".
-        raise RequiresSyntaxProvider(
-            f"extended-delimiter string literal requires syntax provider at line "
-            f"{text.count(chr(10), 0, start) + 1}")
     if in_interpolation:
         # An open interpolation was never closed: the interpolation error is the
         # specific, stable diagnostic (not the phantom nested string's error).

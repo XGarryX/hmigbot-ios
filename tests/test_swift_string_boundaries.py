@@ -6,23 +6,25 @@ closed SwiftUI grammar uses for strings:
 * LEGAL: raw strings (e.g. #"..."#), multiline triple-quoted strings, interpolation
   with nested strings/comments, and escaped quotes all tokenize to a single string
   token and never lose literal content or leak inner identifiers as tokens.
-* LEGAL-BUT-UNSUPPORTED (stable "requires syntax provider" diagnostic): extended
-  delimiters that cannot be resolved, single-line line continuations, and nesting
+* LEGAL-BUT-UNSUPPORTED (stable "requires syntax provider" diagnostic): regex
+  literals in interpolations, and nesting
   deeper than the supported bound. Deep nesting is legal Swift but outside this
   grammar's resolve set, so it is reported, never silently accepted or crashed on.
 * ILLEGAL (genuine "Unterminated ..." / "Unterminated comment" errors): a
-  single-line string cannot contain a raw newline; an unclosed interpolation is a
+  single-line string cannot contain a raw or escaped newline; raw delimiters must
+  balance; an unclosed interpolation is a
   specific "Unterminated string interpolation"; comments must close.
 
 The tests load the current src package, so they track the implementation.
+Syntax contract: Swift's official Lexical Structure, String Literals grammar:
+https://docs.swift.org/latest/documentation/the-swift-programming-language/lexicalstructure/
 """
 
-import os
 from pathlib import Path
 import sys
 import unittest
 
-ROOT = Path(os.environ.get('HMIGBOT_TEST_RUNTIME', Path(__file__).resolve().parents[1])).resolve()
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
 from hmigbot_ios.core import MigrationError
@@ -130,7 +132,7 @@ class StringBoundaryTests(unittest.TestCase):
         self.assertEqual([t.value for t in tokens], ['"x"', '"y"'])
 
     def test_interpolation_at_supported_bound_is_legal(self):
-        expr = DQ + (BS + '(') * 64 + 'v' + ')' * 64 + DQ
+        expr = DQ + BS + '(' + '(' * 63 + 'v' + ')' * 64 + DQ
         tokens = lex('let label = ' + expr)
         self.assertEqual([t.value for t in tokens], [expr])
 
@@ -142,38 +144,41 @@ class StringBoundaryTests(unittest.TestCase):
         self.assertEqual([t.value for t in tokens], [s])
 
     # ------------------------------------------------------------------
-    # 8 LEGAL-BUT-UNSUPPORTED cases: stable "requires syntax provider".
+    # Malformed strings remain syntax errors, including extended delimiters.
     # ------------------------------------------------------------------
-    def test_unterminated_extended_is_syntax_provider(self):
-        with self.assertRaises(RequiresSyntaxProvider) as ctx:
+    def test_unterminated_extended_is_unterminated(self):
+        with self.assertRaises(MigrationError) as ctx:
             tokenize('let x = #"abc"')
-        self.assertIn('requires syntax provider', str(ctx.exception))
-        self.assertNotIn('Unterminated string', str(ctx.exception))
+        self.assertIn('Unterminated string', str(ctx.exception))
+        self.assertNotIsInstance(ctx.exception, RequiresSyntaxProvider)
 
-    def test_mismatched_hash_extended_is_syntax_provider(self):
-        with self.assertRaises(RequiresSyntaxProvider) as ctx:
+    def test_mismatched_hash_extended_is_unterminated(self):
+        with self.assertRaises(MigrationError) as ctx:
             tokenize('let x = ##"abc"#')
-        self.assertIn('requires syntax provider', str(ctx.exception))
+        self.assertIn('Unterminated string', str(ctx.exception))
+        self.assertNotIsInstance(ctx.exception, RequiresSyntaxProvider)
 
-    def test_unterminated_extended_inside_interpolation_is_syntax_provider(self):
-        with self.assertRaises(RequiresSyntaxProvider) as ctx:
+    def test_unterminated_extended_inside_interpolation_is_unterminated(self):
+        with self.assertRaises(MigrationError) as ctx:
             tokenize('let x = "' + BS + '(#"abc")')
-        self.assertIn('requires syntax provider', str(ctx.exception))
-        self.assertNotIn('Unterminated string', str(ctx.exception))
+        self.assertIn('Unterminated string', str(ctx.exception))
+        self.assertNotIsInstance(ctx.exception, RequiresSyntaxProvider)
 
-    def test_single_line_backslash_newline_is_syntax_provider(self):
-        with self.assertRaises(RequiresSyntaxProvider) as ctx:
+    def test_single_line_backslash_newline_is_unterminated(self):
+        # Swift lexicalstructure: escaped-newline is multiline-only.
+        with self.assertRaises(MigrationError) as ctx:
             tokenize('let x = "abc' + BS + NL + 'def"')
-        self.assertIn('requires syntax provider', str(ctx.exception))
+        self.assertIn('Unterminated string', str(ctx.exception))
+        self.assertNotIsInstance(ctx.exception, RequiresSyntaxProvider)
 
     def test_interpolation_nesting_80_exceeds_support(self):
-        expr = DQ + (BS + '(') * 80 + 'v' + ')' * 80 + DQ
+        expr = DQ + BS + '(' + '(' * 79 + 'v' + ')' * 80 + DQ
         with self.assertRaises(RequiresSyntaxProvider) as ctx:
             tokenize('let x = ' + expr)
         self.assertIn('requires syntax provider', str(ctx.exception))
 
     def test_interpolation_nesting_bound_plus_one_exceeds_support(self):
-        expr = DQ + (BS + '(') * 65 + 'v' + ')' * 65 + DQ
+        expr = DQ + BS + '(' + '(' * 64 + 'v' + ')' * 65 + DQ
         with self.assertRaises(RequiresSyntaxProvider) as ctx:
             tokenize('let x = ' + expr)
         self.assertIn('requires syntax provider', str(ctx.exception))
@@ -188,7 +193,7 @@ class StringBoundaryTests(unittest.TestCase):
 
     def test_deep_nesting_never_recursion_errors(self):
         # 300 levels of interpolation nesting must report, not crash.
-        expr = DQ + (BS + '(') * 300 + 'v' + ')' * 300 + DQ
+        expr = DQ + BS + '(' + '(' * 299 + 'v' + ')' * 300 + DQ
         try:
             tokenize('let x = ' + expr)
         except RecursionError:
@@ -212,7 +217,7 @@ class StringBoundaryTests(unittest.TestCase):
     def test_unterminated_interpolation_outer_open(self):
         with self.assertRaises(MigrationError) as ctx:
             tokenize('let x = "abc' + BS + '(def')
-        self.assertIn('Unterminated string interpolation', str(ctx.exception))
+        self.assertIn('Unterminated interpolation', str(ctx.exception))
 
     def test_unterminated_comment(self):
         with self.assertRaises(MigrationError) as ctx:
@@ -232,6 +237,32 @@ class StringBoundaryTests(unittest.TestCase):
         with self.assertRaises(MigrationError) as ctx:
             tokenize('let x = "')
         self.assertIn('Unterminated string', str(ctx.exception))
+
+    def test_single_line_cr_and_crlf_are_unterminated(self):
+        # Both line-break scalars are excluded from Swift quoted-text-item.
+        for delimiter in ('', '#', '##'):
+            for newline in ('\r', '\r\n'):
+                for escape in ('', BS + delimiter):
+                    with self.subTest(delimiter=delimiter, newline=newline, escape=escape):
+                        with self.assertRaisesRegex(MigrationError, 'Unterminated string') as ctx:
+                            tokenize(delimiter + DQ + 'a' + escape + newline + 'b' + DQ + delimiter)
+                        self.assertNotIsInstance(ctx.exception, RequiresSyntaxProvider)
+
+    def test_multiline_escaped_newline_remains_supported(self):
+        for delimiter in ('', '#', '##'):
+            expr = delimiter + DQ * 3 + NL + 'a' + BS + delimiter + NL + 'b' + NL + DQ * 3 + delimiter
+            with self.subTest(delimiter=delimiter):
+                self.assertEqual([t.value for t in lex(expr)], [expr])
+
+    def test_extended_regex_is_identified_before_its_contents(self):
+        for pattern in ('#/abc/#', '##/a"b(//c/##'):
+            with self.subTest(pattern=pattern):
+                with self.assertRaisesRegex(RequiresSyntaxProvider, 'Regex literal.*syntax provider'):
+                    tokenize(DQ + BS + '(matches(' + pattern + ', text))' + DQ)
+
+    def test_regex_like_text_inside_nested_string_stays_text(self):
+        expr = DQ + BS + '(render("#/[(]/#"))' + DQ
+        self.assertEqual([t.value for t in lex(expr)], [expr])
 
     # ------------------------------------------------------------------
     # Contract: positive parse path still works (Text with interpolation).
