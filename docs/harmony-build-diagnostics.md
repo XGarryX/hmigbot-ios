@@ -26,6 +26,22 @@ DevEco skill data or an explicit heuristic marker). Unmatched errors stay
 
 ## API
 
+`build-target` now saves `diagnostics.json` beside its original logs and pins its
+hash in `build.json`. Compiler errors or a failure marker contradicting exit zero
+prevent a `build_passed` result. A successful build still needs its HAP, success
+marker and current source fingerprint; diagnostics alone do not prove compilation.
+
+For logs captured separately, run from the distribution root:
+
+```powershell
+python scripts/ios2harmony.py diagnose-build --stdout 'D:/Build/stdout.log' --stderr 'D:/Build/stderr.log' --returncode 1 --module entry --output 'D:/Build/diagnostics.json'
+```
+
+Use the real return code; omit it only when unknown (for example, a timeout).
+The CLI prints a small receipt; findings remain in the output report. Failed or
+conflicting build evidence exits 3, invalid input exits 2, and a completed
+diagnosis with a clean zero exit returns 0 without verifying UI or functionality.
+
 ```python
 import json
 from pathlib import Path

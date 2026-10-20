@@ -74,6 +74,13 @@ def parser():
     build.add_argument("--config", type=Path, required=True)
     build.add_argument("--output", type=Path, required=True)
     build.add_argument("--timeout", type=int, default=300)
+    diag = sub.add_parser('diagnose-build', help='Diagnose captured Harmony build logs without modifying the project')
+    diag.add_argument('--stdout', type=Path)
+    diag.add_argument('--stderr', type=Path)
+    diag.add_argument('--returncode', type=int, help='Actual process exit code; omit only when unknown or timed out')
+    diag.add_argument('--output', type=Path, required=True)
+    for identity in ('module', 'module-target', 'product'):
+        diag.add_argument('--' + identity)
     evidence = sub.add_parser("evidence-pack", help="Package already captured source evidence")
     evidence.add_argument("--source", type=Path, required=True)
     evidence.add_argument("--artifacts", type=Path, required=True)
@@ -223,6 +230,15 @@ def dispatch(args):
         return build_target(load_config(args.config.resolve()), args.output, args.timeout)
     if command == "evidence-pack":
         return pack(args.source, args.artifacts, args.output, args.kind, args.provider)
+    if command == 'diagnose-build':
+        from . import harmony_diagnostics as diagnostics
+        target = {name: getattr(args, name) for name in ('module', 'module_target', 'product')
+                  if getattr(args, name) is not None}
+        report = diagnostics.analyze(args.stdout, args.stderr, args.returncode, target=target or None)
+        path = diagnostics.save_report(report, args.output)
+        from .core import digest as log_digest
+        return {key: report[key] for key in ('status', 'build_command_passed', 'functional_verified', 'ui_verified', 'summary')} | {
+            'report': str(path.resolve()), 'sha256': log_digest(path.read_bytes())}
     if command == "evidence-check":
         return validate(args.source.resolve(), args.bundle.resolve())
     if command == "audit-hmigbot":
@@ -252,7 +268,7 @@ def main(argv=None):
         args = parser().parse_args(argv)
         result = dispatch(args)
         emit_json(result)
-        if result.get("integrity_passed") is False or result.get("status") in {"unavailable", "build_failed", "capture_failed", "observations_differ", "stale_source"}:
+        if result.get("integrity_passed") is False or result.get("status") in {"unavailable", "build_failed", "capture_failed", "observations_differ", "stale_source", 'fail_with_errors', 'fail_unparsed', 'conflicting_build_evidence'}:
             return 3
         return 0
     except (MigrationError, OSError, UnicodeError, RecursionError) as exc:

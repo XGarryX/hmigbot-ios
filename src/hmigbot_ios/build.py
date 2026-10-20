@@ -5,7 +5,7 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from .core import SCHEMA, MigrationError, digest, json_bytes, snapshot, write_new_tree
+from .core import SCHEMA, MigrationError, atomic_write, digest, json_bytes, snapshot, write_new_tree
 from .generate import verify
 
 
@@ -75,5 +75,15 @@ def build_target(config, output: Path, timeout=300):
               "hvigor_success_marker": hvigor_success,
               "status": "build_passed" if code == 0 and artifacts and hvigor_success and source_before == source_after else "build_failed",
               "timeout": code is None, "behavior": "not_verified", "device_install": "not_run"}
-    write_new_tree(output, {"build.json": json_bytes(report), "stdout.log": stdout, "stderr.log": stderr})
+    # Retain real logs first. The accepted build receipt is published only after
+    # checking for contradictory compiler errors, even when a wrapper exits zero.
+    write_new_tree(output, {"stdout.log": stdout, "stderr.log": stderr})
+    from .harmony_diagnostics import analyze, save_report
+    diagnostics = analyze(output / 'stdout.log', output / 'stderr.log', code,
+                          target={'module': module, 'module_target': module_target, 'product': product})
+    diagnostic_path = save_report(diagnostics, output / 'diagnostics.json')
+    report['diagnostics'] = {'path': 'diagnostics.json', 'sha256': digest(diagnostic_path.read_bytes())}
+    if not diagnostics['build_command_passed']:
+        report['status'] = 'build_failed'
+    atomic_write(output / 'build.json', json_bytes(report))
     return report

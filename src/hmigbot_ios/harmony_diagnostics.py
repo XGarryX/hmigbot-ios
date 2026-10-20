@@ -294,7 +294,7 @@ def _classify(text: str, code: str | None) -> dict[str, Any]:
         return code_rule
     if matched:
         return matched
-    if code:
+    if code and code.startswith('arkts-'):
         return {"category": "arkts_lint",
                 "suggestion": "Apply the rule text for '%s' from the ArkTS type specification; no local fix mapping exists." % code,
                 "confidence": "medium",
@@ -336,10 +336,11 @@ def _flush(current: dict[str, Any] | None, findings: list[dict[str, Any]],
            stream: str, counters: dict[str, Any]) -> None:
     if current is None:
         return
-    if len(findings) >= _MAX_FINDINGS:
+    if counters.get('findings', 0) >= _MAX_FINDINGS:
         counters["truncated"] = True
         return
     findings.append(_finalize_finding(current, stream))
+    counters['findings'] = counters.get('findings', 0) + 1
 
 
 def _scan_stream(lines: list[str], stream: str,
