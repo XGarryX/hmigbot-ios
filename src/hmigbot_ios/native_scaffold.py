@@ -30,6 +30,7 @@ foreign artifact, path escape, content/path change, stale index or duplicate FID
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -291,6 +292,19 @@ def build_files(candidates):
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
+def _reviewed_snapshot(source, project, expected_sha256=None):
+    index_path = project / 'spec/baseline/ios-source-index.json'
+    if not index_path.is_file():
+        raise MigrationError('Source index missing: run source-index/refresh and review before scaffolding')
+    index = read_json(index_path)
+    current = snapshot(source)
+    if index.get('source_sha256') != current['sha256'] or index.get('files') != current['files']:
+        raise MigrationError('Source changed or source index files disagree; re-review the source baseline before scaffolding')
+    if expected_sha256 is not None and expected_sha256 != current['sha256']:
+        raise MigrationError('Provided source_sha256 does not match current source')
+    return index, current
+
+
 def scaffold(project, *, source_sha256=None):
     """Build the canonical derived scaffold candidate for a reviewed project.
 
@@ -299,22 +313,14 @@ def scaffold(project, *, source_sha256=None):
     (we never fabricate a feature/page to fill the gap).
     """
     source, project = context(project)
-    index_path = project / 'spec/baseline/ios-source-index.json'
-    if not index_path.is_file():
-        raise MigrationError('Source index missing: run source-index/refresh and review before scaffolding')
-    index = read_json(index_path)
-    current = snapshot(source)
-    source_change = index.get('source_sha256') != current['sha256']
-    if source_change:
-        raise MigrationError('Source changed since index; re-review the source baseline before scaffolding')
-    if source_sha256 is not None and source_sha256 != current['sha256']:
-        raise MigrationError('Provided source_sha256 does not match current source')
+    index, current = _reviewed_snapshot(source, project, source_sha256)
 
     candidates = assign_ids(discover_candidates(source, index))
     if not any(c['is_ui'] for c in candidates):
         raise MigrationError('Scaffold found no UI surface candidate; author features/pages manually '
                              'rather than fabricating them')
     files = build_files(candidates)
+    _reviewed_snapshot(source, project, current['sha256'])
 
     ui = [c for c in candidates if c['is_ui']]
     summary = {
@@ -343,7 +349,7 @@ def scaffold(project, *, source_sha256=None):
         'scaffold_schema': 'schemas/spec-scaffold.schema.json',
         'source_platform': 'ios', 'source_sha256': current['sha256'],
         'candidate': True, 'needs_review': True, 'spec_complete': False, 'behavior_verified': False,
-        'enterable_plan': False, 'source_change_detected': source_change,
+        'enterable_plan': False, 'source_change_detected': False,
         'summary': summary, 'candidates': candidate_list,
         'files': {path: {'kind': meta['kind'], 'candidate_id': meta.get('candidate_id')} for path, meta in files.items()},
         'file_contents': {path: meta['content'] for path, meta in files.items()},
@@ -377,11 +383,30 @@ def _fid_conflict(base, path):
             if existing.name != target.name:
                 return fid
     elif _ALLOWED_PAGE.match(path):
-        pid = target.stem.split('_', 1)[0]
+        pid = re.match(r'page_\d{4}', target.stem)[0]
         for existing in (base / 'ui').glob(f'{pid}_*.md'):
             if existing.name != target.name:
                 return pid
     return None
+
+
+def _rollback_created(project, created):
+    """Remove only our unchanged exclusive creations; retain another author's edits."""
+    retained = []
+    for item in reversed(created):
+        target = item['target']
+        try:
+            if not target.exists() and not target.is_symlink():
+                continue
+            if (target.is_symlink() or safe_child(project, item['path']) != target
+                    or (target.stat().st_dev, target.stat().st_ino) != item['identity']
+                    or target.read_bytes() != item['content']):
+                retained.append(item['path'])
+                continue
+            target.unlink()
+        except (OSError, MigrationError):
+            retained.append(item['path'])
+    return sorted(retained)
 
 
 def apply_scaffold(project, candidate):
@@ -396,8 +421,8 @@ def apply_scaffold(project, candidate):
     * Identity (``stable_key`` set), source hash and file content must match the
       re-derived candidate exactly; a drift, hand-inserted baseline, stale index or
       tampered content is refused.
-    * All paths and conflicts (duplicate FID / page_id owned by a different main
-      document) are pre-checked before any file is written, so apply is all-or-nothing.
+    * All paths and conflicts are pre-checked. Exclusive creation cannot overwrite
+      another author; failure rolls back only our still-unchanged creations.
     * Existing documents are never overwritten; only same-content idempotent fills are
       permitted.
     """
@@ -429,19 +454,45 @@ def apply_scaffold(project, candidate):
         target = safe_child(project, path)
         if not target.is_relative_to(baseline):
             raise MigrationError('Scaffold path escapes spec/baseline: ' + path)
+        fid = _fid_conflict(baseline, path)
+        if fid is not None:
+            raise MigrationError('Conflicting main document for ' + fid + '; refuse to create duplicate ID')
         if target.exists():
             if target.read_text(encoding='utf-8-sig') != content:
                 raise MigrationError('Existing document conflicts with candidate (would overwrite): ' + path)
             skipped.append(path)
             continue
-        fid = _fid_conflict(baseline, path)
-        if fid is not None:
-            raise MigrationError('Conflicting main document for ' + fid + '; refuse to create duplicate ID')
-        plan.append((target, content))
+        plan.append((path, target, content.encode('utf-8')))
     created = []
-    for target, content in plan:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding='utf-8')
-        created.append(target.relative_to(project).as_posix())
-    return {'created': sorted(created), 'skipped': sorted(skipped), 'refused': [],
+    try:
+        _reviewed_snapshot(source, project, rederived['source_sha256'])
+        for path, target, content in plan:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if safe_child(project, path) != target:
+                raise MigrationError('Scaffold destination changed during apply: ' + path)
+            fid = _fid_conflict(baseline, path)
+            if fid is not None:
+                raise MigrationError('Conflicting main document for ' + fid + '; refuse to create duplicate ID')
+            # Unbuffered writes let rollback track the exact prefix actually
+            # written even if a later write fails (for example, a full disk).
+            with target.open('xb', buffering=0) as stream:
+                stat = os.fstat(stream.fileno())
+                item = {'path': path, 'target': target, 'identity': (stat.st_dev, stat.st_ino), 'content': b''}
+                created.append(item)
+                while len(item['content']) < len(content):
+                    offset = len(item['content'])
+                    count = stream.write(content[offset:])
+                    if not count:
+                        raise OSError('Scaffold write made no progress: ' + path)
+                    item['content'] = content[:offset + count]
+        _reviewed_snapshot(source, project, rederived['source_sha256'])
+    except BaseException as exc:
+        retained = _rollback_created(project, created)
+        detail = '; retained changed/unremovable files: ' + ', '.join(retained) if retained else ''
+        if not isinstance(exc, (MigrationError, OSError, ValueError)):
+            if retained:
+                exc.add_note('Scaffold rollback' + detail)
+            raise
+        raise MigrationError('Scaffold apply failed; unchanged new files rolled back: ' + str(exc) + detail) from exc
+    return {'created': sorted(item['path'] for item in created), 'skipped': sorted(skipped), 'refused': [],
             'spec_complete': False, 'behavior_verified': False}
