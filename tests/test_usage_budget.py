@@ -189,6 +189,16 @@ class UsageBudgetTests(unittest.TestCase):
                         operation(self.ledger)
                 self.assertEqual(self.ledger.read_bytes(), before)
 
+    def test_finished_host_identity_is_still_verified(self):
+        self.assertEqual(self.finish()['status'], 'PASS')
+        elapsed = budget.summary(self.ledger)['elapsed_seconds']
+        with patch.object(budget, '_clock_source', return_value='another-host'):
+            report = budget.summary(self.ledger)
+        self.assertEqual(report['status'], 'UNKNOWN')
+        self.assertIn('clock_source_changed', report['clock_anomalies'])
+        self.assertEqual(report['elapsed_seconds'], elapsed)
+        self.assertEqual(budget.summary(self.ledger)['status'], 'UNKNOWN')
+
     def test_erased_clock_disagreement_is_rejected_after_finish(self):
         self.clock[0] += 100
         self.clock[1] += 1

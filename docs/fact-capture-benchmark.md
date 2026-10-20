@@ -3,7 +3,7 @@
 This benchmark measures `ios_facts.extract`, obligation construction and a final
 source snapshot in a fresh worker process. It makes no provider or model calls;
 tokens are `not_applicable`. It does not convert an application and does not
-establish functional, visual, end-to-end migration, two-hour or 20M-line acceptance.
+establish functional, visual, end-to-end migration, two-hour or 20M-token acceptance.
 There is no overall migration PASS. Do not extrapolate its timings to migration
 throughput.
 
@@ -22,7 +22,7 @@ $env:TEMP = 'D:/Temp'
 $env:TMP = 'D:/Temp'
 $env:PYTHONDONTWRITEBYTECODE = '1'
 $python = 'D:/DevTools/hmigbot-test-20261020/Scripts/python.exe'
-$runtime = 'D:/IOS2Harmony/hmigbot-implementation-20261020/integrated/src'
+$runtime = 'D:/IOS2Harmony/hmigbot-implementation-20261020/integration/src'
 & $python scripts/benchmark_fact_capture.py --runtime $runtime --lines 100000 --files 100 --output D:/Temp/fact-capture-100k-run1 --timeout 300
 & $python scripts/benchmark_fact_capture.py --runtime $runtime --lines 200000 --files 200 --output D:/Temp/fact-capture-200k-run1 --timeout 600
 # Optional extension probe, not an acceptance requirement:

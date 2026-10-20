@@ -266,6 +266,8 @@ def _observe(data: dict) -> None:
                    else "boot_identity_changed" if data["clock_boot_id"] != boot_id else None)
     if boot_reason and boot_reason not in anomalies:
         anomalies.append(boot_reason)
+    if data['clock_source'] != _clock_source() and 'clock_source_changed' not in anomalies:
+        anomalies.append('clock_source_changed')
     if data["finished"]:
         return
     wall, mono = _clock()
@@ -273,8 +275,7 @@ def _observe(data: dict) -> None:
         raise BudgetError("nonfinite clock observation")
     previous = data["clock"]
     wall_step, mono_step = wall - previous["last_wall"], mono - previous["last_mono"]
-    for condition, reason in ((data["clock_source"] != _clock_source(), "clock_source_changed"),
-                              (wall_step < 0, "wall_clock_reversed"),
+    for condition, reason in ((wall_step < 0, "wall_clock_reversed"),
                               (mono_step < 0, "monotonic_clock_reversed"),
                               (abs(wall_step - mono_step) > 5
                                or abs((wall - previous["start_wall"]) - (mono - previous["start_mono"])) > 5,

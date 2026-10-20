@@ -84,6 +84,7 @@ def _execution_evidence(path):
         r'spec/reports/ios-blocked-recovery/[0-9a-f]{64}/[a-z-]+\.json',
         r'spec/reports/ios-blocked-receipts/(?:understand|domains)/[a-z0-9_-]+/[0-9a-f]{64}\.json',
         r'spec/reports/derived/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:json|md)',
+        r'spec/reports/derived/(?:[A-Za-z0-9_.-]+/)*usage-budget\.json\.lock',
         r'spec/reports/behavior/[A-Za-z0-9_-]+/(?:stdout|stderr)\.log',
         r'spec/reports/host-oracle/(?:support/)?[A-Za-z0-9_.-]+\.(?:py|cjs|mjs|js|json|log|md)',
         r'spec/pipeline-run-\d{8}\.md',
