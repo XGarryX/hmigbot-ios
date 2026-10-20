@@ -4,6 +4,7 @@ The original kernel remains the only state/dispatch/journal writer. This is
 deliberately separate from normal frozen-plan dispatch and landing.
 """
 from pathlib import Path
+import base64
 import re
 
 from .core import MigrationError, atomic_write, digest, json_bytes, read_json, safe_child, write_json
@@ -22,7 +23,7 @@ def _review(path):
     value = read_json(path)
     fields = {'version', 'wave', 'task_id', 'attempt', 'reviewer', 'reason', 'workers_stopped',
               'old', 'new', 'changes', 'replan_request'}
-    _require(isinstance(value, dict) and set(value) in (fields, fields | {'authoring_rebind'}), 'review schema fields differ')
+    _require(isinstance(value, dict) and fields <= set(value) <= fields | {'authoring_rebind', 'managed_upgrade'}, 'review schema fields differ')
     _require(type(value['version']) is int and value['version'] == 1 and value['wave'] in {'domains', 'understand'}, 'review version/wave')
     _require(isinstance(value['task_id'], str) and re.fullmatch(r'[a-z][a-z0-9_-]*', value['task_id']), 'task id')
     _require(type(value['attempt']) is int and value['attempt'] > 0, 'attempt')
@@ -38,6 +39,58 @@ def _review(path):
     return value
 
 
+MANAGED = {
+    '.agents/skills/ios-source-analysis/SKILL.md': 'skills/ios-source-analysis/SKILL.md',
+    '.agents/skills/ios-source-analysis/references/harness-v2.md': 'skills/ios-source-analysis/references/harness-v2.md',
+}
+
+
+def _managed_binding(review, manifest, record):
+    """Validate archived or fresh bytes independently of mutable current state."""
+    proof = review['managed_upgrade']
+    _require(isinstance(proof, dict) and set(proof) == {'install_manifest_sha256', 'old_runtime_revision', 'current_runtime_revision', 'files'}
+             and _sha(proof['install_manifest_sha256']) and proof['old_runtime_revision'] == review['old']['contract_revision']
+             and proof['current_runtime_revision'] == review['new']['contract_revision'], 'managed upgrade revision/schema')
+    _require(isinstance(manifest, dict) and manifest.get('owner') == 'hmigbot-ios'
+             and type(manifest.get('schema_version')) is int and manifest['schema_version'] == 1
+             and isinstance(manifest.get('files'), dict), 'managed install manifest schema')
+    _require(isinstance(proof['files'], list) and 1 <= len(proof['files']) <= 2
+             and isinstance(record, dict) and set(record) == {'proof', 'files'} and record['proof'] == proof
+             and isinstance(record['files'], list) and len(record['files']) == len(proof['files']), 'managed proof files')
+    seen = set()
+    for item, saved in zip(proof['files'], record['files']):
+        _require(isinstance(item, dict) and set(item) == {'path', 'old_sha256', 'new_sha256', 'old_copy'}
+                 and item['path'] in MANAGED and item['path'] not in seen and _sha(item['old_sha256'])
+                 and _sha(item['new_sha256']) and item['old_sha256'] != item['new_sha256'], 'unsupported managed path/binding')
+        path = item['path']; seen.add(path)
+        _require(isinstance(saved, dict) and set(saved) == {'path', 'old_base64', 'public_base64', 'package_base64'}
+                 and saved['path'] == path, 'managed archived byte schema')
+        old, public, package = [base64.b64decode(saved[k], validate=True) for k in ('old_base64', 'public_base64', 'package_base64')]
+        _require(digest(old) == item['old_sha256'] and public == package and digest(public) == item['new_sha256']
+                 and manifest['files'].get(path) == item['new_sha256']
+                 and manifest['files'].get('.hmigbot-ios/plugin/' + MANAGED[path]) == item['new_sha256'], 'managed manifest/public/package byte mismatch')
+    return seen
+
+
+def _managed_upgrade(project, review, before):
+    from .ios_scheduler import ROOT
+    _require(Path(ROOT).resolve() == safe_child(project, '.hmigbot-ios/plugin'), 'managed proof requires the installed public runtime')
+    manifest_path = safe_child(project, '.hmigbot-ios/install.json')
+    proof = review['managed_upgrade']
+    _require(isinstance(proof, dict) and digest(manifest_path.read_bytes()) == proof.get('install_manifest_sha256'), 'managed install manifest digest')
+    _require(isinstance(proof.get('files'), list), 'managed files schema')
+    record = {'proof': proof, 'files': []}
+    for item in proof['files']:
+        _require(isinstance(item, dict) and item.get('path') in MANAGED, 'unsupported managed path')
+        path = item['path']
+        _require(before.get(path) == item.get('old_sha256'), 'managed original dispatch binding')
+        record['files'].append({'path': path, 'old_base64': base64.b64encode(Path(item['old_copy']).read_bytes()).decode('ascii'),
+                                'public_base64': base64.b64encode(safe_child(project, path).read_bytes()).decode('ascii'),
+                                'package_base64': base64.b64encode(safe_child(project, '.hmigbot-ios/plugin/' + MANAGED[path]).read_bytes()).decode('ascii')})
+    paths = _managed_binding(review, read_json(manifest_path), record)
+    return paths, manifest_path.read_bytes(), record
+
+
 def _cache_names(review, presence):
     _require(isinstance(presence, dict) and set(presence) == {'journal_before_present'}
              and type(presence['journal_before_present']) is bool, 'cache control presence schema')
@@ -48,6 +101,8 @@ def _cache_names(review, presence):
         names.add('journal-before.json')
     if 'authoring_rebind' in review:
         names.update({'authoring-old.json', 'authoring-new.json'})
+    if 'managed_upgrade' in review:
+        names.update({'managed-install.json', 'managed-upgrade.json'})
     return names
 
 
@@ -81,6 +136,12 @@ def _cached_result(project, archive, review, key):
         binding = review['authoring_rebind']
         _require(seal['files']['authoring-old.json'] == binding['old_sha256']
                  and seal['files']['authoring-new.json'] == binding['new_sha256'], 'cache authoring binding')
+    if 'managed_upgrade' in review:
+        _require(seal['files']['managed-install.json'] == review['managed_upgrade']['install_manifest_sha256'], 'cache managed manifest binding')
+        record = read_json(archive / 'managed-upgrade.json')
+        _managed_binding(review, read_json(archive / 'managed-install.json'), record)
+        before = read_json(archive / 'dispatch-evidence.json')['before_files']
+        _require(all(before.get(item['path']) == item['old_sha256'] for item in review['managed_upgrade']['files']), 'cache managed original dispatch binding')
     result = read_json(archive / 'result.json')
     fields = {'status', 'task_id', 'attempt', 'archive', 'review_sha256', 'state_writer', 'action',
               'prior_success_inherited', 'behavior_verified'}
@@ -235,6 +296,7 @@ def recover_blocked(project, review_path):
             expected = reviewed.get(ref['path'], {}).get('new_sha256', ref['sha256'])
             _require(digest(safe_child(project, ref['path']).read_bytes()) == expected, 'unreviewed task input change')
     derived = set()
+    managed = None
     rebind = review.get('authoring_rebind')
     if rebind is not None:
         _require(isinstance(rebind, dict) and set(rebind) == {'path', 'previous_copy', 'old_sha256', 'new_sha256'}, 'authoring rebind schema')
@@ -256,6 +318,10 @@ def recover_blocked(project, review_path):
         _require(new_authoring['inventory_sha256'] == digest(json_bytes(inventory))
                  and new_authoring.get('source_sha256') == old['source_sha256'], 'authoring current inventory/source binding')
         derived.add(path)
+    if 'managed_upgrade' in review:
+        managed_paths, managed_manifest, managed_record = _managed_upgrade(project, review, before)
+        derived.update(managed_paths)
+        managed = (managed_manifest, managed_record)
     actual = scheduler.execution_files(project)
     changed = {p for p in before.keys() | actual.keys() if before.get(p) != actual.get(p)}
     _require(not (changed - set(definition['ownership']) - set(reviewed) - {request_ref['path']} - derived), 'changed files outside ownership/review: '
@@ -276,6 +342,9 @@ def recover_blocked(project, review_path):
     if rebind is not None:
         atomic_write(archive / 'authoring-old.json', previous_copy.read_bytes())
         atomic_write(archive / 'authoring-new.json', current_copy.read_bytes())
+    if managed is not None:
+        atomic_write(archive / 'managed-install.json', managed[0])
+        write_json(archive / 'managed-upgrade.json', managed[1])
     action = scheduler._land_native_receipts(project, wave, plan_path, [(ident, receipt_path)])
     after = read_json(journal_path)
     rows = [r for r in after.get('operation_outputs', []) if r.get('workflow_id') == wave

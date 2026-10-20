@@ -172,3 +172,18 @@ disposition改动一律拒绝。旧新原件纳入首次归档；不全局豁免
 journal/state/action一致。单改result或同步改seal仍伪装成功均拒绝；不把损坏字段改回false
 后静默接受。缺seal或首证据不完整保留拒绝，不迁移/补写/覆盖旧归档。seal是本地完整性
 与事故取证边界，不能代替独立审阅或防御对整份历史及审阅输入的恶意一致重写。
+
+
+### 两份公开托管说明升级的恢复证明
+
+可选`managed_upgrade`只接纳`.agents/skills/ios-source-analysis/SKILL.md`和
+`.agents/skills/ios-source-analysis/references/harness-v2.md`实际发生变化的子集：
+`{"install_manifest_sha256":"<当前.hmigbot-ios/install.json原字节摘要>","old_runtime_revision":"<review.old.contract_revision>","current_runtime_revision":"<review.new.contract_revision>","files":[{"path":"<上述精确公开路径>","old_sha256":"<原dispatch.before_files值>","new_sha256":"<当前官方清单/公开文件/包内skills三方相同摘要>","old_copy":"<原派发版本已保存原字节的绝对路径>"}]}`。
+
+须经实际已安装的公开runtime调用。旧hash直接绑定原dispatch，不要求等于最近一次升级
+之前版本；支持原任务跨已接受中间升级。当前清单owner/schema与清单原字节摘要须吻合，
+公开文件和包内对应skills字节须相同且两条清单记录同时吻合。不能将其它.agents、配置、
+App或任意JSON放入证明。首次归档保留`managed-install.json`原清单与`managed-upgrade.json`
+证明/旧公开原字节/当前公开及包内原字节（base64）；完整纳入seal，重复时重新校验归档
+证明和旧dispatch绑定，不依赖后来又升级的当前文件。此证明只解释托管说明变化，不能
+声称任务生成/行为成功；其它普通冻结和恢复保护保持。
