@@ -43,6 +43,12 @@ coverage 额外核对 AC 所属 feature 的源锚点，以及精确共享合同�
 
 同步 Xcode group 仅支持显式目标关系及可验证例外的保守子集；未知 flags、phase 例外、外部/生成文件与不明确路径继续阻断。项目声明范围不提升为实际 compiler membership 或 `#if` 生效分支证明。
 
+Xcode 云采集在真实 device-build 后、清理 DerivedData 前，从 SwiftFileList 与构建日志采集 `source_build_membership`。selected-build 消费新合同需重放原始记录并检查完整性、成员内容摘要、选择身份及清单一致性；`incomplete`/`unresolved` 不可缩小源分母。调用者提供的 scheme/configuration/SDK/target 集与采集矛盾时拒绝。源图钉住 manifest、membership 的摘要和 selection；构建成员记录仍不证明 `#if` 分支、运行行为或构建真实性。旧版仅含 `source_files` 的无版本合同继续兼容，不能升级成新合同的完整证据。
+
+facts 对每个当前文件只保留一份 bytes/text/lines，首次读取即核对快照摘要，token 与 snippet 使用同份内容，避免读取期间 A→B→A 后事实错绑。provider 运行使用原子独占 attempt，成功/失败原件分别保留；实际消费的配置与输入固定到临时副本，副本不进入工程证据。外部工具/SDK 身份尚无法完整证明，因此本版不自动复用任何 provider 成功结果；不把配置路径相同当作工具相同。
+
+鸿蒙 `build-target` 保存原始日志及 `diagnostics.json`，并在 `build.json` 钉住诊断摘要。退出码为 0 但同时有错误/失败日志时拒绝构建 PASS。单独采集的日志可使用 [诊断入口](harmony-build-diagnostics.md)；建议只用于定位，不自动修改签名或应用。当前规则仅经合成日志检验，真实项目日志需另验。
+
 ## 用量与时间账本
 
 在完整迁移的首次必要工作之前启动，直到构建、修复、等待及独立验证全部结束后再完成。开始前的工程目标准备与必要基线工作也应纳入计时范围。

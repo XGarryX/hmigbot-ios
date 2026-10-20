@@ -5,6 +5,9 @@
 - Keep target-specific extraction findings distinct; restore the original Swift string regression cases.
 - Project explicit decision consumers into task prompts while preserving shared decisions and full ledger hashes.
 - Add replayable usage and wall-time budgets, boot/host checks and isolated synthetic scale probes.
+- Bind per-file fact caches to content hashes and preserve concurrent provider attempts and their exact inputs.
+- Capture actual Xcode compiler membership and pin its identity when a selected-build scope consumes it.
+- Save reviewed Harmony build diagnostics, reject contradictory success logs and stage the real base Python on Windows.
 - Preserve unknown/unsupported/unverified states. Application equivalence and end-to-end performance require separate evidence.
 
 # 0.9.2 — 2026-10-17

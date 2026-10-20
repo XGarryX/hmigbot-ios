@@ -154,6 +154,31 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
         manifest = read_json(bundle / 'manifest.json')
         if captured['kind'] != 'source_build' or 'artifacts/source-files.json' not in manifest['artifacts'] or membership.get('source_files') != variant['source_files']:
             raise MigrationError('Selected membership must match hashed source-build evidence')
+        if membership.get('kind') == 'source_build_membership':
+            from .source_build_membership import validate as validate_membership
+            checked = validate_membership(source, membership, capture=bundle / 'artifacts')
+            if checked['membership_status'] != 'complete':
+                raise MigrationError('Selected build requires complete captured compiler membership')
+            selection = membership['selection']
+            if 'selection' in variant and variant['selection'] != selection:
+                raise MigrationError('Selected build identity differs from captured membership')
+            for key in ('scheme', 'configuration', 'sdk', 'product', 'xcode_version', 'toolchain', 'targets', 'architectures'):
+                if key in variant and variant[key] != selection.get(key):
+                    raise MigrationError('Selected build identity differs from capture: ' + key)
+            if 'target' in variant and selection['targets'] != [variant['target']]:
+                raise MigrationError('Single target identity does not match the captured target set')
+            pinned = {'selection': selection, 'source_membership': 'captured_compiler_inputs',
+                      'membership_status': 'complete', 'effective_build': 'unresolved',
+                      'evidence_manifest_sha256': digest((bundle / 'manifest.json').read_bytes()),
+                      'membership_sha256': digest((bundle / 'artifacts/source-files.json').read_bytes())}
+            for key, expected in pinned.items():
+                if key in variant and variant[key] != expected:
+                    raise MigrationError('Selected build evidence reference changed: ' + key)
+            variant = {**variant, **pinned}
+        elif set(membership) != {'source_files'}:
+            # The previous unversioned source_files-only shape remains readable;
+            # malformed modern evidence cannot bypass validation as legacy data.
+            raise MigrationError('Unsupported source build membership contract')
     evaluated_manifests, evidence_ref = None, None
     if manifest_evidence is not None:
         from .manifest_evidence import validate
