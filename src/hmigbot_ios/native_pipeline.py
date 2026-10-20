@@ -356,6 +356,9 @@ def main(argv=None):
             selection.add_argument('--all-candidates', action='store_true')
         if name in {'next-batch', 'land-results'}:
             p.add_argument('--wave', default='domains')
+        if name == 'next-batch':
+            p.add_argument('--usage-ledger', type=Path, help='Check supplied usage before dispatch; requires --usage-run-id')
+            p.add_argument('--usage-run-id', help='Expected run identity for --usage-ledger')
     resolver = commands.add_parser('resolve')
     resolver.add_argument('--source', required=True, type=Path)
     resolver.add_argument('--anchor', required=True)
@@ -557,7 +560,9 @@ def main(argv=None):
             result = replan(args.project, args.input)
         elif args.command in {'next-batch', 'land-results'}:
             from .ios_scheduler import step
-            result, code = step(args.project, args.wave, landing=args.command == 'land-results')
+            options = ({'usage_ledger': args.usage_ledger, 'usage_run_id': args.usage_run_id}
+                       if args.command == 'next-batch' else {})
+            result, code = step(args.project, args.wave, landing=args.command == 'land-results', **options)
         elif args.command == 'validate': result, code = validate_tools(args.project)
         elif args.command == 'build': result, code = build_project(args.project)
         elif args.command == 'doctor':

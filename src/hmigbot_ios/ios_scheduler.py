@@ -466,9 +466,13 @@ def generate(project, input_path, *, validate_only=False):
             'state_writer': 'original state_update.py', 'behavior_verified': False}
 
 
-def step(project, wave, *, landing=False):
+def step(project, wave, *, landing=False, usage_ledger=None, usage_run_id=None):
     from .native_pipeline import context
     source, project = context(project)
+    if (usage_ledger is None) != (usage_run_id is None):
+        raise MigrationError('Select both usage_ledger and usage_run_id')
+    if landing and usage_ledger is not None:
+        raise MigrationError('Usage dispatch checks belong to next-batch; landing remains available')
     if wave not in {'understand', 'domains'}:
         raise MigrationError('Unsupported adapter wave')
     plan_path = project / f'spec/waves/plan-{wave}.json'
@@ -547,6 +551,16 @@ def step(project, wave, *, landing=False):
             if any((row.get('status') == 'failed' and not str(row.get('reason', '')).startswith('RETRY_NEEDED'))
                    or row.get('status') == 'folded' or row.get('final_state') == 'BLOCKED' for row in rows):
                 raise MigrationError('Native failed/blocked tasks cannot advance; repair and explicitly review replan')
+        usage_observation = None
+        if usage_ledger is not None:
+            from .usage_budget import check_for_dispatch
+            ledger = Path(usage_ledger)
+            if not ledger.is_absolute():
+                ledger = safe_child(project, str(ledger))
+            usage_observation = check_for_dispatch(ledger, run_id=usage_run_id, project_root=project)
+            if not usage_observation['can_continue']:
+                reasons = usage_observation['reasons'] or ['no_remaining_dispatch_budget']
+                raise MigrationError('Usage budget refused dispatch: ' + ', '.join(reasons))
         before = execution_files(project)
         evidence_path = project / f'spec/reports/ios-dispatch-{wave}.json'
         prior = read_json(evidence_path) if evidence_path.exists() else None
@@ -565,6 +579,8 @@ def step(project, wave, *, landing=False):
         expected_fence = {prefix + path: digest(safe_child(project, path).read_bytes())
                           for path in kernel()._scope_files(os.fspath(io_path(project)))}
         action = invoke(project, 'next_batch', ['--plan', str(plan_path), '--state', 'spec/state/state.json', '--json'])
+        if usage_observation is not None:
+            action['usage_budget'] = dict(usage_observation, ledger=str(ledger), scope='supplied evidence before dispatch; no reservation')
         if action.get('action') == 'dispatch':
             generated_fence = _fence_files(project)
             if any(path != prefix + '.manifest.json'

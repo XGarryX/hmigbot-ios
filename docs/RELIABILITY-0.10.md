@@ -86,6 +86,14 @@ python scripts/a2h_ios.py usage-finish --project 'D:/Projects/cuike-harmony' --r
 
 未报告用量须用 `raw_usage: null`、`normalization_mode: "unreported"` 保存为 UNKNOWN，不能按字符估算后通过。MultiCA 要显式确定 input 是否包含 cache，并保留 unreported task 数量。聚合与其组成调用不能同时记账；调用覆盖的完整性仍需运行编排器/独立验收核对。账本 PASS 仅说明已提交的用量证据符合预算，不认证 App、规模或遗漏调用。
 
+派发新批次时可显式连接同一运行账本：
+
+```powershell
+python scripts/a2h_ios.py next-batch --project 'D:/Projects/cuike-harmony' --usage-ledger 'spec/reports/derived/usage-budget.json' --usage-run-id 'cuike-run-001'
+```
+
+两个选项必须同时提供。调度器在原 `next_batch` 更新控制状态之前，核对账本的工程和运行身份，并检查已登记用量、当前耗时、时钟及结束状态；未知、额度耗尽、超时或已结束均拒绝新派发。`land-results` 仍可收回已有工作的结果。此连接按次显式选择，未选择时保留旧调度行为；调用者须在每次 `next-batch` 传入这两个选项。它不采集宿主遗漏的调用、不预留并发调用额度，也不终止已经运行的模型请求。
+
 计时校验包含墙钟、单调钟、启动及主机身份，结束后仍复验身份。内部计时证据不一致会拒绝或保持 UNKNOWN；无法确认启动身份的平台不能伪造时间 PASS。缺失真实模型用量的订阅工具调用须保持未知，订阅额度充足不等于 token 目标达标。
 
 ## 性能与应用验收

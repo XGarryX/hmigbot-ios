@@ -471,6 +471,27 @@ def check(ledger: str | Path) -> dict:
     return summary(ledger)
 
 
+def check_for_dispatch(ledger: str | Path, *, run_id: str,
+                       project_root: str | Path) -> dict:
+    """Check an explicitly selected run at the scheduler dispatch boundary.
+
+    This observes supplied evidence; it neither reserves future tokens nor
+    verifies that the host has reported every call. Landing work remains allowed
+    after this check refuses further dispatch.
+    """
+    path, root = _path(ledger), _path(project_root)
+    _name(run_id, "run_id")
+    if not path.is_relative_to(root) or path == root:
+        raise BudgetError("dispatch ledger must be within project_root")
+    with _lock(path):
+        data = _load(path)
+        if data["run_id"] != run_id or _path(data["project_root"]) != root:
+            raise BudgetError("dispatch ledger project or run identity does not match")
+        _observe(data)
+        _save(path, data)
+        return _summary(data)
+
+
 def finish(ledger: str | Path, *, run_id: str) -> dict:
     """Freeze end-to-end elapsed time after all waits/builds/validation complete."""
     path = _path(ledger)
