@@ -6,7 +6,7 @@ build settings do not remove sources, and unresolved membership fails closed.
 from pathlib import Path, PurePosixPath
 
 from .core import MigrationError, digest, safe_child, snapshot
-from .xcode import OpenStep
+from .xcode import OpenStep, synchronized_membership
 
 
 COMPILE_SUFFIXES = {'.swift', '.m', '.mm', '.c', '.cpp', '.cc', '.cxx', '.metal', '.s'}
@@ -203,8 +203,6 @@ class _Project:
             target = self.targets[key]
             if target.get('isa') != 'PBXNativeTarget':
                 raise MigrationError(f'Unresolved non-native product target: {target["name"]}')
-            if target.get('fileSystemSynchronizedGroups'):
-                raise MigrationError(f'Unresolved synchronized groups: {target["name"]}')
             if target.get('packageProductDependencies'):
                 raise MigrationError(f'Unresolved external package product dependencies: {target["name"]}')
             if target.get('buildRules'):
@@ -240,9 +238,10 @@ class _Project:
         return closure
 
     def memberships(self):
-        memberships = {}
+        memberships, self.synchronized_exclusions, self.synchronized_declarations = synchronized_membership(
+            self.source, self.path, self.objects, self.targets)
         for key, target in self.targets.items():
-            seen = set()
+            seen = {relative for relative, owners in memberships.items() if key in owners}
             for phase_id, phase in self.phases(target):
                 if phase.get('isa') != 'PBXSourcesBuildPhase':
                     continue
@@ -278,22 +277,30 @@ class _Project:
         memberships = self.memberships()
         disk = {item['path']: item for item in snap['files']
                 if Path(item['path']).suffix.lower() in COMPILE_SUFFIXES and Path(item['path']).name != 'Package.swift'}
-        unowned = set(disk) - set(memberships)
+        unowned = set(disk) - set(memberships) - set(self.synchronized_exclusions)
         if unowned:
             raise MigrationError(f'Unknown source membership for unowned compile units: {sorted(unowned)}')
-        unavailable = set(memberships) - set(disk)
+        unavailable = (set(memberships) | set(self.synchronized_exclusions)) - set(disk)
         if unavailable:
             raise MigrationError(f'Declared sources are outside the indexed source snapshot: {sorted(unavailable)}')
         included, excluded = [], []
-        for relative, owners in sorted(memberships.items()):
+        for relative in sorted(set(memberships) | set(self.synchronized_exclusions)):
+            owners = memberships.get(relative, set())
             entry = {'path': relative, 'targets': sorted(self.targets[key]['name'] for key in owners),
                      'sha256': disk[relative]['sha256']}
+            declarations = [group for group in self.synchronized_declarations if relative in group['source_files']]
+            if declarations:
+                entry['synchronized_group_ids'] = sorted(group['id'] for group in declarations)
+            exceptions = self.synchronized_exclusions.get(relative, set())
+            if exceptions:
+                entry['excluded_from_targets'] = sorted(self.targets[key]['name'] for key in exceptions)
             if owners & closure:
                 if Path(relative).suffix not in ANALYZED_COMPILE_SUFFIXES:
                     raise MigrationError(f'Unsupported product compile language has no source facts analyzer: {relative}')
                 included.append(entry)
             else:
-                entry['reason'] = ('test_only_oracle' if all(self.targets[key].get('productType') in TEST_PRODUCTS for key in owners)
+                entry['reason'] = ('synchronized_membership_exception' if not owners else
+                                  'test_only_oracle' if all(self.targets[key].get('productType') in TEST_PRODUCTS for key in owners)
                                    else 'outside_product_target_closure')
                 excluded.append(entry)
         return {'scope': 'project-targets', 'project_path': self.path.relative_to(self.source).as_posix(),
@@ -303,4 +310,7 @@ class _Project:
                 'excluded_sources': excluded, 'source_hash': snap['sha256'],
                 'project_sha256': digest(self.path.read_bytes()), 'evidence': 'project_declared_membership',
                 'effective_build': 'unresolved',
-                'limitations': ['headers_implicit_includes_unresolved', 'conditional_build_settings_not_evaluated']}
+                'limitations': ['headers_implicit_includes_unresolved', 'conditional_build_settings_not_evaluated']
+                + (['synchronized_format_subset_not_apple_schema_verified',
+                    'synchronized_membership_windows_fixture_only_not_xcode_build_verified']
+                   if self.synchronized_declarations else [])}
