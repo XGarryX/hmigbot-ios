@@ -156,8 +156,6 @@ def _path(ledger: str | Path) -> Path:
     if not path.is_absolute():
         raise BudgetError("ledger must be an explicit absolute path")
     path = path.resolve()
-    if os.name == "nt" and path.drive.upper() != "D:":
-        raise BudgetError("ledger and temporary files must be on D:")
     return path
 
 
@@ -393,7 +391,7 @@ def start(ledger: str | Path, run_id: str, *, project_root: str | Path,
           walltime_limit_seconds: int = MAX_WALLTIME_SECONDS) -> dict:
     """Start immediately before end-to-end work. Refuses to overwrite a run.
 
-    On Windows both paths must be on D:. Ledger must be within project_root.
+    Ledger must be within project_root. The caller selects its local data path.
     Bounds only govern checks: record always preserves real over-limit evidence.
     """
     path, root = _path(ledger), _path(project_root)

@@ -1,4 +1,6 @@
-# HMigBot-iOS 0.9.2
+# HMigBot-iOS 0.10.0
+
+0.10.0 增加新工程的 `source-analysis` / `spec-scaffold` 候选入口、按任务分配的决策上下文、调用用量与完整计时账本；强化中文功能文档、零对象、覆盖归属、提取问题身份和 Swift 字符串边界检查。同步目录仅形成项目声明范围，未知语义与未测项继续阻断验收。见 [可靠性工作流与验收边界](docs/RELIABILITY-0.10.md)。
 
 0.9.2 修复 Xcode 自动自引用 workspace/用户状态引起的源快照误报，增加与正式门禁共享字段、完整性及锚点合同的只读规格生成辅助。共享 Scheme、锁文件、真实工程引用和源码继续参与摘要；未知语义继续阻断。见[修复范围与升级步骤](docs/SOURCE-AUTHORING-0.9.2.md)。
 
@@ -67,7 +69,7 @@ Serena 最新应用为 GPL-3.0-or-later，SolidLSP 为 MIT；本包未打包 Ser
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Workspace 'D:\Ios2Harmony'
 ```
 
-指定解释器可增加 `-Python 'C:\路径\python.exe'`。安装到实际迁移工作区即可。
+指定解释器可增加 `-Python 'D:\DevTools\Python\python.exe'`。安装到实际迁移工作区即可。
 macOS 安装入口为 `PYTHON=python3 sh install.sh /absolute/workspace`；本轮只在 Windows x64 实测。
 原校验器提供 Windows x64 / macOS arm64 资产；Linux 缺多个原编译校验器，不能视为完整可运行平台。
 建议为 ZIP、解压与安装预留 4 GB。鸿蒙编译需要另装 DevEco Studio/SDK。
@@ -238,6 +240,8 @@ expertise-plan、复核语义/AC/工具证据并过源门禁。冻结计划用 `
 [接入规程](skills/ios-source-analysis/references/external-expertise.md)和
 [Harness 协议](skills/ios-source-analysis/references/harness-v2.md)。
 
+新工程可在 `init` 后运行 `source-analysis --project <target> --apply-scaffold`，创建缺失的待审规格并输出完整编写表单。候选保存在 `spec/reports/derived`，不会生成业务 AC 或批准语义；仍须完成上述独立审阅及门禁。已有计划或过期源索引会被拒绝。用量统计须在端到端工作开始前 `usage-start`，完整记录调用后再 `usage-finish`；缺失用量保持 UNKNOWN。命令与字段见 [0.10.0 工作流](docs/RELIABILITY-0.10.md)。
+
 ## iOS 理解能力
 
 | 技能 | 职责与输出 |
@@ -297,11 +301,12 @@ Xcode 也提供外部 agent MCP 接入。两者可作为具备 Mac/Xcode 环境�
 
 ```powershell
 python -X utf8 scripts/sync_skill_catalog.py
-python -X utf8 -m unittest discover -s tests -v
+python -m pip install '.[test]'
+python -X utf8 -m pytest tests -q -p no:cacheprovider
 python -X utf8 scripts/audit_native_surface.py
 python -X utf8 scripts/validate_release.py --output work/release-check
-python scripts/package_plugin.py --output dist/hmigbot-ios-0.9.2.zip
-python scripts/smoke_package.py --package dist/hmigbot-ios-0.9.2.zip --output work/package-check.json
+python scripts/package_plugin.py --output dist/hmigbot-ios-0.10.0.zip
+python scripts/smoke_package.py --package dist/hmigbot-ios-0.10.0.zip --output work/package-check.json
 ```
 
 技能正文、参考和模板直接维护，同步脚本只更新目录。旧实验 CLI 与 provider 用于按需机械任务，
