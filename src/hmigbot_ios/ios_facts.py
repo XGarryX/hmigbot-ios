@@ -378,11 +378,17 @@ def _capture_providers(project, source, graph, provider_plan):
             artifacts.append({key: reused[key] for key in ('path', 'sha256', 'operation', 'run')})
         else:
             try:
-                report = run_atom(name, source, run.directory, provider_config=config, input_path=input_path)
+                run.reserve()
+                with run.fixed_inputs() as (fixed_config, fixed_input):
+                    report = run_atom(name, source, run.directory, provider_config=fixed_config, input_path=fixed_input)
+                    artifact = run.publish(report)
             except (MigrationError, OSError, ValueError) as exc:
-                run.fail(exc)
+                if run.reserved and not run.finished:
+                    run.fail(exc)
+                if str(exc).startswith('Source changed while extracting;'):
+                    raise MigrationError('Source changed while extracting; retained diagnostics: ' + str(run.directory)) from exc
                 raise MigrationError('Provider failed; retained diagnostics: ' + str(run.directory)) from exc
-            artifacts.append(run.publish(report))
+            artifacts.append(artifact)
         issues.extend({'rule': 'IOS.PROVIDER_UNRESOLVED', 'operation': name, 'detail': issue} for issue in report.get('issues', []))
         issues.extend({'rule': 'IOS.PROVIDER_RETRY', 'operation': name, 'detail': failure}
                       for failure in retained_failures(project / artifacts[-1]['path']))

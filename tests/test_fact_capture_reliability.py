@@ -69,7 +69,7 @@ class ProviderRunTests(unittest.TestCase):
         self.assertFalse(list(capture_root(self.project).rglob('artifact.json')), 'a failure cannot publish evidence')
         self.assertFalse((self.project / 'spec/baseline/ios-facts.json').exists())
 
-    def test_success_is_immutable_and_reused_for_the_same_identity(self):
+    def test_success_is_immutable_and_fresh_attempts_do_not_reuse_unpinned_tool_identity(self):
         plan = self.plan([{'operation': 'interface-builder'}])
         graph = refresh(self.project, self.source, provider_plan=plan)
         self.assertEqual(len(graph['provider_artifacts']), 1)
@@ -79,16 +79,17 @@ class ProviderRunTests(unittest.TestCase):
         self.assertEqual(read_json(self.project / artifact['path'])['source_sha256'], graph['source_sha256'])
         first_bytes = (self.project / artifact['path']).read_bytes()
         again = refresh(self.project, self.source, provider_plan=plan)
-        self.assertEqual(again['provider_artifacts'], [artifact], 'a published success is reused, not rewritten')
+        self.assertNotEqual(again['provider_artifacts'], [artifact], 'tool identity is not pinned, so capture must run again')
+        self.assertEqual(again['provider_artifacts'][0]['run']['attempt'], 2)
         self.assertEqual((self.project / artifact['path']).read_bytes(), first_bytes)
-        self.assertEqual(len(self.attempts()), 1, 'reuse must not pile up duplicate captures')
+        self.assertEqual(len(self.attempts()), 2, 'fresh captures keep the old successful evidence')
         validate_graph(self.source, self.project)  # round trip still verifies
         # A different configuration fingerprint is a different request, so it cannot reuse attempt 1.
         config = self.root / 'provider.json'
         write_json(config, {'executable': ['fixture']})
         other = refresh(self.project, self.source, provider_plan=self.plan([{'operation': 'interface-builder', 'config': str(config)}]))
         self.assertNotEqual(other['provider_artifacts'][0]['run']['identity'], artifact['run']['identity'])
-        self.assertEqual(len(self.attempts()), 2, 'each fingerprint keeps its own attempt history')
+        self.assertEqual(len(self.attempts()), 3, 'each fingerprint keeps its own attempt history')
         self.assertEqual(other['provider_artifacts'][0]['run']['attempt'], 1, 'new identity starts its own attempt counter')
 
     def test_graph_only_references_successes_and_failure_keeps_previous_baseline(self):
@@ -175,7 +176,7 @@ class ProviderRunTests(unittest.TestCase):
         attempt = self.attempts()[0][2]
         record = read_json(attempt / 'run.json')
         allowed = {'schema_version', 'status', 'operation', 'source_sha256', 'identity', 'attempt', 'run_id',
-                   'config_sha256', 'input_sha256', 'artifact', 'artifact_sha256', 'artifact_status', 'atom_issue_count'}
+                   'config_sha256', 'input_sha256', 'artifact', 'artifact_sha256', 'artifact_status', 'atom_issue_count', 'prior_failures'}
         self.assertTrue(set(record) <= allowed, f'unknown provenance fields: {set(record) - allowed}')
         for forbidden in ('model', 'tokens', 'usage', 'cost', 'duration_ms'):
             self.assertNotIn(forbidden, record)
