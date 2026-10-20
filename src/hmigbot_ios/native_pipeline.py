@@ -15,6 +15,7 @@ from .core import MigrationError, read_json, safe_child, snapshot, write_json, d
 from .native_semantics import validate_native_facts
 from . import doctor as doctor_module
 from .native_contract import source_truth, validate_literal_exclusion
+from .cli_output import configure_utf8, emit_json
 
 ROOT = Path(__file__).resolve().parents[2]
 CODE = {'.swift', '.m', '.mm', '.h', '.c', '.cpp', '.storyboard', '.xib'}
@@ -286,6 +287,7 @@ def build_project(project: Path):
 
 
 def main(argv=None):
+    configure_utf8(sys.stdout, sys.stderr)
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     init = commands.add_parser('init')
@@ -502,8 +504,8 @@ def main(argv=None):
                 print(doctor_module.render_text(result), file=sys.stderr)
             code = 0 if result.get('status') == 'diagnostic_complete' else 2
         else: result, code = resolve(args.source, args.anchor)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        emit_json(result)
         return code
     except (MigrationError, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        print(json.dumps({'status': 'FAIL', 'error': str(exc)}, ensure_ascii=False))
+        emit_json({'status': 'FAIL', 'error': str(exc)}, indent=None)
         return 2

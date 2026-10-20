@@ -21,6 +21,7 @@ from .iphone import inspect_ipa
 from .capture import capture
 from . import hmigbot
 from . import doctor
+from .cli_output import configure_utf8, emit_json
 
 
 def parser():
@@ -246,19 +247,16 @@ def dispatch(args):
 
 
 def main(argv=None):
-    # A pipe on Chinese Windows otherwise inherits GBK, breaking JSON consumers.
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8")
+    configure_utf8(sys.stdout, sys.stderr)
     try:
         args = parser().parse_args(argv)
         result = dispatch(args)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        emit_json(result)
         if result.get("integrity_passed") is False or result.get("status") in {"unavailable", "build_failed", "capture_failed", "observations_differ", "stale_source"}:
             return 3
         return 0
     except (MigrationError, OSError, UnicodeError, RecursionError) as exc:
-        print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        emit_json({"status": "error", "error": str(exc)}, stream=sys.stderr, indent=None)
         return 2
 
 
