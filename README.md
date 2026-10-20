@@ -302,12 +302,21 @@ Xcode 也提供外部 agent MCP 接入。两者可作为具备 Mac/Xcode 环境�
 ```powershell
 python -X utf8 scripts/sync_skill_catalog.py
 python -m pip install '.[test]'
-python -X utf8 -m pytest tests -q -p no:cacheprovider
+python -X utf8 -m pytest -q -p no:cacheprovider
 python -X utf8 scripts/audit_native_surface.py
 python -X utf8 scripts/validate_release.py --output work/release-check
 python scripts/package_plugin.py --output dist/hmigbot-ios-0.10.0.zip
 python scripts/smoke_package.py --package dist/hmigbot-ios-0.10.0.zip --output work/package-check.json
 ```
+
+仓库根目录未指定路径时，pytest 通过 `pyproject.toml` 的
+`[tool.pytest.ini_options] testpaths = ["tests"]` 仅收集维护中的测试，避免导入
+vendor 自带的命令脚本。显式指定文件、目录或测试 ID 仍可选择其他范围；例如
+`python -X utf8 -m pytest tests/test_atoms.py -q -p no:cacheprovider`。
+如需检查上游测试，应显式指定对应 vendor 路径，其环境依赖和导入时行为仍由上游负责。
+该配置只限定默认收集范围，不代表测试已通过，也不更改安装或打包内容。
+参见 pytest 官方的 [testpaths 说明](https://docs.pytest.org/en/stable/reference/reference.html#confval-testpaths)
+和 [pyproject 配置说明](https://docs.pytest.org/en/stable/reference/customize.html#pyproject-toml)。
 
 技能正文、参考和模板直接维护，同步脚本只更新目录。旧实验 CLI 与 provider 用于按需机械任务，
 其受限生成器不承担通用迁移。包不包含 DevEco SDK、用户工程、证书或 Apple 账号凭据。
