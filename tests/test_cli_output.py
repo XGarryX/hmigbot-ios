@@ -31,9 +31,11 @@ class JsonOutputTests(unittest.TestCase):
                 self.data.extend(encoded)
                 return len(text)
 
-        stream = FixedGBK()
-        emit_json({'name': '中文 🧭'}, stream=stream)
-        self.assertEqual(json.loads(stream.data.decode('utf-8')), {'name': '中文 🧭'})
+        for name in ['中文', '中文 🧭']:
+            with self.subTest(name=name):
+                stream = FixedGBK()
+                emit_json({'name': name}, stream=stream)
+                self.assertEqual(json.loads(stream.data.decode('utf-8')), {'name': name})
 
     def test_native_capture_in_gbk_environment(self):
         root = Path(__file__).resolve().parents[1]
