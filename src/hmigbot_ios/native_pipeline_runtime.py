@@ -15,11 +15,11 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
-import sys
 import tempfile
 
 from .core import io_path
 from .scheduler_windows_runtime import run as run_owned_process
+from .windows_python_runtime import stage_base_python
 
 ROOT = Path(__file__).resolve().parents[2]
 VENDOR = ROOT / 'vendor/hmigbot/skills'
@@ -90,12 +90,7 @@ def runtime_layout():
         env = {**os.environ, 'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8',
                'ARKTS_SKILL_DIR': str(closure)}
         if system == 'windows':
-            for name in ('python.exe', 'python3.exe'):
-                shutil.copy2(sys.executable, closure / name)
-            for dll in Path(sys.base_prefix).glob('*.dll'):
-                shutil.copy2(dll, closure / dll.name)
-            env['PYTHONHOME'] = sys.base_prefix
-            env['PATH'] = str(closure) + os.pathsep + env.get('PATH', '')
+            stage_base_python(closure, env)
         suffix = '.exe' if system == 'windows' else '.bin'
         yield closure / ('_entry' + suffix), env
 

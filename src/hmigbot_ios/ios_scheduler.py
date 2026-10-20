@@ -282,12 +282,8 @@ def invoke(project, program, args):
                     raise MigrationError('Bundled Windows kernel requires x64')
                 directory = Path(temp) / '_entry.dist'
                 shutil.copytree(UPSTREAM / 'bin/windows-x64/_entry.dist', directory)
-                for name in ('python.exe', 'python3.exe'):
-                    shutil.copy2(sys.executable, directory / name)
-                for dll in Path(sys.base_prefix).glob('*.dll'):
-                    shutil.copy2(dll, directory / dll.name)
-                env['PATH'] = str(directory) + os.pathsep + env.get('PATH', '')
-                env['PYTHONHOME'] = sys.base_prefix
+                from .windows_python_runtime import stage_base_python
+                stage_base_python(directory, env)
                 command = [str(directory / '_entry.exe'), program, *args]
             proc = subprocess.run(command,
                                   cwd=project, env=env, capture_output=True, timeout=60, shell=False)

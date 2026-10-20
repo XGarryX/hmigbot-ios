@@ -12,11 +12,11 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
-import sys
 
 from .core import MigrationError, atomic_write, io_path, write_json
 from . import ios_scheduler as original
 from .scheduler_windows_runtime import run as run_owned_process
+from .windows_python_runtime import stage_base_python
 
 
 def install():
@@ -50,12 +50,7 @@ def invoke(project, program, args):
             (scripts / 'static_runtime_lint.py').write_text(shim, encoding='utf-8')
             directory = scripts / 'bin/windows-x64/_entry.dist'
             shutil.copytree(original.UPSTREAM / 'bin/windows-x64/_entry.dist', directory)
-            for name in ('python.exe', 'python3.exe'):
-                shutil.copy2(sys.executable, directory / name)
-            for dll in Path(sys.base_prefix).glob('*.dll'):
-                shutil.copy2(dll, directory / dll.name)
-            env['PATH'] = str(directory) + os.pathsep + env.get('PATH', '')
-            env['PYTHONHOME'] = sys.base_prefix
+            stage_base_python(directory, env)
             env['ARKTS_SKILL_DIR'] = str(scripts.parent)
             command = [str(directory / '_entry.exe'), program, *args]
             process = run_owned_process(command, cwd=project, env=env, timeout=60)
