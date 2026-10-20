@@ -23,7 +23,8 @@ def main():
     output.mkdir(parents=True)
     checks = []
     def command(name, arguments):
-        env = {**os.environ, 'PYTHONUTF8': '1'}
+        env = {**os.environ, 'PYTHONUTF8': '1', 'PYTHONDONTWRITEBYTECODE': '1',
+               'PYTHONPATH': str(ROOT / 'src') + os.pathsep + os.environ.get('PYTHONPATH', '')}
         try:
             result = subprocess.run(arguments, cwd=ROOT, env=env, capture_output=True, timeout=600, shell=False)
             stdout, stderr, code = result.stdout, result.stderr, result.returncode
@@ -35,6 +36,9 @@ def main():
         (output / (name + '.stderr.log')).write_bytes(stderr)
         checks.append({'name': name, 'passed': code == 0, 'exit_code': code})
     command('unit-tests', [sys.executable, '-X', 'utf8', '-m', 'unittest', 'discover', '-s', 'tests', '-v'])
+    # unittest imports function-style tests but does not execute them.
+    command('doctor-tests', [sys.executable, '-X', 'utf8', '-m', 'pytest', 'tests/test_doctor.py',
+                            '-q', '-p', 'no:cacheprovider', '--basetemp', str(output / 'doctor-temp')])
     command('upstream-resource-audit', [sys.executable, '-X', 'utf8', 'scripts/audit_upstream.py'])
     command('scheduler-resource-audit', [sys.executable, '-X', 'utf8', 'scripts/audit_scheduler.py'])
     command('external-expertise-audit', [sys.executable, '-X', 'utf8', 'scripts/a2h_ios.py', 'expertise-audit'])

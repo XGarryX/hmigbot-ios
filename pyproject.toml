@@ -9,6 +9,9 @@ description = "Self-contained HMigBot a2h pipeline with native iOS source suppor
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+test = ["pytest>=9,<10"]
+
 [project.scripts]
 ios2harmony = "hmigbot_ios.cli:main"
 
