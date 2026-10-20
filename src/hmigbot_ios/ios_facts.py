@@ -86,27 +86,31 @@ class _FileViews:
     """Bytes, text and lines for the file currently being scanned, read at most once each.
 
     A fact anchor needs a line window, so add() used to re-read and re-decode the whole file
-    per fact. Caching the content is the fix; the cache is keyed by content location only and
-    is dropped as soon as another file is requested. mtime and size never stand in for content:
-    extract()/refresh() still compare a fresh whole-tree snapshot before accepting the result.
+    per fact. The cache binds its one byte read to the snapshot's expected content hash,
+    and is dropped as soon as another file or expected hash is requested. Token text and
+    snippets share those verified bytes; a transient A -> B -> A edit cannot bind B to A.
     """
-    __slots__ = ('_key', '_path', '_raw', '_text', '_lines', '_decode_error')
+    __slots__ = ('_key', '_path', '_expected_sha256', '_raw', '_text', '_lines', '_decode_error')
 
     def __init__(self):
         self._key = self._path = self._raw = self._text = self._lines = self._decode_error = None
+        self._expected_sha256 = None
 
-    def _select(self, key, path):
-        if key != self._key:
-            self._key, self._path = key, path
+    def _select(self, key, path, expected_sha256):
+        if (key, path, expected_sha256) != (self._key, self._path, self._expected_sha256):
+            self._key, self._path, self._expected_sha256 = key, path, expected_sha256
             self._raw = self._text = self._lines = self._decode_error = None
 
     def _read(self):
         if self._raw is None:
-            self._raw = self._path.read_bytes()
+            raw = self._path.read_bytes()
+            if digest(raw) != self._expected_sha256:
+                raise MigrationError('Source content changed while reading snapshot file: ' + str(self._key))
+            self._raw = raw
         return self._raw
 
-    def text(self, key, path):
-        self._select(key, path)
+    def text(self, key, path, expected_sha256):
+        self._select(key, path, expected_sha256)
         if self._text is None and self._decode_error is None:
             try:
                 raw = self._read().decode('utf-8-sig')
@@ -119,9 +123,9 @@ class _FileViews:
             raise self._decode_error
         return self._text
 
-    def lines(self, key, path):
-        self._select(key, path)
-        text = self.text(key, path)
+    def lines(self, key, path, expected_sha256):
+        self._select(key, path, expected_sha256)
+        text = self.text(key, path, expected_sha256)
         if self._lines is None:
             self._lines = text.splitlines()
         return self._lines
@@ -167,7 +171,7 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
         occurrence[key] = occurrence.get(key, 0) + 1
         ident = 'IF-' + digest(json_bytes([*key, occurrence[key]]))[:16]
         try:
-            snippet = '\n'.join(views.lines(file['path'], source / file['path'])[line - 1:end])
+            snippet = '\n'.join(views.lines(file['path'], source / file['path'], file['sha256'])[line - 1:end])
         except UnicodeError:
             if kind != 'resource':
                 raise MigrationError('Non-text source needs an explicit parser: ' + file['path'])
@@ -187,7 +191,7 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
                 and file['path'] not in variant['source_files']):
             continue  # Declared product membership; implicit headers remain conservatively included.
         if path.suffix in SOURCE_KINDS:
-            text = views.text(file['path'], path)
+            text = views.text(file['path'], path, file['sha256'])
             tokens = tokenize(text)
             import_lines = import_token_lines(tokens)
             values = [t.value for t in tokens]
@@ -312,12 +316,12 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
             if re.search(r'^\s*#\s*(if|ifdef|ifndef)', text, re.M):
                 issues.append({'rule': 'IOS.CONDITIONAL_BUILD', 'path': file['path'], 'message': 'Resolve active branches using selected configuration'})
         elif path.suffix in {'.storyboard', '.xib'}:
-            text = views.text(file['path'], path)
+            text = views.text(file['path'], path, file['sha256'])
             if '<!DOCTYPE' in text or '<!ENTITY' in text:
                 raise MigrationError('Interface Builder DTD/entities are not supported')
             try:
                 tree = ET.fromstring(text)
-                lines = views.lines(file['path'], path)
+                lines = views.lines(file['path'], path, file['sha256'])
                 for element in tree.iter():
                     kind = {'action': 'event', 'segue': 'navigation', 'constraint': 'constraint'}.get(element.tag)
                     if kind:
