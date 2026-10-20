@@ -23,6 +23,16 @@
     "counts"
   ],
   "properties": {
+    "capture_roots": {
+      "description": "Original capture-host roots, used only as exact textual prefixes when replaying on another host; never opened by the consumer. Optional only for legacy v1 documents that replay at their original source root.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "derived_data"],
+      "properties": {
+        "source": {"$ref": "#/$defs/capture_root"},
+        "derived_data": {"$ref": "#/$defs/capture_root"}
+      }
+    },
     "schema_version": {
       "const": 1
     },
@@ -223,6 +233,11 @@
     }
   },
   "$defs": {
+    "capture_root": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!.*(?:^|/)\\.{1,2}(?:/|$))(?:/|[A-Za-z]:/)[^\\\\\\u0000]*$"
+    },
     "hash": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"

@@ -491,7 +491,8 @@ class SchemaContractTests(MembershipBase):
         schema = read_json(SCHEMA_PATH)
         self.assertEqual(schema['$schema'], 'https://json-schema.org/draft/2020-12/schema')
         self.assertFalse(schema['additionalProperties'])
-        self.assertEqual(set(schema['required']), set(document))
+        self.assertLessEqual(set(schema['required']), set(document))
+        self.assertEqual(set(schema['properties']), set(document))
         self.assertEqual(schema['properties']['kind']['const'], document['kind'])
         self.assertEqual(schema['properties']['scope']['const'], document['scope'])
         self.assertEqual(schema['properties']['membership_status']['enum'],

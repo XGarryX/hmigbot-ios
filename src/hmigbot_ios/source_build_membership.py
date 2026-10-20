@@ -22,7 +22,7 @@ from pathlib import Path
 import re
 
 from .contracts import require
-from .core import MigrationError, digest, json_bytes, read_json, snapshot
+from .core import MigrationError, digest, json_bytes, read_json, safe_child, snapshot
 
 KIND = "source_build_membership"
 SCHEMA_VERSION = 1
@@ -519,6 +519,7 @@ def collect(source: Path, derived_data: Path, capture: Path, selection: dict,
         "scope": SCOPE,
         "membership_status": status,
         "selection": selection,
+        "capture_roots": {"source": source_posix, "derived_data": derived_posix},
         "source_sha256": current["sha256"],
         "architectures": sorted(observed),
         "source_files": sorted(members),
@@ -553,11 +554,196 @@ def collect(source: Path, derived_data: Path, capture: Path, selection: dict,
     return document
 
 
+def _names(value, label):
+    require(isinstance(value, list) and all(isinstance(item, str) and item and item == item.strip()
+                                         for item in value), label + " must contain names")
+    require(value == sorted(set(value)), label + " must be unique and sorted")
+    return set(value)
+
+
+def _count(value, expected, label):
+    require(type(value) is int and value == expected, label + " disagrees with replayed evidence")
+
+
+def _capture_roots(document, source):
+    """Use recorded textual prefixes only; never open the capturing host's paths."""
+    if "capture_roots" not in document:
+        return source.as_posix(), ""  # Legacy v1 can only replay against the original source root.
+    roots = document["capture_roots"]
+    require(isinstance(roots, dict) and set(roots) == {"source", "derived_data"}, "Invalid capture_roots")
+    for key, value in roots.items():
+        require(isinstance(value, str) and _absolute(value) and "\\" not in value and "\x00" not in value
+                and all(part not in {".", ".."} for part in value.split("/")) and "//" not in value
+                and (not value.endswith("/") or value == "/" or re.fullmatch(r"[A-Za-z]:/", value)),
+                "Capture root must be a normalized absolute path without traversal: " + key)
+    source_root, derived_root = roots["source"], roots["derived_data"]
+    require(derived_root != source_root and not derived_root.startswith(source_root.rstrip("/") + "/"),
+            "Captured build tree must not live inside the captured source tree")
+    return source_root, derived_root
+
+
+def _replay_membership(source, capture, document, snap, selected):
+    """Replay raw compiler records, never the derived invocation summary alone."""
+    evidence = document.get("evidence")
+    require(isinstance(evidence, dict), "Membership evidence block is missing")
+    sources = evidence.get("sources")
+    require(isinstance(sources, list), "Membership evidence sources must be a list")
+    source_root, derived_root = _capture_roots(document, source)
+    captured, observed, required_unresolved, artifacts = [], set(), set(), set()
+    for item in sources:
+        require(isinstance(item, dict) and item.get("kind") == ORIGIN_SWIFT_FILE_LIST,
+                "Unknown evidence source kind")
+        artifact = item.get("artifact")
+        require(isinstance(artifact, str) and artifact.startswith("filelists/"),
+                "Evidence source must reference a captured file list")
+        path = safe_child(capture, artifact)
+        require(artifact not in artifacts, "Duplicate captured file list")
+        artifacts.add(artifact)
+        require(path.is_file(), f"Missing captured file list: {artifact}")
+        raw = path.read_bytes()
+        require(digest(raw) == item.get("sha256"), f"Captured file list was modified: {artifact}")
+        _count(item.get("bytes"), len(raw), "Captured file list bytes")
+        entries = parse_file_list(raw)
+        _count(item.get("entries"), len(entries), "Captured file list entry count")
+        for key in ("target", "architecture"):
+            value = item.get(key)
+            require(value is None or isinstance(value, str) and bool(value.strip()),
+                    "Invalid file list " + key)
+        require(re.fullmatch(r"filelists/\d{4,}-" + re.escape(_safe(item.get("target") or "target"))
+                             + "-" + re.escape(_safe(item.get("architecture") or "arch")) + r"\.list", artifact),
+                "Captured file list target/architecture disagree with its artifact name")
+        if item.get("architecture"):
+            observed.add(item["architecture"])
+        if not entries:
+            required_unresolved.add(("empty_swift_file_list", artifact))
+        captured.extend({"path": entry, "origin": ORIGIN_SWIFT_FILE_LIST,
+                         "target": item.get("target"), "architecture": item.get("architecture")}
+                        for entry in entries)
+
+    logged = evidence.get("captured_build_log")
+    invocations = {"entries": [], "ambiguous": []}
+    require(logged is None or isinstance(logged, dict), "Invalid captured build log record")
+    if logged is not None:
+        artifact = logged.get("artifact")
+        require(isinstance(artifact, str) and bool(artifact), "Captured build log needs its raw artifact")
+        path = safe_child(capture, artifact)
+        require(path.is_file(), f"Missing captured build log: {artifact}")
+        raw = path.read_bytes()
+        require(digest(raw) == logged.get("sha256"), f"Captured build log was modified: {artifact}")
+        _count(logged.get("bytes"), len(raw), "Captured build log bytes")
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeError:
+            text = raw.decode("utf-8", "replace")
+            required_unresolved.add(("build_log_not_utf8", None))
+        invocations = parse_compile_invocations(text)
+        for key, origin in (("swift_entries", ORIGIN_BUILD_LOG_SWIFT),
+                            ("clang_entries", ORIGIN_BUILD_LOG_CLANG),
+                            ("other_entries", ORIGIN_BUILD_LOG_OTHER)):
+            _count(logged.get(key), sum(item["origin"] == origin for item in invocations["entries"]),
+                   "Captured build log " + key)
+        _count(logged.get("ambiguous_lines"), len(invocations["ambiguous"]), "Ambiguous build log lines")
+        if invocations["ambiguous"]:
+            required_unresolved.add(("ambiguous_compile_invocation", None))
+        if logged["swift_entries"] and not sources:
+            required_unresolved.add(("swift_file_list_absent", None))
+        captured.extend(invocations["entries"])
+    summary_path = safe_child(capture, "compile-invocations.json")
+    if summary_path.is_file():
+        require(read_json(summary_path) == {
+            "schema_version": SCHEMA_VERSION, "kind": "source_build_compile_invocations",
+            "captured_build_log": logged, "entries": invocations["entries"],
+            "ambiguous": invocations["ambiguous"][:20], "ambiguous_total": len(invocations["ambiguous"])},
+            "Compile invocation summary disagrees with the raw build log")
+
+    members, excluded, directories = {}, {}, {}
+    claimed_excluded = {item["path"]: item for item in document["excluded_inputs"]}
+    complete = document["membership_status"] == "complete"
+    for item in captured:
+        target, architecture, value = item.get("target"), item.get("architecture"), item["path"]
+        require(not complete or target and architecture,
+                "Complete membership cannot hide unknown compiler target or architecture")
+        if target and architecture and target.casefold() in selected:
+            directories.setdefault((target, architecture), set()).add(value)
+        if target and target.casefold() not in selected:
+            category, relative, reason = "excluded", None, EXCLUDED_TARGET
+        else:
+            category, relative, _ = _classify(value, source_root, derived_root, source, snap)
+            if category in {"relative", "escaping", "missing"}:
+                required_unresolved.add(({"relative": "relative_compile_input", "escaping": "escaping_compile_input",
+                                          "missing": "missing_compile_input"}[category], value))
+                continue
+            reason = {"excluded": EXCLUDED_SNAPSHOT, "generated": EXCLUDED_GENERATED}.get(category, EXCLUDED_OUTSIDE)
+            # Old v1 did not record the build-tree root. It cannot establish a
+            # relocation, but its explicit non-member classification stays usable.
+            if not derived_root and category == "outside" and claimed_excluded.get(value, {}).get("reason") == EXCLUDED_GENERATED:
+                reason = EXCLUDED_GENERATED
+        if category == "member":
+            record = members.setdefault(relative, {"origins": set(), "targets": set(), "architectures": set()})
+            if architecture:
+                record["architectures"].add(architecture)
+                observed.add(architecture)
+        else:
+            record = excluded.setdefault(value, {"reason": reason, "relative_path": relative,
+                                                  "origins": set(), "targets": set()})
+        record["origins"].add(item["origin"])
+        if target:
+            record["targets"].add(target)
+    member_paths = {source_root.rstrip("/") + "/" + path for path in members}
+    for value in [value for value in excluded if value in member_paths]:
+        excluded.pop(value)
+    require(set(members) == set(document["source_files"]),
+            "Membership members lack raw compiler evidence or omit captured source inputs")
+    for member in document["members"]:
+        for field in ("origins", "targets", "architectures"):
+            require(set(member[field]) == members[member["path"]][field],
+                    "Member " + field + " disagree with raw compiler evidence: " + member["path"])
+    require(set(excluded) == set(claimed_excluded), "Excluded inputs disagree with raw compiler evidence")
+    for value, replayed in excluded.items():
+        claimed = claimed_excluded[value]
+        require(all(claimed[field] == replayed[field] for field in ("reason", "relative_path"))
+                and all(set(claimed[field]) == replayed[field] for field in ("origins", "targets")),
+                "Excluded input metadata disagrees with raw compiler evidence: " + value)
+    require(set(document["architectures"]) == observed, "Membership architectures disagree with raw compiler evidence")
+    unresolved = document["unresolved"]
+    for reason, path in required_unresolved:
+        require(any(item["reason"] == reason and (path is None or item.get("path") == path) for item in unresolved),
+                "Raw compiler evidence has an unreported unresolved input: " + reason)
+    objects = evidence.get("build_tree_objects")
+    require(isinstance(objects, dict) and isinstance(objects.get("directories"), list)
+            and isinstance(objects.get("unmatched"), list), "Invalid build object evidence")
+    expected_unmatched, seen = set(), set()
+    for item in objects["directories"]:
+        require(isinstance(item, dict), "Invalid build object directory")
+        key = (item.get("target"), item.get("architecture"))
+        require(all(isinstance(value, str) and value for value in key) and key not in seen,
+                "Unknown or duplicate build object directory")
+        seen.add(key)
+        require(key[0].casefold() in selected, "Build object target is outside selection")
+        count = len(directories.get(key, set()))
+        _count(item.get("captured_inputs"), count, "Build object captured_inputs")
+        require(type(item.get("objects")) is int and item["objects"] >= 0, "Invalid build object count")
+        if item["objects"] > count:
+            expected_unmatched.add((key[0], key[1], item["objects"], count))
+    actual_unmatched = set()
+    for item in objects["unmatched"]:
+        require(isinstance(item, dict), "Invalid unmatched build object record")
+        values = tuple(item.get(key) for key in ("target", "architecture", "objects", "captured_inputs"))
+        require(all(isinstance(value, str) for value in values[:2]) and all(type(value) is int for value in values[2:]),
+                "Invalid unmatched build object fields")
+        require(values not in actual_unmatched, "Duplicate unmatched build object record")
+        actual_unmatched.add(values)
+    require(actual_unmatched == expected_unmatched, "Unmatched object records disagree with captured input counts")
+    if expected_unmatched:
+        require(any(item["reason"] == "object_count_exceeds_membership" for item in unresolved),
+                "Unmatched build objects must remain unresolved")
+
+
 def validate(source: Path, document, *, capture: Path | None = None) -> dict:
     """Replay a membership document against the current source tree.
 
-    Reproduces member hashes and, when the bundle is supplied, re-parses the raw
-    compiler file lists instead of trusting the recorded counts.
+    Complete membership requires raw compiler records in capture. Without those
+    records only incomplete/unresolved document structure can be checked.
     """
     source = Path(source).resolve()
     if isinstance(document, (str, Path)):
@@ -568,6 +754,11 @@ def validate(source: Path, document, *, capture: Path | None = None) -> dict:
             "Unsupported source build membership contract")
     status = document.get("membership_status")
     require(status in STATUSES, "Membership status is missing or unknown")
+    selection = _selection(document.get("selection"), set())
+    require(document["selection"] == selection, "Membership selection must be normalized")
+    selected = {item.casefold() for item in selection["targets"]}
+    _capture_roots(document, source)
+    _names(document.get("architectures"), "Membership architectures")
     current = snapshot(source)
     require(document.get("source_sha256") == current["sha256"],
             "Membership source fingerprint is stale or modified")
@@ -577,68 +768,59 @@ def validate(source: Path, document, *, capture: Path | None = None) -> dict:
             "Membership source_files must be a list of relative paths")
     require(paths == sorted(set(paths)), "Membership source_files must be unique and sorted")
     members = document.get("members")
-    require(isinstance(members, list), "Membership members must be a list")
+    require(isinstance(members, list) and all(isinstance(item, dict) for item in members),
+            "Membership members must be a list of objects")
     require([item.get("path") for item in members] == paths,
             "Membership member records disagree with source_files")
     for member in members:
         require(isinstance(member, dict), "Membership member must be an object")
         entry = snap.get(member.get("path"))
         require(entry is not None, f"Member is outside the source fingerprint scope: {member.get('path')}")
-        require(member.get("sha256") == entry["sha256"] and member.get("bytes") == entry["bytes"],
+        require(member.get("sha256") == entry["sha256"] and type(member.get("bytes")) is int
+                and member["bytes"] == entry["bytes"],
                 f"Member fingerprint differs from current source: {member.get('path')}")
-        require(member.get("kind") in MEMBER_KINDS, "Unknown member kind")
-        origins = member.get("origins")
-        require(isinstance(origins, list) and bool(origins) and set(origins) <= set(ORIGINS),
+        require((member.get("kind"), member.get("analysis")) == _member_kind(member["path"]),
+                "Member kind/analysis disagree with its source suffix")
+        origins = _names(member.get("origins"), "Member origins")
+        require(bool(origins) and origins <= set(ORIGINS),
                 "Member origin must name a captured compiler input record")
+        targets = _names(member.get("targets"), "Member targets")
+        require({target.casefold() for target in targets} <= selected, "Member targets are outside selection")
+        architectures = _names(member.get("architectures"), "Member architectures")
+        require(architectures <= set(document["architectures"]), "Member architectures are not observed")
     excluded = document.get("excluded_inputs")
     require(isinstance(excluded, list), "Membership excluded_inputs must be a list")
-    require(not (set(paths) & {item.get("relative_path") for item in excluded if isinstance(item, dict)}),
-            "An input cannot be both member and excluded")
     for item in excluded:
-        require(isinstance(item, dict) and item.get("reason") in
+        require(isinstance(item, dict) and isinstance(item.get("reason"), str) and item["reason"] in
                 {EXCLUDED_GENERATED, EXCLUDED_OUTSIDE, EXCLUDED_SNAPSHOT, EXCLUDED_TARGET},
                 "Unknown excluded input reason")
+        require(isinstance(item.get("path"), str) and bool(item["path"]), "Invalid excluded input path")
+        require(item.get("relative_path") is None or isinstance(item["relative_path"], str), "Invalid excluded relative path")
+        require(bool(_names(item.get("origins"), "Excluded origins"))
+                and set(item["origins"]) <= set(ORIGINS), "Unknown excluded origin")
+        _names(item.get("targets"), "Excluded targets")
+    require(not (set(paths) & {item.get("relative_path") for item in excluded}),
+            "An input cannot be both member and excluded")
+    require(len({item["path"] for item in excluded}) == len(excluded), "Duplicate excluded input")
     unresolved = document.get("unresolved")
     require(isinstance(unresolved, list), "Membership unresolved list must be present")
+    require(all(isinstance(item, dict) and isinstance(item.get("reason"), str) and item["reason"]
+                and (item.get("path") is None or isinstance(item["path"], str)) for item in unresolved),
+            "Invalid unresolved input record")
     if status == "complete":
         require(not unresolved, "A complete membership must not carry unresolved inputs")
         require(not any(item.get("reason") in BLOCKING_EXCLUSIONS for item in excluded),
                 "A complete membership must not exclude compiled inputs from the source fingerprint")
         require(bool(paths), "A complete membership must name at least one compiled source file")
+        require(capture is not None, "Complete membership requires captured raw compiler evidence")
+    counts = document.get("counts")
+    require(isinstance(counts, dict), "Membership counts must be present")
+    for key, expected in {"source_files": len(paths), "unresolved_inputs": len(unresolved),
+                          "non_member_inputs": sum(item["reason"] != EXCLUDED_SNAPSHOT for item in excluded),
+                          "unsupported_inputs": sum(item["kind"] == "other_compiler_input" for item in members)}.items():
+        _count(counts.get(key), expected, "Membership count " + key)
     if capture is not None:
-        capture = Path(capture).resolve()
-        evidence = document.get("evidence")
-        require(isinstance(evidence, dict), "Membership evidence block is missing")
-        sources = evidence.get("sources")
-        require(isinstance(sources, list), "Membership evidence sources must be a list")
-        for item in sources:
-            require(isinstance(item, dict) and item.get("kind") in ORIGINS, "Unknown evidence source kind")
-            artifact = item.get("artifact")
-            require(isinstance(artifact, str) and artifact.startswith("filelists/"),
-                    "Evidence source must reference a captured file list")
-            path = capture / artifact
-            require(path.is_file(), f"Missing captured file list: {artifact}")
-            raw = path.read_bytes()
-            require(digest(raw) == item.get("sha256") and len(raw) == item.get("bytes"),
-                    f"Captured file list was modified: {artifact}")
-            entries = parse_file_list(raw)
-            require(len(entries) == item.get("entries"), f"Captured file list entry count differs: {artifact}")
-            for entry in entries:
-                category, relative, _ = _classify(entry, source.as_posix(), "", source, snap)
-                if category == "member":
-                    found = [member for member in members if member["path"] == relative]
-                    require(found and ORIGIN_SWIFT_FILE_LIST in found[0]["origins"],
-                            f"Captured file list names an input that is not a member: {relative}")
-                else:
-                    require(any(item.get("path") == entry for item in excluded)
-                            or any(item.get("path") == entry for item in unresolved),
-                            f"Captured file list names an input that was not accounted for: {entry}")
-        logged = evidence.get("captured_build_log")
-        if isinstance(logged, dict) and logged.get("artifact"):
-            artifact = logged["artifact"]
-            path = capture / artifact
-            require(path.is_file() and digest(path.read_bytes()) == logged.get("sha256"),
-                    f"Captured build log was modified: {artifact}")
+        _replay_membership(source, Path(capture).resolve(), document, snap, selected)
     return {"schema_version": SCHEMA_VERSION, "kind": KIND, "integrity_passed": True,
             "membership_status": status, "source_sha256": current["sha256"],
             "source_files": paths, "claim_validation": "not_performed",
