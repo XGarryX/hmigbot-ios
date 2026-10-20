@@ -14,7 +14,7 @@ This is the genuine evidence-consumption entry: behavior.verify executes this
 command and decides PASS/FAIL from the real output, not from a hand summary.
 """
 from __future__ import annotations
-import json, subprocess, sys
+import argparse, json, subprocess, sys
 from pathlib import Path
 
 NODE = r'D:/Program Files/nodejs/node.exe'
@@ -22,8 +22,13 @@ BUSINESS_KINDS = {'normal', 'normal-cancel', 'exception'}
 
 
 def main():
-    script, ts, target, case_id = sys.argv[1:5]
-    proc = subprocess.run([NODE, script, ts, target], capture_output=True, text=True,
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--node', default=NODE)
+    for name in ('script', 'typescript', 'target', 'case_id'):
+        parser.add_argument(name)
+    args = parser.parse_args()
+    script, ts, target, case_id = args.script, args.typescript, args.target, args.case_id
+    proc = subprocess.run([args.node, script, ts, target], capture_output=True, text=True, encoding='utf-8',
                           cwd=str(Path(script).parent))
     if proc.returncode != 0:
         print(json.dumps(None))

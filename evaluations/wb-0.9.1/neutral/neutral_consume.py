@@ -19,6 +19,7 @@ ROOT = HERE.parents[2]
 sys.path.insert(0, str(ROOT / 'src'))
 from hmigbot_ios.core import digest, snapshot, read_json, write_json, safe_child
 from hmigbot_ios.behavior import verify as behavior_verify
+from neutral_runtime import add_runtime_options, resolve_runtime
 
 TS = Path(r'D:/Program Files/DevEco Studio/tools/hvigor/hvigor/node_modules/typescript/lib/typescript.js')
 NODE = r'D:/Program Files/nodejs/node.exe'
@@ -55,6 +56,9 @@ def line_of(text, symbol):
 def build_project(out, overrides):
     project = out / 'project'
     if project.exists():
+        if (project.is_symlink() or (hasattr(project, 'is_junction') and project.is_junction())
+                or project.resolve().parent != out.resolve()):
+            raise RuntimeError('Evaluation project cleanup must stay inside the selected output directory')
         shutil.rmtree(project)
     project.mkdir(parents=True)
     (project / '.migbot').mkdir(parents=True)
@@ -74,7 +78,7 @@ def build_project(out, overrides):
         target_paths[sample] = (tgt_dst, tgt_rel, tgt_sha)
 
         proc = subprocess.run([NODE, str(HERE / script), str(TS), str(tgt_dst)],
-                              capture_output=True, text=True, cwd=str(HERE))
+                              capture_output=True, text=True, encoding='utf-8', cwd=str(HERE))
         if proc.returncode != 0:
             raise RuntimeError(f'{script} failed: {proc.stderr[:400]}')
         result = json.loads(proc.stdout)
@@ -98,7 +102,7 @@ def build_project(out, overrides):
             cases_all.append({
                 'id': c['id'], 'ac_ids': [c['id']], 'runner': 'unit',
                 'command': [sys.executable, str(HERE / 'neutral_case_runner.py'),
-                            str(HERE / script), str(TS), str(tgt_dst), c['id']],
+                            '--node', NODE, str(HERE / script), str(TS), str(tgt_dst), c['id']],
                 'timeout_seconds': 60, 'input': None,
                 'target_hashes': {tgt_rel: tgt_sha},
                 'oracle': {'source_fact': fact_id, 'expected': expected, 'reviewer': REVIEWER}})
@@ -129,10 +133,16 @@ def build_project(out, overrides):
 
 
 def main():
+    global NODE, TS
     ap = argparse.ArgumentParser()
+    add_runtime_options(ap)
     ap.add_argument('--output', type=Path, required=True)
     ap.add_argument('--candidate', nargs=2, action='append', default=[], metavar=('SAMPLE', 'PATH'))
     args = ap.parse_args()
+    NODE, TS, runtime = resolve_runtime(args, ap)
+    names = [name for name, _ in args.candidate]
+    if len(set(names)) != len(names) or set(names) - {sample[0] for sample in SAMPLES}:
+        ap.error('--candidate requires a unique known sample name')
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
     overrides = {name: Path(p).resolve() for name, p in args.candidate}
@@ -143,13 +153,30 @@ def main():
          'anchor': {'path': 'sources', 'line': 1}} for c in cases_all]}
     acs = {c['id']: {'judgment': 'unit', 'body': ''} for c in cases_all}
     report, code = behavior_verify(project, SOURCES, graph, acs, run=True)
+    # This metadata describes only the host cases supplied above. It does not
+    # promote the hand-authored minimal graph to a refreshed source analysis.
+    matrix = read_json(HERE / 'neutral-acs.json')
+    kinds = {ac['id']: ac['kind'] for category in matrix['categories'].values()
+             for ac in category['acs']}
+    denominators = {'business': {'observed_pass': 0, 'observed_fail': 0},
+                    'guard': {'observed_pass': 0, 'observed_fail': 0}}
+    for observation in report['observations']:
+        group = 'business' if kinds[observation['id']] in BUSINESS_KINDS else 'guard'
+        denominators[group][observation['status']] += 1
+    report['neutral_evaluation'] = {'denominators': denominators, 'runtime': runtime,
+        'build': 'UNVERIFIED', 'device_ui': 'UNVERIFIED',
+        'source_execution': 'UNVERIFIED', 'source_analysis_chain': 'UNVERIFIED',
+        'scope': 'Explicit host-case consumption only; guard results are not business acceptance or App migration acceptance.'}
     write_json(out / 'neutral-behavior-consumed.json', report)
     print(json.dumps({'status': report['status'], 'code': code,
                       'failures': len(report['failures']),
                       'behavior_verified': report.get('behavior_verified'),
+                      'denominators': denominators,
+                      'scope': report['neutral_evaluation']['scope'],
                       'unverified_ac_ids': report.get('unverified_ac_ids')},
                      ensure_ascii=False, indent=2))
+    return code
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

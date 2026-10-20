@@ -30,6 +30,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 sys.path.insert(0, str(ROOT / 'src'))
 from hmigbot_ios.core import digest
+from neutral_runtime import add_runtime_options, resolve_runtime
 
 TS = Path(r'D:/Program Files/DevEco Studio/tools/hvigor/hvigor/node_modules/typescript/lib/typescript.js')
 NODE = r'D:/Program Files/nodejs/node.exe'
@@ -49,7 +50,7 @@ GUARD_KINDS = {'mutation', 'missing-evidence'}
 
 def run_oracle(script, target):
     cmd = [NODE, str(HERE / script), str(TS), str(target)]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(HERE))
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', cwd=str(HERE))
     if proc.returncode != 0:
         raise RuntimeError(f'{script} failed rc={proc.returncode}: {proc.stderr[:500]}')
     return json.loads(proc.stdout)
@@ -63,12 +64,18 @@ def status_for(case):
 
 
 def main():
+    global NODE, TS
     ap = argparse.ArgumentParser()
+    add_runtime_options(ap)
     ap.add_argument('--output', type=Path, required=True)
     ap.add_argument('--candidate', nargs=2, action='append', default=[],
                     metavar=('SAMPLE', 'PATH'),
                     help='Run a real candidate file as formal input for SAMPLE (repeatable).')
     args = ap.parse_args()
+    NODE, TS, runtime = resolve_runtime(args, ap)
+    names = [name for name, _ in args.candidate]
+    if len(set(names)) != len(names) or set(names) - {sample[0] for sample in SAMPLES}:
+        ap.error('--candidate requires a unique known sample name')
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
 
@@ -100,6 +107,7 @@ def main():
         'schema_version': 2,
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'tool': 'neutral_baselines.py (host oracles, DevEco TS transpile + Node vm)',
+        'runtime': runtime,
         'denominators': {'business': business, 'guard': guard},
         'chains': chains,
         'cases': cases_all,
@@ -137,7 +145,8 @@ def main():
     print(json.dumps({'business': business, 'guard': guard, 'build': 'UNVERIFIED',
         'device': 'UNVERIFIED', 'source_exec': 'UNVERIFIED', 'verdict': summary['verdict']},
         ensure_ascii=False, indent=2))
+    return 1 if any_fail else 0
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())
