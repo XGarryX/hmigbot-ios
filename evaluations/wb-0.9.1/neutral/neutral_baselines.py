@@ -77,7 +77,10 @@ def main():
     if len(set(names)) != len(names) or set(names) - {sample[0] for sample in SAMPLES}:
         ap.error('--candidate requires a unique known sample name')
     out = args.output.resolve()
-    out.mkdir(parents=True, exist_ok=True)
+    try:
+        out.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        ap.error('Output already exists; choose a fresh evaluation directory')
 
     overrides = {name: Path(p).resolve() for name, p in args.candidate}
 

@@ -55,11 +55,6 @@ def line_of(text, symbol):
 
 def build_project(out, overrides):
     project = out / 'project'
-    if project.exists():
-        if (project.is_symlink() or (hasattr(project, 'is_junction') and project.is_junction())
-                or project.resolve().parent != out.resolve()):
-            raise RuntimeError('Evaluation project cleanup must stay inside the selected output directory')
-        shutil.rmtree(project)
     project.mkdir(parents=True)
     (project / '.migbot').mkdir(parents=True)
     write_json(project / '.migbot/config.json', {'ios_harness': {'spec_contract_version': 1}})
@@ -144,7 +139,10 @@ def main():
     if len(set(names)) != len(names) or set(names) - {sample[0] for sample in SAMPLES}:
         ap.error('--candidate requires a unique known sample name')
     out = args.output.resolve()
-    out.mkdir(parents=True, exist_ok=True)
+    try:
+        out.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        ap.error('Output already exists; choose a fresh evaluation directory')
     overrides = {name: Path(p).resolve() for name, p in args.candidate}
 
     project, source_sha, cases_all = build_project(out, overrides)
