@@ -12,6 +12,44 @@ import sys
 import zipfile
 
 
+def membership_selection(parsed, settings, *, scheme, configuration, sdk, xcode_version, product):
+    """Scope actual membership by the selected build settings, not by directory names."""
+    targets = sorted({entry.get('buildSettings', {}).get('TARGET_NAME') for entry in parsed
+                      if entry.get('buildSettings', {}).get('WRAPPER_EXTENSION') in {'app', 'appex'}
+                      and entry.get('buildSettings', {}).get('TARGET_NAME')})
+    if settings.get('TARGET_NAME') and settings['TARGET_NAME'] not in targets:
+        targets.append(settings['TARGET_NAME'])
+    toolchain = {key: str(settings[key]) for key in
+                 ('SWIFT_VERSION', 'GCC_VERSION', 'SDK_VERSION', 'TOOLCHAINS', 'SWIFT_OPTIMIZATION_LEVEL',
+                  'IPHONEOS_DEPLOYMENT_TARGET', 'SWIFT_ACTIVE_COMPILATION_CONDITIONS')
+                 if str(settings.get(key, '')).strip()}
+    return {'scheme': scheme, 'configuration': configuration, 'sdk': sdk,
+            'xcode_version': xcode_version, 'product': product, 'targets': targets,
+            'architectures': str(settings.get('ARCHS', '')).split(), 'toolchain': toolchain}
+
+
+def record_source_membership(*, source, derived_data, capture, build_log, selection):
+    """Capture the actual compiled source membership of the device build just made."""
+    from hmigbot_ios.source_build_membership import collect
+    return collect(source, derived_data, capture, selection, build_log=build_log)
+
+
+def membership_summary(document):
+    """Small report entry; the full contract stays in capture/source-files.json."""
+    return {'status': document['membership_status'],
+            'artifact': 'artifacts/source-files.json',
+            'source_files': len(document['source_files']),
+            'non_member_inputs': document['counts']['non_member_inputs'],
+            'unsupported_inputs': document['counts']['unsupported_inputs'],
+            'unresolved': [{'reason': item['reason'], 'path': item['path'],
+                            'detail': item['detail']} for item in document['unresolved']],
+            'limitations': document['limitations']}
+
+
+class MembershipIncomplete(RuntimeError):
+    pass
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', type=Path, required=True)
@@ -87,6 +125,20 @@ def main():
                 raise RuntimeError('Unexpected device architecture')
             if bundle != app:
                 report['extensions'].append(bi['CFBundleIdentifier'])
+        # Capture actual compiled membership while the build tree still exists: the
+        # cleanup below deletes the only record of which files really compiled.
+        membership = record_source_membership(
+            source=source, derived_data=output / 'DerivedData', capture=capture,
+            build_log=capture / 'device-build.stdout.log',
+            selection=membership_selection(parsed, settings, scheme=config['scheme'],
+                configuration=config['configuration'], sdk='iphoneos',
+                xcode_version=report.get('xcode_version') or 'xcodebuild',
+                product=report['bundle_id']))
+        report['source_membership'] = membership_summary(membership)
+        if membership['membership_status'] != 'complete':
+            raise MembershipIncomplete('Actual build source membership is '
+                + membership['membership_status']
+                + '; inspect capture/source-files.json before claiming a selected-build scope')
         stage = output / 'package/Payload'
         stage.mkdir(parents=True)
         shutil.copytree(app, stage / app.name, symlinks=True)
@@ -103,6 +155,17 @@ def main():
             raise RuntimeError('Source changed during build')
         pack(source, capture, output / 'evidence', 'source_build', report['xcode_version'])
         report['status'] = 'build_passed'
+    except MembershipIncomplete as exc:
+        # The build itself succeeded; the capture cannot serve a selected-build scope.
+        # Keep the evidence that explains why, then fail closed instead of publishing
+        # a bundle whose membership is not complete.
+        report['status'] = 'membership_incomplete'
+        report['error'] = str(exc)
+        try:
+            pack(source, capture, output / 'evidence', 'source_build',
+                 report.get('xcode_version') or 'xcodebuild')
+        except (OSError, ValueError) as error:
+            report['error'] = str(exc) + '; evidence pack failed: ' + str(error)
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
         report['error'] = str(exc)
     finally:
