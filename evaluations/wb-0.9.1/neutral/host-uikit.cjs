@@ -1,5 +1,6 @@
 // Host oracle for uikit-ib. Transpiles and executes the ACTUAL target
-// CounterController.ets. Runs normal + mutation (+2) + missing-evidence (label dropped).
+// CounterController.ets. Business paths run on the real candidate; guard paths
+// prove the mutation actually applied before counting a discrimination.
 const fs = require('fs');
 const vm = require('vm');
 const ts = require(process.argv[2]);
@@ -14,9 +15,16 @@ function load(src) {
   return ex;
 }
 const orig = fs.readFileSync(targetPath, 'utf8');
+
+function mutate(pattern, replacement) {
+  const out = orig.replace(pattern, replacement);
+  return { out, applied: out !== orig };
+}
 const cases = [];
 
-// Normal: viewDidLoad initializes, two taps increment and refresh the label.
+// UI-AC01 (business): viewDidLoad init + two taps increment and refresh the
+// label. Covers the IBAction event wiring (touchUpInside -> add) and the
+// countLabel outlet resource. Executed on the REAL candidate.
 {
   const ex = load(orig);
   const c = new ex.CounterController();
@@ -31,28 +39,30 @@ const cases = [];
     expected: { init: [0, 'Count: 0'], tap1: [1, 'Count: 1'], tap2: [2, 'Count: 2'] },
     actual: { init: [initCount, initLabel], tap1: [a1.count, a1.label], tap2: [a2.count, a2.label] }, pass });
 }
-// Mutant: increment +1 becomes +2 -> counts must diverge from source oracle.
+// UI-AC02 (guard): increment +1 becomes +2 -> count must diverge from source.
 {
-  const mutated = orig.replace('this.count += 1;', 'this.count += 2;');
-  const ex = load(mutated);
+  const { out, applied } = mutate('this.count += 1;', 'this.count += 2;');
+  const ex = load(out);
   const c = new ex.CounterController();
   c.viewDidLoad(); c.add(); c.add();
   const actual = { count: c.count, label: c.countLabel };
   const expected = { count: 2, label: 'Count: 2' };
   const divergence = actual.count !== expected.count || actual.label !== expected.label;
-  cases.push({ id: 'UI-AC02', kind: 'mutation', mutation: 'increment +2',
-    expected, actual, discriminated: divergence, pass: divergence });
+  cases.push({ id: 'UI-AC02', kind: 'mutation', mutation: 'increment +2', applied,
+    expected, actual, discriminated: divergence, pass: applied && divergence });
 }
-// Missing-evidence: outlet/label update dropped -> count increments but label silently lost.
+// UI-AC03 (guard / missing-evidence): countLabel update dropped -> label
+// silently lost. Detection must be real and the mutation must have applied.
 {
-  const mutated = orig.replace(/this\.countLabel = "Count: " \+ this\.count;/, '/* label update dropped */');
-  const ex = load(mutated);
+  const { out, applied } = mutate(/this\.countLabel = "Count: " \+ this\.count;/, '/* label update dropped */');
+  const ex = load(out);
   const c = new ex.CounterController();
   c.viewDidLoad(); c.add();
   const actual = { count: c.count, label: c.countLabel };
   const labelReflects = actual.label === ('Count: ' + actual.count);
-  cases.push({ id: 'UI-AC03', kind: 'missing-evidence', mutation: 'drop countLabel update',
+  const detected = !labelReflects;
+  cases.push({ id: 'UI-AC03', kind: 'missing-evidence', mutation: 'drop countLabel update', applied,
     expected: { count: 1, label: 'Count: 1' }, actual,
-    detected: !labelReflects, pass: !labelReflects });
+    detected, pass: applied && detected });
 }
 console.log(JSON.stringify({ sample: 'uikit-ib', source: 'CounterController.{h,m,xib}', target: targetPath, cases }, null, 2));

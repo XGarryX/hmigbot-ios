@@ -1,6 +1,7 @@
 // Host oracle for cross-page-async. Transpiles and executes the ACTUAL target
 // SharedSave.ets. Host injects setTimeout/clearTimeout/Promise (ArkUI provides
-// taskpool + preferences). Runs normal, cancellation, exception, and two mutants.
+// taskpool + preferences). Business paths run on the real candidate; guard paths
+// prove the mutation actually applied before counting a discrimination.
 const fs = require('fs');
 const vm = require('vm');
 const ts = require(process.argv[2]);
@@ -16,15 +17,14 @@ function load(src) {
 }
 const orig = fs.readFileSync(targetPath, 'utf8');
 
-function prefsStub(throwOnSet) {
-  return { _v: undefined,
-    set(v) { if (throwOnSet) throw new Error('persist failed'); this._v = v; },
-    get() { return this._v; } };
+function mutate(pattern, replacement) {
+  const out = orig.replace(pattern, replacement);
+  return { out, applied: out !== orig };
 }
 const cases = [];
 
 async function run() {
-  // Normal: add then save (no cancel) -> Saved and persisted.
+  // CA-AC01 (business): add then save (no cancel) -> Saved and persisted.
   {
     const ex = load(orig);
     const m = new ex.SharedSave();
@@ -37,7 +37,7 @@ async function run() {
       expected: { message: 'Saved', savedCount: 1 },
       actual: { message: m.message, savedCount: prefs.get() }, pass });
   }
-  // Cancellation: save then cancel before the 200ms write -> Cancelled, nothing persisted.
+  // CA-AC02 (business): save then cancel before the 200ms write -> Cancelled.
   {
     const ex = load(orig);
     const m = new ex.SharedSave();
@@ -53,7 +53,7 @@ async function run() {
       expected: { message: 'Cancelled', savedCount: undefined },
       actual: { message: m.message, savedCount: prefs.get() }, pass });
   }
-  // Exception: persistence fault -> message Failed, never Saved.
+  // CA-AC03 (business / exception): persistence fault -> message Failed.
   {
     const ex = load(orig);
     const m = new ex.SharedSave();
@@ -66,10 +66,11 @@ async function run() {
     cases.push({ id: 'CA-AC03', kind: 'exception',
       expected: { message: 'Failed' }, actual: { message: m.message }, pass });
   }
-  // Mutant: cancel() disabled -> cancellation must NOT protect persistence; baseline rejects.
+  // CA-AC04 (guard): cancel() disabled -> cancellation must NOT protect
+  // persistence. Mutation must have applied to count as a real discrimination.
   {
-    const mutated = orig.replace(/token\.cancelled = true;[\s\S]*?\n  \}/, '/* cancel disabled */\n  }');
-    const ex = load(mutated);
+    const { out, applied } = mutate(/token\.cancelled = true;[\s\S]*?\n  \}/, '/* cancel disabled */\n  }');
+    const ex = load(out);
     const m = new ex.SharedSave();
     const prefs = prefsStub(false);
     m.add();
@@ -79,25 +80,31 @@ async function run() {
     let caught = false;
     try { await p; } catch (e) { caught = true; }
     const writePrevented = prefs.get() === undefined;
-    cases.push({ id: 'CA-AC04', kind: 'mutation', mutation: 'cancel() no-op',
+    cases.push({ id: 'CA-AC04', kind: 'mutation', mutation: 'cancel() no-op', applied,
       expected: { savedCount: undefined, message: 'Cancelled' },
       actual: { savedCount: prefs.get(), message: m.message },
-      discriminated: !writePrevented, pass: !writePrevented });
+      discriminated: !writePrevented, pass: applied && !writePrevented });
   }
-  // Missing-evidence: persistence dropped -> savedCount never written; baseline rejects.
+  // CA-AC05 (guard / missing-evidence): persistence dropped -> savedCount never
+  // written. Detection must be real and the mutation must have applied.
   {
-    const mutated = orig.replace('prefs.set(captured);', '/* persistence dropped */');
-    const ex = load(mutated);
+    const { out, applied } = mutate('prefs.set(captured);', '/* persistence dropped */');
+    const ex = load(out);
     const m = new ex.SharedSave();
     const prefs = prefsStub(false);
     m.add();
     const token = { cancelled: false, onCancel: null };
     await m.save(prefs, token);
     const persisted = prefs.get() === 1;
-    cases.push({ id: 'CA-AC05', kind: 'missing-evidence', mutation: 'remove prefs.set',
+    cases.push({ id: 'CA-AC05', kind: 'missing-evidence', mutation: 'remove prefs.set', applied,
       expected: { savedCount: 1 }, actual: { savedCount: prefs.get(), message: m.message },
-      detected: !persisted, pass: !persisted });
+      detected: !persisted, pass: applied && !persisted });
   }
   console.log(JSON.stringify({ sample: 'cross-page-async', source: 'SharedSave.swift', target: targetPath, cases }, null, 2));
+}
+function prefsStub(throwOnSet) {
+  return { _v: undefined,
+    set(v) { if (throwOnSet) throw new Error('persist failed'); this._v = v; },
+    get() { return this._v; } };
 }
 run();
