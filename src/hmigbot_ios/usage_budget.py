@@ -32,6 +32,7 @@ import platform
 import tempfile
 import time
 from typing import Any
+from uuid import UUID
 
 
 TARGET_TOKENS = 20_000_000
@@ -225,12 +226,46 @@ def _clock() -> tuple[float, float]:
 
 
 def _clock_source() -> str:
-    # Python 3.11 monotonic clocks share their reference across local processes.
-    # A copied live ledger from another host cannot establish elapsed time here.
+    # This host label only supplements _boot_id; it is not a boot identity.
     return platform.system() + ":" + platform.node()
 
 
+def _boot_id() -> str | None:
+    """Read an OS boot identity, never derive it from adjustable wall time.
+
+    Windows BootId increments on each successful boot (Microsoft documentation):
+    https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/oem-hvci-enablement
+    Linux boot_id is a UUID stable within a boot (kernel documentation):
+    https://docs.kernel.org/admin-guide/sysctl/kernel.html#random
+    Unsupported platforms, absent counters, and denied reads fail closed.
+    """
+    try:
+        system = platform.system()
+        if system == "Windows":
+            import winreg
+            key_path = (r"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+                        r"\PrefetchParameters")
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path, 0,
+                                winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+                value, kind = winreg.QueryValueEx(key, "BootId")
+            if kind == winreg.REG_DWORD and type(value) is int and value >= 0:
+                return "windows_registry_boot_id:" + str(value)
+        elif system == "Linux":
+            value = UUID(Path("/proc/sys/kernel/random/boot_id").read_text(encoding="ascii").strip())
+            if value.int:
+                return "linux_boot_uuid:" + str(value)
+    except (OSError, ValueError, ImportError, UnicodeError):
+        pass
+    return None
+
+
 def _observe(data: dict) -> None:
+    anomalies = data["clock_anomalies"]
+    boot_id = _boot_id()
+    boot_reason = ("boot_identity_unverified" if boot_id is None or data.get("clock_boot_id") is None
+                   else "boot_identity_changed" if data["clock_boot_id"] != boot_id else None)
+    if boot_reason and boot_reason not in anomalies:
+        anomalies.append(boot_reason)
     if data["finished"]:
         return
     wall, mono = _clock()
@@ -238,11 +273,12 @@ def _observe(data: dict) -> None:
         raise BudgetError("nonfinite clock observation")
     previous = data["clock"]
     wall_step, mono_step = wall - previous["last_wall"], mono - previous["last_mono"]
-    anomalies = data["clock_anomalies"]
     for condition, reason in ((data["clock_source"] != _clock_source(), "clock_source_changed"),
                               (wall_step < 0, "wall_clock_reversed"),
                               (mono_step < 0, "monotonic_clock_reversed"),
-                              (abs(wall_step - mono_step) > 5, "clock_disagreement")):
+                              (abs(wall_step - mono_step) > 5
+                               or abs((wall - previous["start_wall"]) - (mono - previous["start_mono"])) > 5,
+                               "clock_disagreement")):
         if condition and reason not in anomalies:
             anomalies.append(reason)
     data["elapsed_seconds"] = max(data["elapsed_seconds"], wall - previous["start_wall"],
@@ -260,6 +296,8 @@ def _load(path: Path) -> dict:
             raise BudgetError("ledger is outside its declared project_root")
         _name(data["run_id"], "run_id")
         _name(data["clock_source"], "clock_source")
+        if data.get("clock_boot_id") is not None:
+            _name(data["clock_boot_id"], "clock_boot_id")
         _limits(data["token_limit"], data["walltime_limit_seconds"])
         if type(data["finished"]) is not bool or not isinstance(data["calls"], list):
             raise BudgetError("invalid ledger state")
@@ -272,6 +310,26 @@ def _load(path: Path) -> dict:
             raise BudgetError("invalid elapsed_seconds")
         if not isinstance(data["clock_anomalies"], list):
             raise BudgetError("invalid clock evidence")
+        anomalies = data["clock_anomalies"]
+        for reason in anomalies:
+            _name(reason, "clock_anomalies entry")
+        if len(set(anomalies)) != len(anomalies):
+            raise BudgetError("duplicate clock anomaly")
+        # Endpoints are retained independently of elapsed_seconds. Check them
+        # even after finish(), when observing current time must not extend a run.
+        clock = data["clock"]
+        wall_delta = clock["last_wall"] - clock["start_wall"]
+        mono_delta = clock["last_mono"] - clock["start_mono"]
+        lower_bound = max(wall_delta, mono_delta, 0)
+        if elapsed < lower_bound:
+            raise BudgetError("elapsed_seconds is below retained clock evidence")
+        required = ((wall_delta < 0, "wall_clock_reversed"),
+                    (mono_delta < 0, "monotonic_clock_reversed"),
+                    (abs(wall_delta - mono_delta) > 5, "clock_disagreement"))
+        if any(condition and reason not in anomalies for condition, reason in required):
+            raise BudgetError("clock anomalies disagree with retained clock evidence")
+        if elapsed > lower_bound and not {"wall_clock_reversed", "monotonic_clock_reversed"}.intersection(anomalies):
+            raise BudgetError("elapsed history requires missing clock reversal evidence")
         seen = set()
         for call in data["calls"]:
             for field in ("call_id", "stage", "agent", "provider", "run_id"):
@@ -349,10 +407,13 @@ def start(ledger: str | Path, run_id: str, *, project_root: str | Path,
         wall, mono = _clock()
         if not all(math.isfinite(value) for value in (wall, mono)):
             raise BudgetError("nonfinite clock observation")
+        boot_id = _boot_id()
         data = {"schema_version": 1, "run_id": run_id, "project_root": str(root),
                 "token_limit": token_limit, "walltime_limit_seconds": walltime_limit_seconds,
-                "finished": False, "elapsed_seconds": 0, "clock_anomalies": [],
+                "finished": False, "elapsed_seconds": 0,
+                "clock_anomalies": [] if boot_id is not None else ["boot_identity_unverified"],
                 "clock_source": _clock_source(),
+                "clock_boot_id": boot_id,
                 "clock": {"start_wall": wall, "start_mono": mono, "last_wall": wall, "last_mono": mono},
                 "calls": []}
         _save(path, data)
@@ -394,12 +455,14 @@ def summary(ledger: str | Path) -> dict:
     """Replay raw evidence and observe elapsed wall time under the writer lock.
 
     total_tokens and known_* are lower bounds whenever usage is unverified.
+    Finished usage/time stay frozen; newly detected boot anomalies stay sticky.
     """
     path = _path(ledger)
     with _lock(path):
         data = _load(path)
+        previous_anomalies = list(data["clock_anomalies"])
         _observe(data)
-        if not data["finished"]:
+        if not data["finished"] or previous_anomalies != data["clock_anomalies"]:
             _save(path, data)
         return _summary(data)
 
