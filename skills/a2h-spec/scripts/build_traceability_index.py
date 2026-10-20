@@ -45,10 +45,13 @@ else:
 sys.path.insert(0, str(_root / 'src'))
 try:
     from hmigbot_ios import spec_discovery, spec_helpers
+    from hmigbot_ios.cli_output import configure_utf8
 except Exception as exc:  # fail closed instead of running an unguarded helper
     raise SystemExit(
         'Object gate sources are missing from %s/src (%s); reinstall the complete plugin'
         % (_root, exc))
+
+configure_utf8(sys.stdout, sys.stderr)
 
 
 def _guard(exc, helper_result=None, aliases=None, replacements=(), exit_code=1):
@@ -103,6 +106,10 @@ except spec_discovery.DiscoveryError as exc:
 
 real_root = project_root.resolve()
 real_out = _real_out(parsed.out, real_root)
+try:
+    spec_helpers.validate_output_path(real_out, real_root, discovery)
+except (spec_helpers.ObjectContractError, spec_discovery.DiscoveryError) as exc:
+    _guard(exc)
 
 with spec_helpers.shadow_features(features_dir, discovery,
                                   spec_helpers.TRACEABILITY) as shadow:
@@ -127,6 +134,10 @@ if result.returncode != 0:
     spec_helpers.forward(result, aliases=shadow.aliases, replacements=replacements)
     raise SystemExit(result.returncode)
 
-spec_helpers.write_index(real_out, normalized)
+try:
+    spec_helpers.validate_output_path(real_out, real_root, discovery)
+    spec_helpers.write_index(real_out, normalized)
+except (spec_helpers.ObjectContractError, spec_discovery.DiscoveryError) as exc:
+    _guard(exc)
 spec_helpers.forward(result, aliases=shadow.aliases, replacements=replacements)
 raise SystemExit(0)

@@ -44,10 +44,13 @@ else:
 sys.path.insert(0, str(_root / 'src'))
 try:
     from hmigbot_ios import spec_discovery, spec_helpers
+    from hmigbot_ios.cli_output import configure_utf8
 except Exception as exc:  # fail closed instead of running an unguarded helper
     raise SystemExit(
         'Object gate sources are missing from %s/src (%s); reinstall the complete plugin'
         % (_root, exc))
+
+configure_utf8(sys.stdout, sys.stderr)
 
 
 def _guard(exc, helper_result=None, aliases=None, replacements=(), exit_code=1):
@@ -96,6 +99,10 @@ with spec_helpers.shadow_features(Path(parsed.spec_dir), discovery,
                                   spec_helpers.DIVERGENCE) as shadow:
     ledger = (parsed.ledger if parsed.ledger is not None
               else spec_helpers.default_ledger(parsed.spec_dir))
+    try:
+        spec_discovery.reject_links(Path(ledger))
+    except spec_discovery.DiscoveryError as exc:
+        _guard(exc)
     forwarded = spec_helpers.rewrite_option(parsed.forward, '--spec-dir',
                                             str(shadow.features_dir))
     forwarded = spec_helpers.rewrite_option(forwarded, '--ledger', ledger,

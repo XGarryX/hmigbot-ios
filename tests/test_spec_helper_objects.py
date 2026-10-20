@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(os.environ.get('HMIGBOT_TEST_RUNTIME', Path(__file__).resolve().parents[1])).resolve()
 sys.path.insert(0, str(ROOT / 'src'))
@@ -494,6 +495,117 @@ class ObjectValidationTests(WrapperTestCase):
 
         spec_helpers.verify_divergence_objects(
             self.discovery, {'mains': 1, 'parity': 2, 'divergence': 0})
+
+
+class FollowupBoundaryTests(WrapperTestCase):
+    def test_gbk_guard_reports_unicode_filename_as_utf8_without_traceback(self):
+        project = self.project()
+        self.write(self.features(project) / 'F001-account.md', account_doc(1))
+        self.write(self.features(project) / 'F001-账号😀.md', account_doc(1))
+        environment = dict(os.environ, PYTHONIOENCODING='gbk', PYTHONUTF8='0')
+        for script, arguments in (
+                ('lint_divergence.py', ['--spec-dir', self.features(project), '--gate']),
+                ('build_traceability_index.py', ['--project-root', project])):
+            result = subprocess.run([sys.executable, str(SCRIPTS / script), *map(str, arguments)],
+                                    capture_output=True, env=environment)
+            output = (result.stdout + result.stderr).decode('utf-8')
+            self.assertNotEqual(result.returncode, 0, output)
+            self.assertIn('DUPLICATE_FEATURE_ID', output)
+            self.assertIn('F001-账号😀.md', output)
+            self.assertNotIn('UnicodeEncodeError', output)
+            self.assertNotIn('RESULT: PASS', output)
+
+    def test_gbk_normal_output_and_real_index_paths_remain_utf8(self):
+        project = self.project()
+        filename = 'F001-账号😀.md'
+        self.write(self.features(project) / filename, account_doc(1))
+        environment = dict(os.environ, PYTHONIOENCODING='gbk', PYTHONUTF8='0')
+        for script, arguments in (
+                ('lint_divergence.py', ['--spec-dir', self.features(project), '--gate']),
+                ('build_traceability_index.py', ['--project-root', project])):
+            result = subprocess.run([sys.executable, str(SCRIPTS / script), *map(str, arguments)],
+                                    capture_output=True, env=environment)
+            output = (result.stdout + result.stderr).decode('utf-8')
+            self.assertEqual(result.returncode, 0, output)
+            self.assertNotIn('\ufffd', output, 'helper diagnostics must retain their Unicode text')
+        payload = json.loads((project / 'spec/.a2h/requirements-index.json').read_text(encoding='utf-8'))
+        self.assertEqual(payload['requirements'][0]['spec_uri'], 'spec/baseline/features/' + filename)
+
+    def test_output_cannot_overwrite_main_baseline_ledger_or_hardlink(self):
+        project = self.project()
+        source = self.features(project) / 'F001-账号.md'
+        self.write(source, account_doc(1))
+        ledger = project / 'spec/decision-ledger.md'
+        self.write(ledger, LEDGER % 'approved')
+        baseline = project / 'spec/baseline/source.json'
+        self.write(baseline, '{"source":true}')
+        hardlink = self.tmp / 'hardlink-index.json'
+        os.link(source, hardlink)
+        ledger_hardlink = self.tmp / 'ledger-index.json'
+        os.link(ledger, ledger_hardlink)
+        for out in (source, ledger, baseline, hardlink, ledger_hardlink,
+                    self.features(project) / 'new-index.json'):
+            before = {path: path.read_bytes() for path in (source, ledger, baseline)}
+            result = run_wrapper('build_traceability_index.py', ['--project-root', project, '--out', out])
+            output = result.stdout + result.stderr
+            self.assertNotEqual(result.returncode, 0, output)
+            self.assertIn('OUTPUT_CONFLICT', output)
+            self.assertNotIn('RESULT: PASS', output)
+            self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+    def test_existing_legal_json_index_can_be_updated_relative_to_cwd(self):
+        project = self.project()
+        self.write(self.features(project) / 'F001-账号.md', account_doc(1))
+        out = self.tmp / 'existing.json'
+        self.write(out, '{"old":true}')
+        result = run_wrapper('build_traceability_index.py',
+                             ['--project-root', project, '--out', out.name], cwd=self.tmp)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(out.read_text(encoding='utf-8'))['_meta']['total'], 1)
+
+    def test_nonempty_main_without_acs_is_rejected_even_with_allow_empty(self):
+        project = self.project()
+        self.write(self.features(project) / 'F001-账号.md', account_doc(0))
+        for script, arguments in (
+                ('lint_divergence.py', ['--spec-dir', self.features(project), '--gate']),
+                ('build_traceability_index.py', ['--project-root', project])):
+            for extra in ([], ['--allow-empty']):
+                result = run_wrapper(script, arguments + extra)
+                output = result.stdout + result.stderr
+                self.assertNotEqual(result.returncode, 0, output)
+                self.assertIn('ZERO_ACCEPTANCE_CRITERIA', output)
+                self.assertNotIn('RESULT: PASS', output)
+        self.assertFalse((project / 'spec/.a2h/requirements-index.json').exists())
+
+    def test_link_and_junction_detection_requires_no_windows_privileges(self):
+        project = self.project()
+        source = self.features(project) / 'F001-账号.md'
+        self.write(source, account_doc(1))
+        original = Path.is_symlink
+        def linked(path):
+            return path == source.absolute() or original(path)
+        with patch.object(Path, 'is_symlink', linked):
+            with self.assertRaisesRegex(spec_discovery.DiscoveryError, 'INPUT_LINK'):
+                spec_discovery.discover(self.features(project))
+        with patch.object(Path, 'is_junction', lambda path: path == self.features(project).absolute(), create=True):
+            with self.assertRaisesRegex(spec_discovery.DiscoveryError, 'INPUT_LINK'):
+                spec_discovery.discover(self.features(project))
+        discovery = spec_discovery.discover(self.features(project))
+        with patch.object(Path, 'is_symlink', linked), patch('shutil.copyfile') as copied:
+            with self.assertRaisesRegex(spec_discovery.DiscoveryError, 'INPUT_LINK'):
+                with spec_helpers.shadow_features(self.features(project), discovery, spec_helpers.TRACEABILITY):
+                    pass
+            copied.assert_not_called()
+
+    def test_output_link_alias_is_rejected_before_resolve(self):
+        project = self.project()
+        self.write(self.features(project) / 'F001-账号.md', account_doc(1))
+        discovery = spec_discovery.discover(self.features(project))
+        out = self.tmp / 'linked-index.json'
+        original = Path.is_symlink
+        with patch.object(Path, 'is_symlink', lambda path: path == out.absolute() or original(path)):
+            with self.assertRaisesRegex(spec_discovery.DiscoveryError, 'INPUT_LINK'):
+                spec_helpers.validate_output_path(out, project, discovery)
 
 
 if __name__ == '__main__':

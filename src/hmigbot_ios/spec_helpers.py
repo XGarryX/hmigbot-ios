@@ -130,7 +130,8 @@ def run_helper(script: Path, args) -> HelperResult:
     """Run the bundled helper unchanged, capturing raw stdout/stderr bytes."""
     command = [sys.executable, '-X', 'utf8', str(script), *map(str, args)]
     environment = dict(os.environ)
-    environment.setdefault('PYTHONUTF8', '1')
+    environment['PYTHONUTF8'] = '1'
+    environment['PYTHONIOENCODING'] = 'utf-8'
     environment.setdefault('A2H_TELEMETRY_OFF', '1')
     completed = subprocess.run(command, shell=False, env=environment, capture_output=True)
     return HelperResult(completed.returncode, completed.stdout, completed.stderr)
@@ -212,6 +213,9 @@ def alias_name(document: spec_discovery.FeatureDocument) -> str:
 def shadow_features(features_dir: Path, discovery: spec_discovery.Discovery,
                     helper_name: str) -> Iterator[Shadow]:
     """Copy the features directory, aliasing only documents the helper misses."""
+    spec_discovery.reject_links(features_dir)
+    for entry in Path(features_dir).iterdir():
+        spec_discovery.reject_links(entry)
     root = Path(tempfile.mkdtemp(prefix='hmigbot-object-gate-', dir=temp_base()))
     try:
         shadow = root / 'spec/baseline/features'
@@ -219,6 +223,7 @@ def shadow_features(features_dir: Path, discovery: spec_discovery.Discovery,
         by_name = {document.name: document for document in discovery.documents}
         aliases: dict[str, str] = {}
         for entry in sorted(Path(features_dir).iterdir(), key=lambda item: item.name):
+            spec_discovery.reject_links(entry)
             if not entry.is_file():
                 continue
             document = by_name.get(entry.name)
@@ -236,6 +241,41 @@ def shadow_features(features_dir: Path, discovery: spec_discovery.Discovery,
         yield Shadow(root=root, features_dir=shadow, aliases=aliases)
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def validate_output_path(path: Path, project_root: Path,
+                         discovery: spec_discovery.Discovery) -> None:
+    """Refuse source clobbering before invoking a helper or publishing JSON.
+
+    Existing JSON indexes outside source directories remain replaceable. Link
+    checks precede resolve, while samefile detects hard-link aliases of inputs.
+    """
+    path = Path(path)
+    spec_discovery.reject_links(path)
+    if path.suffix.lower() != '.json' or path.is_dir():
+        raise ObjectContractError('OUTPUT_CONFLICT', 'index output must be a JSON file: %s' % path)
+    actual = path.resolve()
+    baseline = Path(project_root) / 'spec/baseline'
+    for directory in (baseline, discovery.spec_dir):
+        spec_discovery.reject_links(directory)
+        if actual.is_relative_to(directory.resolve()):
+            raise ObjectContractError('OUTPUT_CONFLICT', 'output is inside source directory: %s' % path)
+    inputs = [document.path for document in discovery.documents]
+    # Protect every baseline input, including non-feature Markdown and ledgers,
+    # from hard-link aliases named *.json outside the baseline directory.
+    spec_root = Path(project_root) / 'spec'
+    if spec_root.is_dir():
+        for entry in spec_root.rglob('*'):
+            spec_discovery.reject_links(entry)
+            if entry.is_file() and (entry.is_relative_to(baseline) or entry.suffix.lower() == '.md'):
+                inputs.append(entry)
+    for entry in discovery.spec_dir.iterdir():
+        spec_discovery.reject_links(entry)
+        if entry.is_file():
+            inputs.append(entry)
+    for source in inputs:
+        if actual == source.resolve() or (path.exists() and source.exists() and path.samefile(source)):
+            raise ObjectContractError('OUTPUT_CONFLICT', 'output aliases source input: %s' % source)
 
 
 def parse_divergence_arguments(args) -> DivergenceArguments:

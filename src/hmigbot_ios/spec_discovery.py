@@ -45,6 +45,14 @@ class DiscoveryError(ValueError):
         self.detail = message
 
 
+def reject_links(path: Path) -> None:
+    """Inspect the lexical path before resolve can hide a link or junction."""
+    path = Path(path).absolute()
+    for part in (path, *path.parents):
+        if part.is_symlink() or (hasattr(part, 'is_junction') and part.is_junction()):
+            raise DiscoveryError('INPUT_LINK', 'materialize linked input before gating: %s' % part)
+
+
 @dataclass(frozen=True)
 class FeatureDocument:
     """A discovered feature Markdown file and its stable identity."""
@@ -107,6 +115,7 @@ def discover(spec_dir: Path, *, allow_empty: bool = False) -> Discovery:
     directory raises ``ZERO_OBJECTS`` instead of passing on zero objects.
     """
     spec_dir = Path(spec_dir)
+    reject_links(spec_dir)
     if not spec_dir.is_dir():
         raise DiscoveryError('SPEC_DIR_MISSING', '%s is not a directory' % spec_dir)
 
@@ -114,6 +123,7 @@ def discover(spec_dir: Path, *, allow_empty: bool = False) -> Discovery:
     addenda: dict[tuple[str, str], FeatureDocument] = {}
     documents: list[FeatureDocument] = []
     for path in sorted(spec_dir.iterdir(), key=lambda item: item.name):
+        reject_links(path)
         if not path.is_file():
             continue
         found = classify_name(path.name)
@@ -158,6 +168,7 @@ def discover(spec_dir: Path, *, allow_empty: bool = False) -> Discovery:
 
 
 def read_document(document: FeatureDocument) -> str:
+    reject_links(document.path)
     try:
         return document.path.read_text(encoding='utf-8-sig')
     except (OSError, UnicodeDecodeError) as exc:
@@ -171,7 +182,8 @@ def acceptance_documents(discovery: Discovery) -> dict[FeatureDocument, list[tup
     every consumer counts the same authored lines.  Addenda are included in
     identity checks but not in the helper parity/index counts: the original
     helpers only index main documents, and this wrapper does not invent a
-    second AC set.
+    second AC set. Each main must contain at least one authored AC;
+    ``--allow-empty`` only permits a scope with no main documents at all.
     """
     from .spec_contract import acceptance
 
@@ -179,6 +191,9 @@ def acceptance_documents(discovery: Discovery) -> dict[FeatureDocument, list[tup
     seen: dict[str, str] = {}
     for document in discovery.documents:
         items = acceptance(read_document(document))
+        if document.is_main and not items:
+            raise DiscoveryError('ZERO_ACCEPTANCE_CRITERIA',
+                                 '%s is a main document with no authored ACs' % document.name)
         for ac_id, body in items:
             if not _AC_ID.match(ac_id):
                 raise DiscoveryError('MALFORMED_AC_ID', '%s: %s' % (document.name, ac_id))
