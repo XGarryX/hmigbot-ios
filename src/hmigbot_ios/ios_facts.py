@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 
 from .core import MigrationError, digest, json_bytes, read_json, snapshot, write_json
 from .swiftui import tokenize
+from .computed_properties import computed_property
 from .source_scope import import_token_lines
 from .xcode import project_inventory, dependency_inventory
 from .resources import asset_inventory
@@ -191,16 +192,29 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
             import_lines = import_token_lines(tokens)
             values = [t.value for t in tokens]
             owner, pending_owner, depth, stack, wrapper_vars = 'file', None, 0, [], set()
+            computed_scopes, pending_computed_scope, computed_members = [], None, []
             storage = {'State', 'StateObject', 'ObservedObject', 'EnvironmentObject', 'Environment', 'Binding', 'AppStorage', 'SceneStorage'}
             for i, token in enumerate(tokens):
                 v = token.value
                 if v in {'class', 'struct', 'enum', 'extension'} and i + 1 < len(tokens):
                     pending_owner = values[i + 1]
+                # Separate lexical membership tracking avoids treating `class func`
+                # or `class var` modifiers as type declarations. Legacy owners/IDs
+                # remain unchanged; protocols are tracked only to exclude requirements.
+                if (token.kind != 'string' and v in {'class', 'struct', 'enum', 'extension', 'protocol'}
+                        and i + 1 < len(tokens) and tokens[i + 1].kind == 'identifier'
+                        and values[i + 1] not in {'func', 'var', 'let', 'subscript'}):
+                    pending_computed_scope = v
                 if v == '{':
                     depth += 1
+                    if pending_computed_scope:
+                        computed_scopes.append((depth, pending_computed_scope))
+                        pending_computed_scope = None
                     if pending_owner:
                         stack.append((depth, owner)); owner = pending_owner; pending_owner = None
                 if v == '}':
+                    if computed_scopes and computed_scopes[-1][0] == depth:
+                        computed_scopes.pop()
                     if stack and stack[-1][0] == depth:
                         _, owner = stack.pop()
                     depth -= 1
@@ -243,6 +257,11 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
                         k = decl.index('=')
                         type_ = ' '.join(decl[decl.index(':') + 1:k]) if ':' in decl else None
                         add(file, 'state', token.line, token.line, decl[0], {'storage': 'stored_property', 'type': type_, 'initializer': ' '.join(decl[k + 1:])}, owner)
+                    elif (path.suffix == '.swift' and computed_scopes
+                          and depth == computed_scopes[-1][0] and computed_scopes[-1][1] != 'protocol'):
+                        derived = computed_property(tokens, i)
+                        if derived is not None:
+                            computed_members.append((derived, owner))
                 if v in {'Button', 'onTapGesture', 'addTarget', 'IBAction'}:
                     add(file, 'event', token.line, min(tokens[min(i + 12, len(tokens) - 1)].line, token.line + 3), v,
                         {'trigger': v, 'tokens': window, 'handler_resolution': 'unresolved'}, owner)
@@ -279,6 +298,13 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
                     add(file, 'ownership', token.line, token.line, v, {'tokens': window}, owner)
                 if v in {'delegate', 'dataSource', 'performSelector', 'valueForKey', 'setValue'}:
                     add(file, 'delegate', token.line, token.line, v, {'tokens': window, 'receiver': 'unresolved'}, owner)
+            # Append after legacy facts so a conditional declaration with the same
+            # owner/name cannot change an existing fact's occurrence-based ID.
+            for derived, derived_owner in computed_members:
+                value = {key: val for key, val in derived.items()
+                         if key not in {'symbol', 'line', 'end_line', 'resolution'}}
+                add(file, 'state', derived['line'], derived['end_line'], derived['symbol'], value,
+                    derived_owner, evidence='token_signal')
             if depth != 0:
                 issues.append({'rule': 'IOS.TOKEN_BALANCE', 'path': file['path'], 'message': 'Use a syntax provider; token scope is incomplete'})
             if any(ord(t.value[0]) > 127 and t.kind != 'string' for t in tokens if t.value):
