@@ -179,6 +179,10 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
             # The previous unversioned source_files-only shape remains readable;
             # malformed modern evidence cannot bypass validation as legacy data.
             raise MigrationError('Unsupported source build membership contract')
+        elif (set(variant) & {'selection', 'source_membership', 'membership_status',
+                              'evidence_manifest_sha256', 'membership_sha256'}
+              or variant.get('effective_build', 'unresolved') != 'unresolved'):
+            raise MigrationError('Legacy membership cannot claim captured compiler identity or verified build')
     evaluated_manifests, evidence_ref = None, None
     if manifest_evidence is not None:
         from .manifest_evidence import validate

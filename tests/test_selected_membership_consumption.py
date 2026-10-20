@@ -77,3 +77,15 @@ class SelectedMembershipConsumptionTests(MembershipBase):
         graph = extract(self.source, self.variant(document, bundle))
         self.assertNotIn('source_membership', graph['variant'])
         self.assertEqual(graph['capabilities']['effective_build'], 'unresolved')
+
+    def test_legacy_cannot_self_promote_with_modern_metadata(self):
+        document, _ = self.capture_bundle()
+        write_json(self.capture / 'source-files.json', {'source_files': document['source_files']})
+        bundle = self.root / 'legacy-promotion'
+        pack(self.source, self.capture, bundle, 'source_build', 'legacy fixture')
+        for claims in ({'selection': document['selection']}, {'membership_status': 'complete'},
+                       {'source_membership': 'captured_compiler_inputs'},
+                       {'membership_sha256': '0' * 64}, {'evidence_manifest_sha256': '0' * 64},
+                       {'effective_build': 'verified'}):
+            with self.subTest(claims=claims), self.assertRaises(MigrationError):
+                extract(self.source, {**self.variant(document, bundle), **claims})
