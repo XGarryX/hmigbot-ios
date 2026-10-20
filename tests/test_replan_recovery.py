@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / 'tests'))
 from hmigbot_ios.core import digest, json_bytes, read_json, write_json
 
 
-def prepare(root):
+def prepare(root, managed_install=False):
     from test_ios_harness import fixture
     from spec_contract_fixture import strict_contract
     from test_plan_contract import PlanContractTests
@@ -44,6 +44,8 @@ def prepare(root):
     authoring = authoring_prepare(target)['input_template']
     write_json(authoring_path, authoring)
     (root / 'authoring-before.json').write_bytes(authoring_path.read_bytes())
+    if managed_install:
+        subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/manage_install.py'), 'install', '--workspace', str(target)], check=True)
     generate(target, path)
     action, code = step(target, 'domains')
     assert code == 0 and action['batch'][0]['id'] == 'base', action
@@ -265,8 +267,36 @@ class CacheResultTests(unittest.TestCase):
         with self.assertRaises(MigrationError): self.cached()
 
 
+class ManagedUpgradeBindingTests(unittest.TestCase):
+    """Portable proof-byte checks; real manager integration is separate evidence."""
+    def test_managed_exact_paths_and_manifest_public_package_bytes(self):
+        import base64
+        from hmigbot_ios.replan_recovery import _managed_binding
+        from hmigbot_ios.core import MigrationError
+        path = '.agents/skills/ios-source-analysis/SKILL.md'
+        old, new = b'# original public skill\n', b'# reviewed public skill\n'
+        proof = {'install_manifest_sha256': 'a' * 64, 'old_runtime_revision': 'b' * 64,
+                 'current_runtime_revision': 'c' * 64, 'files': [
+                     {'path': path, 'old_sha256': digest(old), 'new_sha256': digest(new), 'old_copy': '/saved/original.md'}]}
+        review = {'old': {'contract_revision': 'b' * 64}, 'new': {'contract_revision': 'c' * 64}, 'managed_upgrade': proof}
+        manifest = {'owner': 'hmigbot-ios', 'schema_version': 1, 'files': {
+            path: digest(new), '.hmigbot-ios/plugin/skills/ios-source-analysis/SKILL.md': digest(new)}}
+        record = {'proof': proof, 'files': [{'path': path, 'old_base64': base64.b64encode(old).decode(),
+                  'public_base64': base64.b64encode(new).decode(), 'package_base64': base64.b64encode(new).decode()}]}
+        self.assertEqual(_managed_binding(review, manifest, record), {path})
+        for field in ['old_base64', 'public_base64', 'package_base64']:
+            bad = copy.deepcopy(record); bad['files'][0][field] = base64.b64encode(b'tampered').decode()
+            with self.assertRaises(MigrationError): _managed_binding(review, manifest, bad)
+        bad = copy.deepcopy(manifest); bad['files'][path] = '0' * 64
+        with self.assertRaises(MigrationError): _managed_binding(review, bad, record)
+        for path in ['.agents/skills/other/SKILL.md', '.migbot/config.json', 'entry/Counter.ets']:
+            bad = copy.deepcopy(review); bad['managed_upgrade']['files'][0]['path'] = path
+            saved = copy.deepcopy(record); saved['proof'] = bad['managed_upgrade']; saved['files'][0]['path'] = path
+            with self.assertRaises(MigrationError): _managed_binding(bad, manifest, saved)
+
+
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == '--prepare':
-        prepare(Path(sys.argv[2]))
+    if len(sys.argv) > 1 and sys.argv[1] in {'--prepare', '--prepare-managed'}:
+        prepare(Path(sys.argv[2]), managed_install=sys.argv[1] == '--prepare-managed')
     else:
         unittest.main()
