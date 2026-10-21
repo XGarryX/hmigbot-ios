@@ -38,10 +38,25 @@ def _identity_borrowed(values, index):
                 return True  # Incomplete receiver cannot establish an ordinary read.
             if closing == ']':
                 continue  # Include the subscript's receiver in the walk.
-        elif scan >= 0 and re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*', values[scan]):
+        elif scan >= 0 and ('_' + values[scan]).isidentifier():
+            scan -= 1
+            # This lexer splits Unicode names into fragments. Treat adjacent
+            # identifier fragments conservatively as one receiver; never swallow
+            # an ownership prefix. This is lexical evidence, not Swift binding.
+            while (scan >= 0 and ('_' + values[scan]).isidentifier()
+                   and values[scan] not in RULESET['identity_usage']['ownership_prefixes']):
+                scan -= 1
+            if scan >= 0 and values[scan] == '$':
+                scan -= 1  # Closure shorthand $0 and projected-property $value.
+        elif scan >= 0 and values[scan] == '`':
+            scan -= 1
+            while scan >= 0 and values[scan] != '`':
+                scan -= 1
+            if scan < 0:
+                return True
             scan -= 1
         else:
-            return False
+            return scan < 0 or values[scan] != '\\'  # Untyped key path is a read; unknown receivers are not proven reads.
         if scan >= 0 and values[scan] == '.':
             scan -= 1
             continue
@@ -62,14 +77,14 @@ def _identity_usage(values, index):
     """
     if values[index] == 'ForEach':
         return 'for_each'
-    if _identity_borrowed(values, index):
-        return 'unknown'
     following = index + 1
     while (following < len(values) and values[following] in {'?', '!'}
            and values[following:following + 2] != ['!', '=']):
         following += 1
     if following < len(values) and values[following] in {'(', '{'}:
         return 'member_call'
+    if _identity_borrowed(values, index):
+        return 'unknown'
     # The bounded lexer emits +=/-= whole but splits >>= and &*=. Match the
     # operator's actual token spelling, retaining the same boundary for either form.
     operators = {''.join(values[following:following + length]) for length in (1, 2, 3)}

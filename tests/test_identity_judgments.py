@@ -110,6 +110,17 @@ class IdentityJudgmentTests(unittest.TestCase):
                 graph, _ = extract_case(expression)
                 self.assertEqual(identities(graph)[0]['value']['identity_usage'], 'member_read')
 
+    def test_unicode_and_swift_identifier_receiver_fragments_preserve_inout_boundary(self):
+        for receiver in ('豆', 'state.豆', '豆子', 'state.豆子', 'value豆', '豆1',
+                         '$0', '$value', '`value`', 'state.`class`'):
+            with self.subTest(receiver=receiver):
+                borrowed, _ = extract_case(f'mutate(&{receiver}.id)')
+                self.assertEqual(identities(borrowed)[0]['value']['identity_usage'], 'unknown')
+                self.assertEqual(identity_obligations(borrowed)[0]['judgments'], ['ui'])
+                read, _ = extract_case(f'read({receiver}.id)')
+                self.assertEqual(identities(read)[0]['value']['identity_usage'], 'member_read')
+                self.assertEqual(identity_obligations(read)[0]['judgments'], ['unit', 'contract', 'ui'])
+
     def test_forged_usage_and_token_location_are_rejected_by_source_replay(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
