@@ -26,6 +26,8 @@ python <runtime>/scripts/a2h_ios.py literals --project <target>
 
 facts 生成 ios-facts.json 与 ios-obligations.json。这两件禁止模型手改。fact ID 与行号分离，源片段、文件摘要、owner、symbol、kind、value、解析层级和构建范围均保留。状态初值保留源表达式文本，不擅自求值。
 
+identity 信号保留原有 ID 与数量，附加可重提回放的 token_index/identity_usage。普通 `.id` 成员读取（含比较、optional 链、key path）的判据候选为 unit/contract/ui；`ForEach` 和 `.id(...)` 调用仍需 UI，未知接收者也不例外。`ForEach(id: \.id)` 中 key path 的读取不取代 ForEach 自身的 UI 义务。缺失/未知用法元数据保持原 UI 规则；泛型、写入等歧义形式保守处理，不根据目录或 import 猜语义。这仍是 token_signal，不证明业务受到正确测试。上下文 selector 与规则一同进入 rules_sha256；旧 baseline 需运行原 `facts` 重提取、复审受影响的 semantics/coverage/AC 并重跑门禁，不能手补 metadata 或继承旧 PASS。
+
 仓库扫描包含未选中的配置，effective_build=unresolved。`--variant` 的 selected-build 必须携 source_build 证据包及已哈希 source-files.json；导入文件的完整性不证明捕获真实性。遇到条件编译、宏、动态派发或解析未知，不能用扫描数量声称有效构建已解析。
 
 需要解除具体 `Package.swift` 的未求值问题，或从真实Xcode工程推导产品/测试成员时，按 [清单求值与产品成员证据](source-input-evidence.md) 使用 `manifest-evaluate`、`facts --manifest-evidence` 和/或 `facts --variant` 的 `project-targets`。输入、证据回放、失败边界与旧图复审以该规程为单源；它们不提升为有效构建或行为证据。

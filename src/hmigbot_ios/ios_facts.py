@@ -12,8 +12,41 @@ from .source_scope import import_token_lines
 from .xcode import project_inventory, dependency_inventory
 from .resources import asset_inventory
 
-RULES = read_json(Path(__file__).with_name('ios_rules.json'))['rules']
+RULESET = read_json(Path(__file__).with_name('ios_rules.json'))
+RULES = RULESET['rules']
 SOURCE_KINDS = {'.swift', '.m', '.mm', '.h', '.c', '.cpp'}
+
+
+def _identity_usage(values, index):
+    """Describe lexical use, without binding a receiver or inferring its framework.
+
+    Invocations and ambiguous generic/operator uses keep the UI default.
+    A bare member access may instead be tested as a value read;
+    ForEach has its own independent UI obligation even when its key path is read.
+    """
+    if values[index] == 'ForEach':
+        return 'for_each'
+    following = index + 1
+    while (following < len(values) and values[following] in {'?', '!'}
+           and values[following:following + 2] != ['!', '=']):
+        following += 1
+    if following < len(values) and values[following] in {'(', '{'}:
+        return 'member_call'
+    tail = values[following:following + 2]
+    if (tail[:1] in (['<'], ['='], ['+='], ['-='])
+            or len(tail) == 2 and tail[0] in {'+', '-', '*', '/', '%', '&', '|', '^'} and tail[1] == '='):
+        return 'unknown'
+    return 'member_read'
+
+
+def _fact_rule(fact):
+    for context in RULESET.get('context_rules', []):
+        selector = context['selector']
+        if (fact.get('kind') == selector['kind'] and fact.get('symbol') == selector['symbol']
+                and all(fact.get('value', {}).get(key) == value
+                        for key, value in selector['value'].items())):
+            return context['rule']
+    return RULES[fact['kind']]
 
 
 def _is_task_priority_argument(values, index):
@@ -318,7 +351,8 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
                     if not (v == 'priority' and _is_task_priority_argument(values, i)):
                         add(file, 'constraint', token.line, token.line, v, {'tokens': window, 'relation': 'unresolved'}, owner)
                 if v == 'ForEach' or v == 'id' and i and values[i - 1] == '.':
-                    add(file, 'identity', token.line, token.line, v, {'tokens': window}, owner)
+                    add(file, 'identity', token.line, token.line, v,
+                        {'tokens': window, 'token_index': i, 'identity_usage': _identity_usage(values, i)}, owner)
                 if v in {'VStack', 'HStack', 'ZStack', 'List', 'ScrollView', 'Text', 'Image', 'UIView', 'UILabel', 'UIButton', 'UIStackView'}:
                     add(file, 'composition', token.line, token.line, v, {'tokens': window}, owner)
                 if v in {'frame', 'padding', 'background', 'overlay', 'clipShape', 'offset', 'position', 'opacity', 'transition', 'animation'} and i and values[i - 1] == '.':
@@ -380,9 +414,9 @@ def extract(source: Path, variant: dict | None = None, *, manifest_evidence: Pat
 
 def obligations(graph):
     return {'schema_version': 2, 'source_sha256': graph['source_sha256'],
-            'graph_sha256': digest(json_bytes(graph)), 'rules_sha256': digest(json_bytes(RULES)),
+            'graph_sha256': digest(json_bytes(graph)), 'rules_sha256': digest(json_bytes(RULESET)),
             'obligations': [{'id': 'IO-' + fact['id'][3:], 'fact_id': fact['id'], 'kind': fact['kind'],
-                             **RULES[fact['kind']]} for fact in graph['facts']]}
+                             **_fact_rule(fact)} for fact in graph['facts']]}
 
 
 def _capture_providers(project, source, graph, provider_plan):
