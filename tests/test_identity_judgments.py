@@ -79,6 +79,37 @@ class IdentityJudgmentTests(unittest.TestCase):
                 fact['value'] = metadata
                 self.assertEqual(identity_obligations(graph)[0]['judgments'], ['ui'])
 
+    def test_compound_write_operator_table_is_not_an_ordinary_read(self):
+        for operator in ('+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=',
+                         '<<=', '>>=', '&+=', '&-=', '&*='):
+            with self.subTest(operator=operator):
+                graph, _ = extract_case(f'func update() {{ value.id {operator} other }}')
+                self.assertEqual(identities(graph)[0]['value']['identity_usage'], 'unknown')
+                self.assertEqual(identity_obligations(graph)[0]['judgments'], ['ui'])
+
+    def test_comparisons_are_reads_but_bare_less_than_remains_ambiguous(self):
+        for operator in ('==', '!=', '<=', '>='):
+            with self.subTest(operator=operator):
+                graph, _ = extract_case(f'func same() {{ value.id {operator} other.id }}')
+                self.assertTrue(all(f['value']['identity_usage'] == 'member_read' for f in identities(graph)))
+                self.assertTrue(all(o['judgments'] == ['unit', 'contract', 'ui'] for o in identity_obligations(graph)))
+        graph, _ = extract_case('value.id < other')
+        self.assertEqual(identity_obligations(graph)[0]['judgments'], ['ui'])
+
+    def test_inout_and_ownership_prefixes_are_not_proven_value_reads(self):
+        for expression in ('&value.id', '&state.value.id', '&values[index].id',
+                           '&state.values[index].id', '&(value).id',
+                           'borrow value.id', 'consume state.value.id'):
+            with self.subTest(expression=expression):
+                graph, _ = extract_case(f'update({expression})')
+                self.assertEqual(identities(graph)[0]['value']['identity_usage'], 'unknown')
+                self.assertEqual(identity_obligations(graph)[0]['judgments'], ['ui'])
+        for expression in ('left & value.id', 'update(label: value.id)', 'values[index].id',
+                           '(value).id', 'borrower.value.id'):
+            with self.subTest(expression=expression):
+                graph, _ = extract_case(expression)
+                self.assertEqual(identities(graph)[0]['value']['identity_usage'], 'member_read')
+
     def test_forged_usage_and_token_location_are_rejected_by_source_replay(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

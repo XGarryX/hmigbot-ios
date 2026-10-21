@@ -17,6 +17,42 @@ RULES = RULESET['rules']
 SOURCE_KINDS = {'.swift', '.m', '.mm', '.h', '.c', '.cpp'}
 
 
+def _identity_borrowed(values, index):
+    """Walk a lexical member/subscript receiver to a possible ownership prefix."""
+    scan = index - 2
+    while scan >= 0:
+        while scan >= 0 and values[scan] in {'?', '!'}:
+            scan -= 1
+        if scan >= 0 and values[scan] in {']', ')'}:
+            closing = values[scan]
+            opening = '[' if closing == ']' else '('
+            depth = 1
+            scan -= 1
+            while scan >= 0 and depth:
+                if values[scan] == closing:
+                    depth += 1
+                elif values[scan] == opening:
+                    depth -= 1
+                scan -= 1
+            if depth:
+                return True  # Incomplete receiver cannot establish an ordinary read.
+            if closing == ']':
+                continue  # Include the subscript's receiver in the walk.
+        elif scan >= 0 and re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*', values[scan]):
+            scan -= 1
+        else:
+            return False
+        if scan >= 0 and values[scan] == '.':
+            scan -= 1
+            continue
+        break
+    if scan < 0 or values[scan] not in RULESET['identity_usage']['ownership_prefixes']:
+        return False
+    # A binary bitwise '&' does not borrow the receiver. Ambiguous unary positions
+    # remain conservative; no declaration/type binding is claimed.
+    return values[scan] != '&' or scan == 0 or values[scan - 1] in {'(', ',', ':', '='}
+
+
 def _identity_usage(values, index):
     """Describe lexical use, without binding a receiver or inferring its framework.
 
@@ -26,15 +62,22 @@ def _identity_usage(values, index):
     """
     if values[index] == 'ForEach':
         return 'for_each'
+    if _identity_borrowed(values, index):
+        return 'unknown'
     following = index + 1
     while (following < len(values) and values[following] in {'?', '!'}
            and values[following:following + 2] != ['!', '=']):
         following += 1
     if following < len(values) and values[following] in {'(', '{'}:
         return 'member_call'
-    tail = values[following:following + 2]
-    if (tail[:1] in (['<'], ['='], ['+='], ['-='])
-            or len(tail) == 2 and tail[0] in {'+', '-', '*', '/', '%', '&', '|', '^'} and tail[1] == '='):
+    # The bounded lexer emits +=/-= whole but splits >>= and &*=. Match the
+    # operator's actual token spelling, retaining the same boundary for either form.
+    operators = {''.join(values[following:following + length]) for length in (1, 2, 3)}
+    if operators.intersection(RULESET['identity_usage']['compound_writes']):
+        return 'unknown'
+    if operators.intersection(RULESET['identity_usage']['comparisons']):
+        return 'member_read'
+    if following < len(values) and values[following] in {'<', '='}:
         return 'unknown'
     return 'member_read'
 

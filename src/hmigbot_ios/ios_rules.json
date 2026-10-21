@@ -1,5 +1,10 @@
 {
   "schema_version": 2,
+  "identity_usage": {
+    "compound_writes": ["+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=", "&+=", "&-=", "&*="],
+    "comparisons": ["==", "!=", "<=", ">="],
+    "ownership_prefixes": ["&", "borrow", "consume"]
+  },
   "context_rules": [
     {
       "selector": {"kind": "identity", "symbol": "id", "value": {"identity_usage": "member_read"}},
