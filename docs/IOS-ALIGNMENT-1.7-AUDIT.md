@@ -23,13 +23,24 @@
 
 | 维度 | 原版 1.7.0 | iOS 版 | 差异 |
 |---|---|---|---|
-| 技能目录 | `migbot/skills`（102 技能） | `skills`（96 技能） | iOS 删除 10 个 Android 源技能，新增 7 个 iOS 技能 |
-| 角色目录 | `migbot/agents-codex`（34 个 .toml） | `agents-codex`（29 个 .toml） | 替换 Android 分析/转换角色，见 §4 |
+| 技能目录 | `migbot/skills`（102 技能） | `skills`（96 技能） | iOS 删除 13 个技能、新增 7 个 iOS 技能（净 -6），详见下方清单 |
+| 角色目录 | `migbot/agents-codex`（33 个 .toml） | `agents-codex`（29 个 .toml） | 替换 Android 分析/转换角色，见 §4 |
 | 调度内核 | `migbot/skills/a2h-execute/scripts` | `vendor/hmigbot-1.7.0` | 逐字节保留，经 `ios_scheduler.py` 桥接 |
 | 备用策略 | `migbot-1to1/`（一比一迁移） | 无 | iOS 版未提供 1to1 策略 |
 | 架构技能 | `migbot-arch/`（a2h-arch-scaffold 等） | 无 | iOS 版未引入 arch 侧技能 |
 | 安装 | `install.sh/install.ps1 --target` | `install.ps1/install.sh -Workspace` | 语义等价，路径参数名不同 |
-| 版本 | 90 skill / 7 role（README 旧口径，实为 102/34） | 96 skill / 29 role | — |
+| 版本 | 90 skill / 7 role（README 旧口径，实为 102/33） | 96 skill / 29 role | — |
+
+### 技能差异清单（原版有、iOS 版无的 13 个）
+
+- **Android 源专属/资源（9 个，iOS 用 7 个新技能替代）**：`android-fact-tree`、`compose-fact-tree`、
+  `toolkit-fact-indexer`、`android-api-inventory`、`android-ui-graph-builder`、`android-ui-graph-query`、
+  `android-screenshot-analyzer`、`android-view-to-arkui`、`android2hmos-resources-convert`。
+- **目标/管线侧（4 个，iOS 用等价命令替代）**：`arkts-behavior-verify`（→ `behavior-check`）、
+  `hmos-device-triage`、`a2h-stage5-fix`、`app-relationship-tree`。
+
+> 说明：`arkts-behavior-verify` / `hmos-device-triage` / `a2h-stage5-fix` / `app-relationship-tree`
+> 属目标侧或通用能力，其删除是否产生覆盖缺口需重点复核（见 §7 路线图）。
 
 ---
 
