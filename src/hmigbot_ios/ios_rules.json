@@ -1,5 +1,16 @@
 {
   "schema_version": 2,
+  "identity_usage": {
+    "compound_writes": ["+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=", "&+=", "&-=", "&*="],
+    "comparisons": ["==", "!=", "<=", ">="],
+    "ownership_prefixes": ["&", "borrow", "consume"]
+  },
+  "context_rules": [
+    {
+      "selector": {"kind": "identity", "symbol": "id", "value": {"identity_usage": "member_read"}},
+      "rule": {"dimensions": ["identity"], "judgments": ["unit", "contract", "ui"], "obligation": "Retain member identity value, comparison and lookup behavior"}
+    }
+  ],
   "rules": {
     "state": {"dimensions": ["state_ownership", "state_transitions"], "judgments": ["unit", "ui"], "obligation": "Retain owner, storage, initializer, reset and visible update"},
     "binding": {"dimensions": ["binding_flow"], "judgments": ["unit", "ui"], "obligation": "Retain bidirectional writeback and parent ownership"},

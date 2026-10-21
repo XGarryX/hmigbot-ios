@@ -1,4 +1,6 @@
-# HMigBot-iOS 0.10.0
+# HMigBot-iOS 0.10.1
+
+0.10.1 区分模型 `.id` 值读取与 SwiftUI 身份调用，保留真实 UI 身份判据及保守未知分支。升级须按原 `facts` 流程重提并复审旧基线，不能继承旧门禁结果。
 
 0.10.0 增加新工程的 `source-analysis` / `spec-scaffold` 候选入口、按任务分配的决策上下文、调用用量与完整计时账本；强化中文功能文档、零对象、覆盖归属、提取问题身份和 Swift 字符串边界检查。同步目录仅形成项目声明范围，未知语义与未测项继续阻断验收。见 [可靠性工作流与验收边界](docs/RELIABILITY-0.10.md)。
 
@@ -305,8 +307,8 @@ python -m pip install '.[test]'
 python -X utf8 -m pytest -q -p no:cacheprovider
 python -X utf8 scripts/audit_native_surface.py
 python -X utf8 scripts/validate_release.py --output work/release-check
-python scripts/package_plugin.py --output dist/hmigbot-ios-0.10.0.zip
-python scripts/smoke_package.py --package dist/hmigbot-ios-0.10.0.zip --output work/package-check.json
+python scripts/package_plugin.py --output dist/hmigbot-ios-0.10.1.zip
+python scripts/smoke_package.py --package dist/hmigbot-ios-0.10.1.zip --output work/package-check.json
 ```
 
 仓库根目录未指定路径时，pytest 通过 `pyproject.toml` 的

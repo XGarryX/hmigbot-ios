@@ -1,3 +1,9 @@
+# 0.10.1 — 2026-10-21
+
+- Distinguish replayed identity member reads from ForEach and identity modifier calls; allow unit/contract/UI observations for value reads while retaining conservative UI judgments for calls, writes and unknown uses.
+- Bind contextual selectors and lexical classification policy to the complete rules digest; preserve fact IDs/counts and reject tampered metadata through source replay.
+- Require existing baselines to be re-extracted and reviewed with the current runtime; no stale gate success is inherited. Tool checks do not establish application UI or functional equivalence.
+
 # 0.10.0 — 2026-10-20
 
 - Add fresh source preparation and source-bound, unreviewed specification scaffolds.
