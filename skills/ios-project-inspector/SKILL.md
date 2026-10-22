@@ -19,6 +19,10 @@ metadata:
 
 ## 0. 定位与纪律
 
+### 设计理念与边界
+
+本 skill 只做**工程事实分层索引**：把 `.xcodeproj`/`.xcworkspace`/`Package.swift`/`Podfile` 里的「target / scheme / configuration / 语言模式 / 依赖 / 入口 / 条件编译」抽成一张带证据分级的工程地图，**不解析业务行为，也不做目标架构设计**。它是“事实索引层”，不是“生成器”——语义理解（每个入口/模块做什么）由下游 UI/功能/API 分析补。
+
 - **前置**：`<target>/.migbot/config.json` 存在且 `source_platform=ios`；`spec/baseline/ios-source-index.json` 已由上游建立（缺 → 提示先由 a2h-spec 跑 `source-index`，不代跑）。源不可读是阻塞，不以文件夹名或旧报告补造结构。
 - **输入**：iOS 源码根、迁移范围、已读 `.migbot/config.json`。本 skill 不修改签名、账号或源仓配置。
 - **输出**：`spec/ref/ios-project.md`（本 skill 独占）；机器事实视图 `spec/ref/ios-project-signals.json`（facts-view 单写）。模块/成员清单交 a2h-spec Phase 0 消费。
@@ -38,6 +42,7 @@ metadata:
 | 1.3 | `python <runtime>/scripts/a2h_ios.py facts-view --project <target> --scope project` | `spec/ref/ios-project-signals.json` | 非 0 = 工程信号未抽全，补 facts 后重跑 |
 
 - **索引只是范围与线索**：对每个业务结论继续读实际函数、调用点、配置与资源。`facts-view --scope project` 读到的 `ios-project-signals.json` 是机器信号，禁止手写或篡改。
+- 机器信号提供「target 列表 / build phases / 依赖方向 / 条件编译 / 宏 / 入口」等确定性线索；模型据此建地图，但**线索不等于绑定**——未解析的动态规则与未知对象类型记 `unresolved`，不据此声称有效构建。
 
 ### 单写者分区（违者 PROCESS_VIOLATION）
 
@@ -55,8 +60,72 @@ metadata:
 - 枚举 `.xcworkspace/contents.xcworkspacedata`、`.xcodeproj/project.pbxproj`、shared schemes、`.xcconfig`、`Package.swift`、`Package.resolved`、`Podfile`/`Podfile.lock`。
 - 区分 workspace 引用的多个 project、project 内 targets、SwiftPM targets 与代码目录。**`PBXFileReference` 只表示引用**：结合 build phases、target dependencies、synchronized groups 的例外才能推断构建成员。动态规则与未知对象类型记 `unresolved`。
 - 每个 target 记录 product type、入口、deployment target、device family、conditional compilation、bundle 配置、资源成员与依赖方向。
+
+### 2.1 pbxproj 对象类型与语义（索引分层依据）
+
+`project.pbxproj` 是 Xcode 工程的自有对象图，每个对象靠 `isa` 区分角色。**同一 `FileReference` 是否属于某 target 的编译成员，只能由 BuildFile 链接 + BuildPhase 归属证明**：
+
+| 对象 `isa` | 角色 | 对“有效成员”的贡献 |
+|---|---|---|
+| `PBXProject` | 工程根（targets 列表、buildConfigurationList） | target 全集与默认配置 |
+| `PBXNativeTarget` / `PBXAggregateTarget` | 原生/聚合 target | product type、build phases、dependencies |
+| `PBXFileReference` | 文件引用 | **仅引用，不证明编译成员** |
+| `PBXBuildFile` | build phase ↔ 文件的链接 | 连接文件到 Sources/Frameworks/Resources 阶段 |
+| `PBXGroup` / `PBXVariantGroup` / `XCVersionGroup` | 目录组 / 本地化变体 / 版本模型组 | 组织视图，非成员关系 |
+| `PBXSourcesBuildPhase` / `PBXFrameworksBuildPhase` / `PBXResourcesBuildPhase` | 编译/链接/资源阶段 | **成员真值来源**（含 `PBXBuildFile` 列表） |
+| `PBXShellScriptBuildPhase` | 脚本阶段 | 生成代码/资源，须记录不执行 |
+| `PBXTargetDependency` / `PBXContainerItemProxy` | target 依赖 / 跨工程引用代理 | 依赖方向与嵌入扩展 |
+| `XCBuildConfiguration` / `XCConfigurationList` | 构建配置 | build settings、宏/条件、SDK/架构 |
+| `PBXFileSystemSynchronizedRootGroup` | 同步组（Xcode 15+） | 目录级自动成员，需按例外规则补 |
+
+### 2.2 target 记录字段清单（索引完整性规则）
+
+每个 target 至少记录下列字段；**逐字段标证据分级（observed / static-inferred / unresolved）**，缺处不得留白猜：
+
+| 字段 | 说明 | 无证据时 |
+|---|---|---|
+| target ID / name / product type | 稳定标识 | `unresolved`（product type 读得到才算 observed） |
+| entry point | App/Scene/delegate/main/extension 入口（文件:行） | 见 §3，标 unresolved |
+| deployment target / device family | 最低系统版本 / iPhone/iPad/通用 | 读不到标 unknown |
+| languages | Swift/ObjC/ObjC++/C/C++ 及混合边界 | 见 §2.4 判定 |
+| conditional compilation / 宏 | `#if`/`SWIFT_ACTIVE_COMPILATION_CONDITIONS`/`GCC_PREPROCESSOR_DEFINITIONS` | 未解析的宏标 unresolved |
+| bundle 配置 | bundle id、Info.plist 路径、签名/entitlements | 交叉配置文件确认 |
+| sources/resources frameworks | build phases 成员 | `PBXFileReference` 不等于成员 |
+| dependencies | 依赖方向（target dep / 嵌入扩展 / 本地包） | 逐条给 `PBXTargetDependency`/package 引用 |
+
+硬约束（红线）：**文件索引不代表有效编译成员**；没有 Xcode 时保留 `static-inferred`，**绝不改标 compiler binding**。词法证据 ≠ 编译器绑定。
+
+### 2.3 product type 枚举
+
+| product type | 含义 |
+|---|---|
+| `com.apple.product-type.application` | App 主体 |
+| `com.apple.product-type.app-extension` | 普通扩展（Today/Share/Action 等） |
+| `com.apple.product-type.app-clip` | App Clip |
+| `com.apple.product-type.widgetkit-extension` | Widget 扩展 |
+| `com.apple.product-type.framework` | 动态 framework |
+| `com.apple.product-type.static-library` | 静态库 |
+| `com.apple.product-type.bundle.unit-test` / `bundle.ui-testing` | 单元/UI 测试 |
+| `com.apple.product-type.extensionkit-extension` | App Intents / ExtensionKit 扩展 |
+
+### 2.4 语言判定
+
 - **语言判定**：`.swift` 为 Swift；`.m` 为 Objective-C；`.mm` 为 Objective-C++；`.h` 按导入与符号解析判定。**C/C++ 引擎与 JS/Web 内容单独记录，不能转成 Swift 的假事实**。
-- 硬约束（红线）：**文件索引不代表有效编译成员**；没有 Xcode 时保留 `static-inferred`，**绝不改标 compiler binding**。词法证据 ≠ 编译器绑定。
+- **`.h` 头文件按导入与符号归属解析**：`#import <模块/头>` 与 `module.modulemap` 决定它属于 ObjC 还是桥接到 Swift；单凭扩展名不能定论。
+- 语言模式影响下游语义：Swift 的值复制/actor/并发、ObjC 的 nil messaging/ARC/KVO、ObjC++ 的混编边界、C/C++ 引擎的指针/句柄生命周期，都按调用链保留（读法见 `../ios-source-analysis/references/source-semantics.md`）。
+
+### 2.5 边界案例与推断封装
+
+| 边界案例 | 正确处置 | 禁止的错误封装 |
+|---|---|---|
+| `PBXFileReference` 未挂到任何 `PBXBuildFile`/BuildPhase | 不属于编译成员，记 `static-inferred`/引用 | 不能凭出现在工程里就标“成员存在” |
+| 头文件隐式包含 | 保守保留全仓扫描，不删成员 | 不能按目录名排除 |
+| 多 project workspace | 按 workspace 引用逐个 project 闭合，再合并 | 不能把 A 工程的 target 挂到 B 工程 |
+| 同步组（`PBXFileSystemSynchronizedRootGroup`） | 按例外规则补目录成员 | 不能假设目录树＝编译成员全集 |
+| 产品源中的活动 `#if` / 宏未解析 | 记 `unresolved`，**继续阻断** | 不能按一个分支的展开当全集 |
+| 测试与产品共享文件 | 保留共享文件，测试独占文件列 `test_only_oracle` | 不能按 Tests 目录直接排除 |
+| 跨工程 / 本地包依赖 | 依赖方向逐条给 `PBXTargetDependency`/package 引用 | 不能靠 target 名猜依赖 |
+| 未知 `isa` 对象、动态规则 | 记 `unresolved` + 原对象片段 | 不能把“解析失败”改写为“没有模块/没有权限” |
 
 ## 3. 沿入口理解运行边界
 
@@ -64,11 +133,34 @@ metadata:
 - App Clip、Widget、Share、Notification Service、Intents 等扩展按独立 target 建图。记录 App Group、共享容器、Keychain group、主应用通信协议与权限边界。
 - 将平台专有入口交 `ios-api-inventory`；**不能承诺所有扩展一对一映射**到目标。
 
+### 3.1 入口形态枚举
+
+| 入口形态 | 载体 | 追到 |
+|---|---|---|
+| SwiftUI App | `@main struct Xxx: App` + `Scene`/`WindowGroup` | 根 `body` 的初始视图 + 服务初始化 |
+| UIKit App | `@UIApplicationMain`/`@main class Xxx: AppDelegate` 或 `main.swift`/`main.m` 的 `UIApplicationMain` | `didFinishLaunching` 的 window/rootVC + 服务 |
+| Scene 生命周期 | `Info.plist` 的 `UIApplicationSceneManifest` + `UISceneDelegate` | 多场景、`UISceneConfiguration` |
+| 扩展 | `NSExtension`（`NSExtensionPrincipalClass`） | 扩展入口类与宿主通信 |
+| 后台唤醒 | `BGTaskScheduler` / `URLSession` background / 推送 | 后台任务与处理链 |
+
 ## 4. 解析依赖与混合语义
 
 - 区分源码包、预编译 `.xcframework`/`.framework`、动态加载、插件与资源 bundle。记录版本锁定、调用点、公开协议、许可证位置及源码是否可见。
 - Swift/ObjC bridging header、generated Swift header、module map、`NS_SWIFT_NAME`、泛型擦除与 nullability 边界都影响下游类型理解。**不能根据包名猜其运行行为**。
 - SwiftSyntax provider 可给语法节点与位置；**编译条件、宏展开、overload resolution 未解析时不能标 resolved**。SourceKit-LSP 或 Xcode 数据必须注明工具版本与目标配置。
+
+### 4.1 依赖锁定文件与混合边界
+
+| 载体 | 记录内容 |
+|---|---|
+| `Podfile` / `Podfile.lock` | pod 名/精确版本/checksum/`vendored` 标记/子依赖树 |
+| `Package.swift` / `Package.resolved` | package identity/版本/commit/产品 targets |
+| `Cartfile` / `Cartfile.resolved` | 框架名/版本 |
+| Bridging Header（`SWIFT_OBJC_BRIDGING_HEADER`） | Swift↔ObjC 桥接面 |
+| generated Swift header（`-Swift.h`） | ObjC 可见的 Swift 符号 |
+| `module.modulemap` / `umbrella.h` | 模块映射与导出头 |
+
+- 混合语义边界单独登记：显式桥接头、`NS_SWIFT_NAME` 重命名、nullability 注解、泛型擦除，都影响下游类型理解与目标 mapping。
 
 ## 5. 清单求值与产品成员证据
 
@@ -81,6 +173,7 @@ metadata:
 | 5.3 | `python <runtime>/scripts/a2h_ios.py facts --project <target> --variant <target>/spec/ref/project-targets.json>`（有可解析 pbxproj 时） | 产品成员（`source_files`/`source_membership`/`target_closure` 等） | 解析器从工程推导，调用者不能自写文件白名单或改派生字段 |
 
 - 清单求值只标 `manifest_evaluated`（范围 `current_host_manifest_evaluation`）；工程成员只标 `evidence=project_declared_membership`、`effective_build=unresolved`。**两者都不证明依赖已解析、已编译或已迁移完成**，不把声明标成已构建。
+- 测试独占文件由工程成员确定并列为 `test_only_oracle`，不作为产品编译源扫描；与产品共享的文件保留。**不按 Tests 目录名直接排除**。
 
 ## 6. 环境可用时提升证据
 
@@ -92,6 +185,15 @@ metadata:
 
 - `ios-project.md` 逐行含 target ID、类型、入口文件:行、语言、UI 框架、构建配置证据、依赖与未知项。**代码量是分工参考，不能当覆盖率**。
 - **每条推断标 `observed`/`static-inferred`/`unresolved`，并说明如何消除不确定性**。将运行入口交 UI/功能分析；将依赖与系统能力交 API inventory；重复事实引用同一 ID。
+
+### 7.1 证据分级（索引完整性规则）
+
+| 分级 | 含义 | 消除不确定性方式 |
+|---|---|---|
+| `observed` | 源配置/锁定文件直接读到的声明或机器信号 | —（已有源锚点） |
+| `static-inferred` | 静态解析推断的构建成员（无 Xcode 有效构建） | 取得真实 Xcode 构建证据后升级 |
+| `unresolved` | 动态规则/宏/未知对象类型未解析 | 标注所需额外证据（真实构建/符号服务） |
+
 - 失败恢复：路径失效重新定位；解析器不支持则保留原文件与对象片段，**不要把解析失败改写成“没有模块/没有权限”**，不经猜测填满表格。
 - 源码变化时：先按 harness-v2 的 `source-refresh --review` 协议更新索引，再重读变化路径并重跑门禁；旧图归档，旧 PASS 不继承。
 

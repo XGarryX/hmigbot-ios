@@ -34,22 +34,54 @@ metadata:
 - 依赖 iOS 独占系统行为（后台、StoreKit、iCloud、扩展）的状态/导航
 - 业务 VM/repository、后台任务、持久化迁移——**不在本 skill 范围**，归对应 slice worker
 
+### 1.1 结构/状态逐组件映射表
+
 | iOS 输入 | 必须保留的事实 | 目标实现方向（需核验目标 SDK 版本） |
 |---|---|---|
 | VStack/HStack/ZStack | 子视图顺序、对齐、间距、条件 | Column/Row/Stack 与目标布局约束 |
-| List/ForEach | identity、选择、更新与复用 | List/Repeat；显式稳定 key |
+| List/ScrollView/ForEach | identity、选择、更新与复用、滚动行为 | List/Scroll/Repeat；显式稳定 key |
 | @State / StateObject / ObservedObject | 持有者、初值、身份重置边界 | @Local/@ObservedV2/@Trace；按目标状态版本实现，非名称替换 |
 | @Binding | getter/setter、回写与校验 | @Param/@Event 或受控接口；保留单一 owner |
 | Environment | 注入值、覆盖子树、依赖 | Provider/Consumer 或显式参数；保持作用域 |
 | task(id:)/onAppear | 启停、取消、重入、副作用 | 显式任务/生命周期适配；防旧结果覆写 |
-| NavigationPath/sheet(item:) | 路由值、目的地分派、dismiss | Navigation/NavPathStack 与呈现状态模型 |
+| NavigationStack/NavigationPath/sheet(item:) | 路由值、目的地分派、dismiss | Navigation/NavPathStack 与呈现状态模型 |
+| TabView/toolbar | 选中态、tab 数、子页保活 | Tabs/底部栏状态模型 |
 | UIViewController | containment、出现/消失、Scene | 页面/组件/生命周期适配对象 |
 | Auto Layout | 优先级、relation、intrinsic size | 布局规则与条件；不拷固定像素 |
 | IB outlet/action | 连接 ID、实际 handler、参数 | 组件字段/回调与真实 VM 接线 |
 | delegate/data source | 弱引用、调用顺序、复用状态 | 接口/事件适配、显式 owner 与注销 |
 | Representable/HostingController | make/update/dismantle、Coordinator | 拆分双边生命周期与反馈环 |
 
+### 1.2 基础控件逐组件映射表
+
+| iOS 控件（SwiftUI / UIKit） | 必须保留的事实 | 目标实现方向 |
+|---|---|---|
+| Text / UILabel | 文案、字体/字号/字重、截断/换行、对齐、动态字级 | Text + 目标文本属性；截断与换行逐项核对 |
+| Image / UIImageView | 源资源名、contentMode、tint/渲染、圆角/裁剪 | Image + `$r('app.media.xxx')`；contentMode→objectFit 逐项映射 |
+| Button / UIButton | 标题、触发动作、禁用态、命中区 | Button + onClick；禁用态与命中区不丢 |
+| TextField / UITextField | 初值、占位、键盘类型、校验、onSubmit | TextInput + onChange；键盘/输入法类型映射 |
+| Toggle / UISwitch | 绑定值、初始化、开启文案 | Toggle/Switch + 状态绑定；保留初始极性 |
+| Slider / UISlider | 范围、步长、值绑定、onEditingChanged | Slider + onChange；步长与首尾取值 |
+| Picker / UIPickerView | 选项、选中值、联动 data source | Select/自定义选择器；选中与联动分别处理 |
+| Alert / UIAlertController | 标题/消息/按钮/取消、触发条件 | 对话框组件；取消与 destructive 顺序保留 |
+| NavigationLink / push segue | 目的地、参数、返回 | Navigation 跳转；参数与返回语义保留 |
+| Gesture（tap/swipe/longPress） | 触发源、手势冲突、命中节点 | gesture 绑定；命中区与冲突优先级核对 |
+
 > 完整逐项验收见 `references/semantic-mapping-v2.md`；决策顺序见 `references/conversion-decisions.md`。上面是概要，不是空壳说明——每个接缝要形成 fact→decision→task→AC→observation。
+
+### 1.3 布局与约束参数表（不按字面平移）
+
+| iOS 参数 | 处理 |
+|---|---|
+| point 坐标/尺寸 | 与目标 vp 不作无条件等比承诺；结合 safe area、系统字体、动态字级、缩放核对 |
+| 水平 margin + `width('100%')` | 目标 margin 计入组件自身尺寸——把水平 margin 下沉为父级 `padding`（或 `calc(100% - Nvp)`），垂直 margin 保持 |
+| safe area / safeAreaInsets | 目标安全区（刘海/挖孔/手势条）逐场景适配，不照拷 inset 数值 |
+| intrinsic size / hugging / compression | 记录优先级与 relation，转成目标布局规则，不拷固定像素 |
+| 隐显（hidden/alpha/removed） | 三种不同态；默认极性照抄 iOS 侧初值；隐藏、透明、移除布局不能互相替代 |
+
+### 1.4 不可映射兜底
+
+自绘/引擎 UI、WKWebView 内容桥接、相机/视频/地图叠层、iOS 独占系统行为等——**无可行方案时不得声称通用自动转换成功**；给具体边界与候选替代，登记 TODO/P-ID，回 `references/conversion-decisions.md` 走 decision 而非 fix。
 
 ## 2. 读必需参考（写代码前）
 
@@ -78,7 +110,7 @@ metadata:
 
 ## 5. 布局与资源核对
 
-- 保持源码声明的布局意图。iOS point 与目标 vp 不作无条件等比承诺；结合 safe area、系统字体、动态字级、缩放、屏幕配置校验目标结果。
+- 保持源码声明的布局意图。iOS point 与目标 vp 不作无条件等比承诺；结合 safe area、系统字体、动态字级、缩放、屏幕配置校验目标结果（见 §1.3 参数表）。
 - 颜色/图片/字体走 ios-resources-convert 的映射；SF Symbols 无同名目标资源保证（只记录符号含义与许可/版本约束）。
 - **不凭截图抹掉源码中的隐藏态、返回语义、VoiceOver 标签或键盘/focus 行为**；隐藏、透明、移除布局是三种不同状态，默认极性照抄 iOS 侧初值。
 - 显隐绑定三条硬规矩照 `_common.md`「显隐绑定铁律」执行：默认极性=iOS 默认、声明即接线、逐条核销。
