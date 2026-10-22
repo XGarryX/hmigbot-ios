@@ -24,3 +24,12 @@
 ## 本地 0.7.0 开发
 
 在既有 0.6.0 工作树上接入固定版本 AvdLee SwiftUI/Concurrency、Axiom UIKit/内存资料，以及 stdio MCP 源查询证据适配器。保留原五阶段、稳定 ID、三份状态账本与目标实现/验证规程；新增资料审阅门禁及冻结输入，README 逐步说明产物和交接条件。施工和交付在本地完成，本轮没有创建 GitHub 发布或推送版本标签。
+
+## 本地对齐开发（feature/ios-xcode-alignment，未发布）
+
+对照原版 HMigBot CodeX 1.7.0 逐阶段审计后，按「原版技能冻结不改、只改 iOS 版新增/修改的技能」原则施工：
+
+- 从原版六个 a2h-* 技能提取写作方法论（`docs/SKILL-AUTHORING-METHODOLOGY.md`：命令表/硬约束/无人值守处置阶梯/读取时机表/交接/收尾），并按此骨架重写 iOS 六个流水线技能，全部命令核对真实 `a2h_ios.py` 参数；a2h-verify 补回行为验证语义（`behavior-check` 只报告不参与整体判定）。
+- 七个 ios-* 技能深化到安卓原版对应技能的等价深度，iOS 语义红线逐条保留；引用路径与命令 flags 全部核实，零悬空引用。
+- `doctor` 新增 `host_profile` 宿主能力协商（macOS+Xcode → native 源解析，余者 static 回退），配套回归测试 `tests/test_host_profile.py`。
+- 维护原则写入审计（`docs/IOS-ALIGNMENT-1.7-AUDIT.md`）：原版共享技能（arkts-*/hmos-* 等）冻结；远离此约定的一轮改动已按 revert 提交撤回。本轮未创建 GitHub 发布或版本标签。

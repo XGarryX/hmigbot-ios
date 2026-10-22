@@ -8,6 +8,8 @@
 
 0.9.1 修复 WorkBuddy 评估中独立复现的解析、冻结和 raw 字符串问题，同步 Spec/Plan/Execute/Verify 的 MD 规则与检查器；增加受控旧规格诊断及真正由当前逐页证据生成、可检查是否过期的报告。见 [整改对应表](docs/WORKBUDDY-0.9.1.md) 与 [旧规格升级步骤](docs/SPEC-UPGRADE.md)。
 
+本地对齐开发（feature/ios-xcode-alignment，未发布）：① 六个流水线技能（a2h-init/spec/plan/execute/verify/retrospect）参照原版 HMigBot 1.7.0 的写作方法论整体重写——统一「精确命令表 / 黑体硬约束 / 无人值守处置阶梯 / 读取时机表 / 交接闸 / mark-stage 收尾」骨架，全部命令核对真实 `a2h_ios.py` flags；a2h-verify 补回原版 CHECK-5 行为验证语义（`behavior-check` 只报告、不参与整体判定）。② 七个 ios-* 技能深化到安卓原版对应技能的等价深度（接口接缝框架、pbxproj 分层、状态装饰器分类、行为链六维度、xcassets 全表等），iOS 语义红线逐条保留。③ `doctor` 输出新增 `host_profile` 宿主能力协商：macOS+Xcode → native 源解析，Windows/Linux → static 回退，Apple skill/Xcode MCP 按 available/configured/executed 三态记录。④ 明确维护原则：原版共享技能（arkts-*/hmos-* 等）冻结不改，只改 iOS 版新增/修改的技能。审计与写作基线见 [对齐审计](docs/IOS-ALIGNMENT-1.7-AUDIT.md) 与 [技能写法方法论](docs/SKILL-AUTHORING-METHODOLOGY.md)。
+
 读取原生 iOS 源码与功能特征，按原 HMigBot 五阶段生成 spec、计划和原生鸿蒙代码。
 本工具保留独立 HMigBot CodeX 1.6.1 的实施/验证资源，并接入 1.7.0 调度核心；所需资源随包提供，无需原插件目录。
 
