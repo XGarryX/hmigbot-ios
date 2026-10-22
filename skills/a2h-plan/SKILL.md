@@ -1,13 +1,57 @@
 ---
 name: a2h-plan
-description: "iOS→ArkTS 迁移的执行计划生成（Pipeline 第二步）：读已审批的 spec/baseline/，产出 UI 转换计划 ui-plan.md 和功能执行计划 feature-plan.md。当用户说\"生成计划\"\"怎么做这个迁移\"\"下一步怎么做\"时触发。不要用于：生成 Spec（用 a2h-spec）或执行代码（用 a2h-execute）；spec/baseline/ 未就绪时提示先跑 a2h-spec。"
+description: "iOS→HarmonyOS 迁移第二步（Plan）：读已过门禁的 spec/baseline/（Swift/ObjC、SwiftUI/UIKit 源规格），产出 UI 转换计划 ui-plan.md、indexed-v1 功能计划 feature-plan.md、base-plan 与逐 slice 只读调度账本，经 plan-check/plan-ir 冻结计划 IR 与六件 blueprint，在唯一审批门确认后交 a2h-execute。当用户说“生成执行计划”“生成 plan”“怎么做这个迁移”“为 spec 生成 plan”“拆分迁移任务”“下一步怎么做”时使用；兼容旧触发语“契约生成”“审批门/审批迁移计划”。不要用于：域理解与规格生成（用 a2h-spec）、执行迁移代码（用 a2h-execute）；spec/baseline/ 未就绪时提示先跑 a2h-spec。"
 metadata:
   type: pipeline
   domain: migration
   tags:
+  - ios
+  - plan
   - pipeline
   - migration
+  layer: pipeline
 ---
+
+> **派发约定**：本 skill **派发 subagent**。P1 三写（ui-plan / base-plan / slices）按 §3.0 编排派发 A∥B∥C 三个通用子代理；understand/域读临时代理与 slice 修复代理同理。**一律 `fork_turns:"none"`**（任务书自足：写清 spec 文件路径、门禁阻断原文、iOS 源锚点、输出契约）；**禁止**套 a2h-execute 的「修复波=all」——计划产物重写是重读源规格重写文档，继承主会话上下文只会带来污染与限流。
+>
+> **Join 协议（收口五条款）**：① 循环 wait：完成唯一合法信号 = `agent_status=completed`，绝不是产物文件存在/条数；② 死句柄与验收：3 次超时后 `list` 核对，completed≠验收通过，join 点跑门禁验产物，FAIL 视同未取回按断点重派；③ 收口锚点：最终报告前必须收口全部句柄；④ 放行≠遗弃；⑤ fire-and-forget 仅正文显式声明免收口。
+>
+> **派发纪律**：`task_name` 唯一（带 slice-id/round-N 后缀）；派发前把预期产物清单写 `spec/a2h/_work/expected_<join点>.json` 供对账（契约只认派发方、不认子代理自报）；**谁派谁收**；契约产物必须出自承担任务的子代理——重派上限后仍产不出 → 如实报缺停在未完成态，禁止派发方代写占位产物让 gate 转绿。
+>
+> **路径约定**：`$IOS_SRC` 读 `<target>/.migbot/config.json` 的 `ios` 字段（缺配置文件 → 先 a2h-init）；`<runtime>` = 本包 runtime（`scripts/a2h_ios.py` 所在根）。产物一律落 `<target>/spec/`，禁落会话临时目录。本 skill 自有脚本：`scripts/lint_plan_coverage.py`（启动器，指向 vendor 编译件）、`scripts/_a2h_findings.py`。
+
+## 0. 定位与纪律
+
+- **前置**：`spec/baseline/` 就绪 **且** `spec/ui-coverage-report.md` 最近一次 PASS，`spec-check` 与 `source-check --harness` 双门 exit 0，`spec/baseline/decision-ledger.md` 有 D 条目。缺任一项 → 提示先跑 a2h-spec，不代跑。
+- **输入**：`spec/baseline/{ui-manifest,feature-index,feature-base,ui/page_NNNN,features/FNNN}.md` 及其 `contract_refs`/`impl:` 引用闭包、`spec/.a2h/{open-findings,requirements-index}.json`、`spec/decision-ledger.md`。
+- **输出**：`spec/baseline/plans/{ui-plan,feature-plan,base-plan,coverage-matrix}.md`、`spec/baseline/plans/slices/slice-NN-<fid>.md`、`spec/placeholder-registry.md`、冻结的 `spec/blueprint/` 六件、`spec/waves/plan-<wave>.json` + `prompts/`。
+- **唯一交互点 = §8 审批门**（用户明确说 确认/通过/继续 才落 approved）；其余禁交互追问，机械检查由 exit code 判定（0=PASS，非0=FAIL）。
+- **第一条可见输出必须是一行阶段计划**（findings 检查 → 输入门槛 → P0 裁决 → P1 三写 → 覆盖率 → plan-check → plan-ir → 审批门），然后才执行本表。
+- **稳定 ID 定额（硬约束）**：page `page_NNNN`、feature `F\d+`、AC `F\d+-AC\d+`、决策 `D-*` 稳定不复用；计划项 item_id `UI:PAGE-0001 / BASE:Base-N / SLICE:F001:3b / FV:FV-1/2` 全名唯一。**禁止**自造编号（PKT-* 类）、**禁止**重排 slice 编号改变 F-ID 下的动作身份。
+- **profile 硬约束**：新 Plan 用 `spec_contract_version: 2`；已冻结 profile 2 的项目**禁止**降级绕过计划门禁；contract_hash 落定后改契约必须重生成 plan 并显式 replan，`next-batch` 对 hash 不一致 exit 非0。
+
+## 0.1 分步命令表（顺序执行；每步带产物与 exit code）
+
+| 步 | 命令 | 产物 | exit 语义 | FAIL 处置 |
+|---|---|---|---|---|
+| ① 上游门禁(只读确认) | `python <runtime>/scripts/a2h_ios.py spec-check --project <target>`；`python <runtime>/scripts/a2h_ios.py source-check --harness --project <target>` | 门禁报告 | 0=PASS；非0=FAIL | 回 a2h-spec 修，本阶段不代跑 |
+| ② P0 裁决 + P1 三写 | A∥B∥C 派发（§3.0） | 双计划 MD + 局部责任表 + plan items JSON | 按 Join 收口 | 收口后 join gate 验产物 |
+| ③ AC 级对账 | `python <skills>/a2h-plan/scripts/lint_plan_coverage.py --project-root <target>` | `spec/.a2h/plan-coverage.json` | 0=PASS；非0=FAIL | 🔴 未认领/过期 digest 清零后重跑（§7.3） |
+| ④ 计划校验 | `python <runtime>/scripts/a2h_ios.py plan-check --project <target> --input <planRequest.json>` | `request_validated`（不落计划产物） | 0=PASS；2=FAIL | 按 §0.2 阶梯修输入重跑 |
+| ⑤ 生成计划 IR | `python <runtime>/scripts/a2h_ios.py plan-ir --project <target> --input <planRequest.json>` | `spec/waves/plan-<wave>.json` + `spec/blueprint/` 六件 + prompts | 0=生成；2=FAIL | 修 MD/计划重跑；**禁止**手改 waves/blueprint |
+| ⑥ 审批门 | 主会话呈报 Gate 摘要，用户裁决 | 审批记录 | — | modify/reject → 回 ②/③/④ |
+| ⑦（规格变更后）显式重排 | `python <runtime>/scripts/a2h_ios.py replan --project <target> --input <planRequest.json>` | 归档旧控制件 + 新 plan | 0=重排；2=FAIL | 需 `replan_review{reviewer,reason}`；禁继承旧 success |
+
+- `<planRequest.json>` = 主会话按 plan-delivery-contract 生成的 typed plan request：`schema_version=2`、`wave∈{understand,domains}`、`graph_sha256` 钉当前 fact graph、`tasks[]`（id/role/ownership/ac_ids/fact_ids/goal/parents/plan_item_refs/verification）、`decisions[]`、`max_parallel∈1..8`。role 必须命中 `agents-codex/*.toml`；ownership 精确路径、禁通配符。
+- ⑥ 后交接 a2h-execute：`python <runtime>/scripts/a2h_ios.py next-batch --project <target> --wave <wave> [--usage-ledger … --usage-run-id …]`（可带用量预算前置检查）。
+
+## 0.2 无人值守处置阶梯（E266，适用于 ①③④⑤⑦ 每个门禁 FAIL）
+
+> FAIL → 按脚本/错误原文定位缺陷，派修复并重跑同一命令；**最多 2 轮**；2 轮仍不过或确定模型修不了 → **记欠账放行**（账要记全：修过几轮、每轮失败原因、判「修不了」的依据）；要拍板的模型自决并留痕；**任何分支不得停机呈报人工**（`gates.stage_debt=true` 例外：仅设备/账号类门允许欠账；静态门即便开了 stage_debt 也照常修到 PASS）。覆盖率 FAIL 按阶梯自愈，**不呈报用户**。
+
+- 修复不得豁免「三写产物主线程禁自写」：仅涉 `plan-coverage.json`（补映射/更新 digest）主线程直写；涉 slice/base-plan/ui-plan 内容 → 按增量重派对应 writer subagent，主线程直改仅限 §3.0 降级条件成立。
+- findings 只能由「原 linter 重跑后不再报」关闭，不能由任一方声明「已修复」关闭。
+- **单写者分区**：A→`ui-plan.md`；B→`plans/base-plan.md`；C→`plans/slices/*` + `spec/placeholder-registry.md`；主线程→`feature-plan.md` 索引 / `coverage-matrix.md` / `plan-coverage.json` / 信封行 append。主会话与 worker 手改 → PROCESS_VIOLATION。
 
 ## 0.6.0 控制面入口
 
@@ -491,9 +535,18 @@ python3 scripts/lint_plan_coverage.py --project-root $PROJECT_ROOT
 
 ---
 
+## 7.4 计划 IR 生成（plan-check → plan-ir）与显式 replan
+
+覆盖率（§7）、grill#2（§7.2）、AC 对账（§7.3）全部清零后依序：
+
+1. **计划校验（不落盘）**：`python <runtime>/scripts/a2h_ios.py plan-check --project <target> --input <planRequest.json>` — 只做 MD→typed JSON 对账与 schema/门禁校验，返回 `request_validated`，不写任何计划产物。exit 0 才进第 2 步。
+2. **生成计划 IR（冻结）**：`python <runtime>/scripts/a2h_ios.py plan-ir --project <target> --input <planRequest.json>` — 写 `spec/waves/plan-<wave>.json`、`spec/blueprint/` 六件、`prompts/`，钉 `contract_hash` 与 `prompt_hashes`。domains 波会重跑 harness 门禁；`graph_sha256` 必须等于当前 fact graph。已有 plan 不可变（`Existing plan is immutable`），改规格走 replan。
+3. **显式 replan（规格/契约变更后）**：`python <runtime>/scripts/a2h_ios.py replan --project <target> --input <planRequest.json>` — `<planRequest.json>` 必须带 `replan_review{reviewer,reason}`；先归档旧 `spec/state`、`spec/blueprint`、`spec/waves`、dispatch 收据到 `spec/.a2h/history/replan-<hex>` 再重生成；在飞任务必须先 land 或显式终止。**禁止**把旧 success 沿用到重排后的工程。
+4. exit 语义：plan-check/plan-ir/replan 0=成功、2=FAIL（JSON 含 status/error 原文）；FAIL 按 §0.2 阶梯处置，最多 2 轮，禁停机呈报人工。plan-ir 成功即 contract 冻结：此后改契约/计划必须重生成并复跑 plan-check/plan-ir。
+
 ## 8. 门控
 
-双计划 **+ grill #2** 检查完成后按当前授权推进；尚未授权执行时再请求同时确认plan与decision-ledger。摘要输出模板（UI/功能计划概览 + 覆盖率 + Placeholder Registry + 骨架审计预演 + grill #2决策 + briefs落点 + 可调整项）见 [templates/gate-output-template.md](./templates/gate-output-template.md)。
+双计划 **+ grill #2** 检查完成后（先在 §7.4 完成 plan-check → plan-ir 冻结计划 IR）按当前授权推进；尚未授权执行时再请求同时确认plan与decision-ledger。摘要输出模板（UI/功能计划概览 + 覆盖率 + Placeholder Registry + 骨架审计预演 + grill #2决策 + briefs落点 + 可调整项）见 [templates/gate-output-template.md](./templates/gate-output-template.md)。
 
 审批摘要必须附 **§7.3 AC 级对账结果**（🔴 未认领清单为空才可直接确认）。用户可直接确认 / 修改后确认 → 进入 a2h-execute（execute 按 ledger 查表执行，不再交互式追问）；或要求重新生成 → a2h-plan 重新执行。
 
@@ -509,6 +562,48 @@ python3 scripts/lint_plan_coverage.py --project-root $PROJECT_ROOT
 
 ---
 
+## 10. 读取时机（references）
+
+| 触发时机 | 必读文件 |
+|---|---|
+| 生成/检查/消费 `spec_contract_version=2` 的 Plan 产物前；item_id / plan items / 任务输入闭包 / 受管进度豁免 / capability-declarations | references/plan-delivery-contract.md |
+| §3.0 编排派发（P1 三写 A∥B∥C） | references/plan-dispatch.md |
+| §4 suggested_skills 标注、SDK 业务类别映射、meta.json 强绑规则（IS-1）、风格追加 | references/skill-binding-rules.md |
+| §7.2 grill#2 技术侧决策清零 | references/grill-2-decision-gates.md + ../a2h-spec/references/migration-decision-categories.md |
+| `source_platform=ios`、source_anchors/ios-semantics 到原双计划的衔接 | references/ios-source-protocol.md |
+| 输入闭包/spec 抽取歧义（gate C 之后） | ../a2h-spec/references/spec-delivery-contract.md |
+| harness v2 协议（机器门禁与状态写者） | ../ios-source-analysis/references/harness-v2.md |
+| findings 连续未收敛 / 出决策卡 | ../a2h-spec/templates/decision-card.md |
+| 旧存量 spec 报 `PLAN.SPEC_INDEX_MISSING` | 跑 ../a2h-spec/scripts/build_traceability_index.py（见启动检查） |
+
+## 11. references
+
+- `references/plan-delivery-contract.md`（Plan 交付合同，profile 2 唯一权威）
+- `references/plan-dispatch.md`（P1 派发参数模板）
+- `references/skill-binding-rules.md`（suggested_skills / 强绑规则 / 风格追加）
+- `references/grill-2-decision-gates.md`（计划前决策核验）
+- `references/ios-source-protocol.md`（iOS spec → 原双计划衔接）
+- `templates/{ui-plan,feature-plan,slice-plan,placeholder-registry,coverage-matrix,gate-output}-template.md`（生成时 MUST 整文件加载）
+- `scripts/lint_plan_coverage.py`（AC 级覆盖对账，vendor 编译件启动器）
+
+## 12. 交接（门前闸）
+
+- **闸门**：①–⑥ 步全部 exit 0 且 §8 审批门落 approved，阶段 A 才算完成。
+- **移交产物清单**：`spec/baseline/plans/`（ui-plan / feature-plan / base-plan / slices / coverage-matrix）、`spec/placeholder-registry.md`、`spec/blueprint/` 六件、`spec/waves/plan-{understand,domains}.json` 及 `prompts/`、`spec/.a2h/plan-coverage.json`。
+- **下一步**：进入 `a2h-execute`，从 `plan-<wave>.json` 用 `next-batch --wave <wave>` 起步（同会话可直接续跑）。规划态**不**回写执行态；执行态变更只能回原状态账本与 brief。
+
 ## 阶段证据
 
 将真实产物、源/目标版本、校验命令与结果写本阶段报告；状态以证据为准。无需遥测上传。
+
+---
+
+## 收尾：上报本阶段用量
+
+本 skill 的最后一步（无论经 a2h-run 还是单独触发）：
+
+```bash
+.migbot/bin/a2h mark-stage a2h-plan
+```
+
+标记 `a2h-plan` 阶段水位（写 stage-marks fact，受授权门控、尽力而为）。token 用量由宿主生命周期采集，本步不采集。**忽略其退出码，绝不阻断流水线。**

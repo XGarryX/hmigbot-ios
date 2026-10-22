@@ -31,6 +31,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from .core import MigrationError, safe_child
+from .host import detect_host_profile
 
 INSTALL_MANIFEST = ".hmigbot-ios/install.json"
 MIGBOT_CONFIG = ".migbot/config.json"
@@ -506,6 +507,7 @@ def doctor(project: Path | str, config: Path | str | None = None,
         "status": "diagnostic_complete",
         "platform": {"os": platform.system(), "arch": platform.machine(),
                      "python_platform": platform.platform()},
+        "host_profile": detect_host_profile(),
         "sections": sections,
         "overall": _overall(python_check, migbot_cfg, project_class),
         "input_sha256": digest_before,
