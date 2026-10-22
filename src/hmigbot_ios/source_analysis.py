@@ -15,6 +15,8 @@ def run(project, *, variant=None, providers=None, manifest_evidence=None, apply_
     from .ios_facts import refresh, obligations
     from .ios_literals import run as literal_index
     from .native_scaffold import scaffold, apply_scaffold as apply_candidate
+    from .host import detect_host_profile
+    from .provider_plan import preflight
 
     source, project = context(Path(project))
     # This convenience entry prepares the baseline before planning. A reviewed
@@ -29,8 +31,16 @@ def run(project, *, variant=None, providers=None, manifest_evidence=None, apply_
         if index.get('source_sha256') != current['sha256'] or index.get('files') != current['files']:
             raise MigrationError('Source index is stale; preserve it and use reviewed source-refresh before analysis')
     report_path = project / 'spec/reports/derived/source-analysis.json'
+    host_profile = detect_host_profile()
     report = {'schema_version': 1, 'status': 'running', 'source_sha256': current['sha256'],
               'spec_complete': False, 'behavior_verified': False, 'build': 'not_run',
+              'host_profile': host_profile,
+              'source_provider_selection': {
+                  **host_profile['source'], 'discovery_only': True,
+                  'execution': 'explicit_provider_plan_required',
+                  'compiler_binding': 'unresolved',
+                  'provider_plan_supplied': providers is not None,
+                  'evidence_policy': 'Availability selects preparation guidance only; inspect actual provider artifacts for execution evidence'},
               'stages': [], 'artifacts': {}, 'counts': {}}
     started = time.monotonic()
 
@@ -55,6 +65,8 @@ def run(project, *, variant=None, providers=None, manifest_evidence=None, apply_
 
     save()
     try:
+        if providers is not None:
+            stage('provider-plan-preflight', lambda: preflight(providers))
         stage('harness', lambda: initialize(project))
         stage('source-index', lambda: {'status': 'reused'} if index_path.exists() else index_source(project))
         artifact(index_path)

@@ -12,7 +12,22 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def reference_targets(text):
+    """Inventory shipped reference paths in Markdown links and inline code."""
+    candidates = re.findall(r'\]\(([^)]+)\)', text)
+    candidates += re.findall(r'`((?:\./)?references/[^`\s]+)`', text)
+    return sorted({value.split('#', 1)[0].removeprefix('./') for value in candidates
+                   if value.removeprefix('./').startswith('references/')})
+
+
 class SkillMaintenanceTests(unittest.TestCase):
+    def test_reference_inventory_covers_links_and_inline_paths(self):
+        text = ('Read `references/harness-v2.md` then [detail](references/external-expertise.md#review). '
+                'Ignore `spec/ref/result.md` and [web](https://example.org/references/page). '
+                'A missing reference must stay visible: `references/missing.md`.')
+        self.assertEqual(reference_targets(text), ['references/external-expertise.md',
+                                                   'references/harness-v2.md', 'references/missing.md'])
+
     def test_metadata_sync_preserves_manually_maintained_skills(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -46,13 +61,12 @@ class SkillMaintenanceTests(unittest.TestCase):
             skills = workspace / '.agents/skills'
             references = []
             for entry in skills.glob('*/SKILL.md'):
-                for target in re.findall(r'\]\(([^)]+)\)', entry.read_text(encoding='utf-8')):
-                    if target.startswith('references/'):
-                        path = entry.parent / target
-                        self.assertTrue(path.is_file(), str(path))
-                        original = ROOT / 'skills' / entry.parent.name / target
-                        self.assertEqual(path.read_bytes(), original.read_bytes())
-                        references.append(path)
+                for target in reference_targets(entry.read_text(encoding='utf-8')):
+                    path = entry.parent / target
+                    self.assertTrue(path.is_file(), str(path))
+                    original = ROOT / 'skills' / entry.parent.name / target
+                    self.assertEqual(path.read_bytes(), original.read_bytes())
+                    references.append(path)
             self.assertTrue(references)
             result = installer.manage(workspace, 'uninstall')
             self.assertEqual(result['status'], 'uninstalled')

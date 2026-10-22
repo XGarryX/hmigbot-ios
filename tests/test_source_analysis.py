@@ -89,6 +89,41 @@ struct Counter: View {
         self.assertFalse(report['spec_complete'])
         self.assertFalse((self.project / 'spec/baseline/ios-facts.json').exists())
 
+    def test_current_host_discovery_is_receipted_without_execution_claims(self):
+        from hmigbot_ios.host import detect_host_profile
+        run(self.project)  # existing harness initialization may add expertise config
+        config_before = (self.project / '.migbot/config.json').read_bytes()
+        for host in ['Windows', 'Darwin']:
+            profile = detect_host_profile(host_os=host, lookup=lambda name: '/tools/' + name,
+                                          machine='fixture', environ={})
+            with patch('hmigbot_ios.host.detect_host_profile', return_value=profile):
+                result = run(self.project)
+            self.assertEqual(result['host_profile'], profile)
+            selection = result['source_provider_selection']
+            self.assertTrue(selection['discovery_only'])
+            self.assertEqual(selection['provider'], profile['source']['provider'])
+            self.assertEqual(selection['execution'], 'explicit_provider_plan_required')
+            self.assertEqual(selection['compiler_binding'], 'unresolved')
+            self.assertEqual(result['build'], 'not_run')
+            self.assertFalse(result['behavior_verified'])
+            self.assertEqual(read_json(self.project / 'spec/reports/derived/source-analysis.json')['host_profile'], profile)
+        self.assertEqual((self.project / '.migbot/config.json').read_bytes(), config_before)
+
+    def test_invalid_provider_plan_retains_receipt_without_preparing_baseline(self):
+        plan = self.root / 'providers.json'
+        write_json(plan, {'schema_version': 2, 'providers': [
+            {'operation': 'interface-builder'}, {'operation': 'swift-syntax'}]})
+        from hmigbot_ios.atoms import run_atom
+        with patch('hmigbot_ios.atoms.run_atom', wraps=run_atom) as atom:
+            with self.assertRaisesRegex(MigrationError, 'Provider plan'):
+                run(self.project, providers=plan)
+            atom.assert_not_called()
+        self.assertFalse((self.project / 'spec/baseline/ios-source-index.json').exists())
+        self.assertFalse((self.project / 'spec/baseline/ios-facts.json').exists())
+        receipt = read_json(self.project / 'spec/reports/derived/source-analysis.json')
+        self.assertEqual(receipt['status'], 'failed')
+        self.assertEqual(receipt['stages'][-1]['name'], 'provider-plan-preflight')
+
     def test_source_change_during_index_never_publishes_mixed_index(self):
         from hmigbot_ios.analyze import analyze
         def mutate(source):

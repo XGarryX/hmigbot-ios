@@ -48,6 +48,35 @@ class UsageCLITests(unittest.TestCase):
         code, report = self.invoke('usage-finish', '--run-id', 'cuike')
         self.assertEqual((code, report['status']), (3, 'UNKNOWN'))
 
+    def test_reservation_cli_settles_actual_call(self):
+        self.invoke('usage-start', '--run-id', 'cuike')
+        request = self.project / 'reserve.json'
+        request.write_text(json.dumps({'call_id': 'call-1', 'token_upper_bound': 600,
+                           'run_id': 'cuike', 'stage': 'convert', 'agent': 'remote-codex',
+                           'provider': 'openai'}), encoding='utf-8')
+        code, report = self.invoke('usage-reserve', '--input', str(request))
+        self.assertEqual(code, 0, report)
+        self.assertEqual(report['reserved_tokens'], 600)
+        self.assertEqual(self.invoke('usage-finish', '--run-id', 'cuike')[0], 2)
+        self.assertEqual(self.record(usage={'input_tokens': 100, 'output_tokens': 20},
+                                     mode='openai_responses')[0], 0)
+        code, report = self.invoke('usage-finish', '--run-id', 'cuike')
+        self.assertEqual((code, report['status'], report['total_tokens'], report['reserved_tokens']),
+                         (0, 'PASS', 120, 0))
+
+    def test_reservation_cli_release_keeps_audit_reason(self):
+        self.invoke('usage-start', '--run-id', 'cuike')
+        request = self.project / 'reserve.json'
+        request.write_text(json.dumps({'call_id': 'call-1', 'token_upper_bound': 600,
+                           'run_id': 'cuike', 'stage': 'convert', 'agent': 'remote-codex',
+                           'provider': 'openai'}), encoding='utf-8')
+        self.assertEqual(self.invoke('usage-reserve', '--input', str(request))[0], 0)
+        request.write_text(json.dumps({'call_id': 'call-1', 'run_id': 'cuike',
+                           'reason': 'cancelled before provider invocation'}), encoding='utf-8')
+        code, report = self.invoke('usage-release', '--input', str(request))
+        self.assertEqual((code, report['reserved_tokens']), (0, 0), report)
+        self.assertEqual(self.invoke('usage-finish', '--run-id', 'cuike')[0], 0)
+
     def test_ledger_paths_cannot_replace_other_evidence(self):
         for path in ['spec/baseline/usage-budget.json', 'entry/usage-budget.json',
                      'spec/reports/derived/ios-facts.json']:

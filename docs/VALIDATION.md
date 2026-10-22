@@ -1,3 +1,24 @@
+# 0.11.0 Windows首批改造验证（2026-10-22）
+
+- 最终完整回归：**1366 passed，52 skipped，1700 subtests passed，701.96秒**，0失败。子测试不是额外业务分母，不把多次定向结果相加。
+- 跳过范围已核对：48项需要显式冻结的C7源/框架注册快照（未提供 `HMIGBOT_C7_SOURCE` 等输入）；3项缺本机创建符号链接的权限；1项要求通过真实venv启动。本轮这52项未验证，不能算通过。对应源快照缺口与Mac平台无关，需要取得准确只读输入后补跑。
+- 12项发行检查全部通过：全量回归、原资源/调度核心/专业资料、原生规程审计、原流水线兼容、版本、96技能/62原子项、便携入口、文档链接、29角色及实际官方skill-validator（96份全通过）。
+- 独立ZIP验证27项全通过，5156个打包文件、5917个安装托管资源逐项摘要验证；含安装副本原消费者/源门/规格/计划/证据、离线原运行时、自升级、卸载及原用户AGENTS字节恢复。绑定的实际ZIP SHA256为 `d7eb4a8b3c2a99f12e1cff41e8449fc2623655883078d0ba6ae987cf57179dc1`。安装检查后只补充验收文档，不把包外结果写成自引用ZIP摘要。
+- 真实Cuike只读源准备：1413 facts、2个提取问题保留，host为windows_static/discovery_only，结果needs_review；spec_complete=false、build=not_run、behavior_verified=false。未改iOS/鸿蒙应用或旧控制账本。
+- 新增范围有RED/GREEN证据：规程/scope与安装引用、200重复引用读取200→1、原子预留和真实多进程争抢、整单provider预检、真实>260路径采集/失败/重试及graph对拍、精确审阅上下文与真实旧指令反例、发行runner选项。逻辑读量不等于端到端加速比例。
+
+首次完整尝试保留在 `work/windows-foundation-20261022/release/`：600秒超时，尚未完成，过程中11个provider长路径失败；另有Execute描述尖括号不符官方校验。已真实复现WinError206，复用既有io_path修复生产证据入口并适配测试观察；真实>260目录及原长basetemp下28项回归通过，保留数量、内容和并发断言。完整重跑另使用下列命令所示的独立短临时目录，全部通过。最终结果在 `work/windows-foundation-20261022/release-final/`、`package-check.json` 及包外日志，旧失败未覆盖。
+
+实际复现命令（临时目录必须全新；本机官方validator路径需替换成接手机实际路径）：
+
+```powershell
+python -X utf8 scripts/validate_release.py --output work/windows-foundation-20261022/release-final --unit-timeout-seconds 1800 --test-temp D:/Temp/h11r2 --skill-validator C:/Users/HUAWEI/.codex/skills/.system/skill-creator/scripts/quick_validate.py
+python -X utf8 scripts/package_plugin.py --output dist/hmigbot-ios-0.11.0-windows-check.zip
+python -X utf8 scripts/smoke_package.py --package dist/hmigbot-ios-0.11.0-windows-check.zip --output work/windows-foundation-20261022/package-check.json
+```
+
+本轮是Windows工具/合同/安装验证；未执行Mac/Xcode、真实Cuike双端视觉/行为或真实100k/200k完整迁移。Darwin启动身份、完整宿主调用对账、完整终局验收profile仍待完成，不能据本轮结果宣称双100%、2小时或20M达标。背景和后续修改/验证方案见 [Mac交接](MAC-HANDOFF-20261022.md) 与 [施工合同](WINDOWS-FOUNDATION-20261022.md)。
+
 # 0.9.2 验证范围与复现
 
 - 新增24项独立回归已通过：精确Xcode缓存排除、真实共享/本地Scheme及配置变化、13份native记录的完整性、字段schema、typed事实、N/A矛盾、附录/主功能锚点、过期输入、只读候选与正式门禁消费。

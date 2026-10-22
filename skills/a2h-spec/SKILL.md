@@ -21,7 +21,7 @@ metadata:
 
 - **前置**：`<target>/.migbot/config.json` 存在且 `source_platform=ios`（缺 → 先跑 a2h-init，不代跑）；spec 真正的起步门 = §1 的 `harness-init`。
 - **输入**：iOS 源码（Xcode 工程 / SwiftPM / 混合 Swift+ObjC）+ 用户预知（既有决策、平台侧分工）；**源不可读是阻塞**，不以文件夹名或旧报告补造行为。
-- **输出**：`spec/baseline/{feature-index,feature-base}.md`、`spec/baseline/features/FNNN-*.md`、`spec/baseline/ui-manifest.md`、`spec/baseline/ui/page_NNNN_*.md`、`spec/baseline/{ios-semantics,ios-coverage,ios-facts,ios-obligations}.json`、`spec/ref/{ios-project,module-index,ios-ui-facts,ios-feature-facts,ios-api-facts}.md`、`spec/baseline/decision-ledger.md`、套靠九件门禁产物（§6）。**契约定稿与计划 IR 归 a2h-plan**——本 skill 不请求审批。
+- **输出**：`spec/baseline/{feature-index,feature-base}.md`、`spec/baseline/features/FNNN-*.md`、`spec/baseline/ui-manifest.md`、`spec/baseline/ui/page_NNNN_*.md`、`spec/baseline/{ios-semantics,ios-coverage,ios-facts,ios-obligations}.json`、`spec/ref/{ios-project,module-index,ios-ui-facts,ios-feature-facts,ios-api-facts}.md`、`spec/decision-ledger.md`、套靠九件门禁产物（§6）。**契约定稿与计划 IR 归 a2h-plan**——本 skill 不请求审批。
 - **唯一交互点 = Gate C**（产品选择只问具体未决点，不能用阶段名要求重复批准已授权的开发）；其余禁交互追问，机械检查由 exit code 判定（0=PASS，1=FAIL，2=用法错）。
 - **第一条可见输出必须是一行阶段计划**（harness 门 → 源分析 → UI baseline → 功能 baseline → 门禁 → Gate C），然后才执行 §1。
 - **恢复与已有 baseline**：先读 `spec/.a2h/open-findings.json`（findings 只能由产生它的检查重跑后关闭，不同阶段队列分开，不能把整个文件重写成空）。已有完整 baseline → 比较源版本走增量规程（a2h-incremental-migration/arkts-spec-evolver）；部分 baseline 只续缺/受影响部分，**保留稳定 page/F/AC/decision ID**。
@@ -79,7 +79,7 @@ metadata:
 每条 `- [ ] F001-AC01` 后给 `源:<符号> → 标:<目标方法>`、`判:<方式> | <可观察结果>`、`真:src:<路径>:<行>`（或独立 test/trace/device）。已批准替代用 `决:<ID>` 和 `真:decision:<ID>`；**禁止以生成的目标实现作真值**。不设 AC 数量门槛，核对实际入口/分支/常量/错误/副作用覆盖。同构组可列成员，但不能因分组省略真实不同行为；删减保留 skip-list 理由。HARD-DIV 按四件套：decision ID、替代数据流、supersedes 源 AC、新差异 AC。同名 API 不等于行为等价（StoreKit、iCloud、扩展、后台逐项决定）。没有设备的 device/visual AC 仍保留该验证强度，**不能改 static 凑通过**。
 
 ### C4.1 决策账本
-读取 `references/migration-decision-categories.md`，写 `spec/baseline/decision-ledger.md` 的 D0 与适用决策：已有授权直接复用；未知技术事实继续查证；**产品取舍才提出具体选择**（Gate C 用）。plan 消费同一账本。
+读取 `references/migration-decision-categories.md`，写 `spec/decision-ledger.md` 的 D0 与适用决策：已有授权直接复用；未知技术事实继续查证；**产品取舍才提出具体选择**（Gate C 用）。plan 消费同一账本。
 
 ### C5 实际生成与校验
 页面/功能清单确定后，按 `references/native-authoring.md` 跑 `spec-authoring`：先生成绑定当前源与 MD 的完整填报清单，再由原作者提交事实、处置与 AC 源位置，生成校验后候选。**全部页面/功能必须一一对应，不能只写示例中的两份**。候选仍须独立复核 + §6 门禁。

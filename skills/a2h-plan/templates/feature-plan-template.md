@@ -7,6 +7,8 @@
 
 profile 2按[Plan交付合同](../references/plan-delivery-contract.md)为每个Base/FV正文任务生成一张局部责任表（字段/值、恰7行，值均JSON literal），记录完整item_id/ac_ids/ownership/parents/page_ids/scope/verification；各文件再输出与全部局部表7字段exact一致的唯一Plan items JSON。索引只投影自身FV，不能再次投影Base/Slice。精确输入章节另写，不凭关键词猜测依赖/范围/验证义务。
 
+主控生成typed request时同步采用[决策上下文范围](../references/prompt-scope.md)与[request示例](plan-request-template.json)：只为显式审阅的局部决策添加prompt_scope；未标scope的全局/跨模块决策继续全部传播。此配置不写入7字段局部责任表、不改变写权/AC/验证义务，不能仅按无fact引用删除共享约束。
+
 ## 文件一：feature-plan.md（索引）
 
 ```markdown

@@ -151,7 +151,9 @@ class HarnessTests(unittest.TestCase):
 
     def test_provider_failure_retains_diagnostics(self):
         plan = self.root / 'providers.json'
-        write_json(plan, {'schema_version': 2, 'providers': [{'operation': 'swift-syntax'}]})
+        config = self.root / 'invalid-syntax-config.json'
+        write_json(config, {})  # valid plan; the real provider rejects incomplete config
+        write_json(plan, {'schema_version': 2, 'providers': [{'operation': 'swift-syntax', 'config': str(config)}]})
         with self.assertRaises(MigrationError): refresh(self.project, self.source, provider_plan=plan)
         self.assertTrue(list((self.project / 'spec/ref/provider-runs').rglob('failure.json')))
 

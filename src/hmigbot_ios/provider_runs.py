@@ -13,7 +13,7 @@ from pathlib import Path
 import tempfile
 from contextlib import contextmanager
 
-from .core import MigrationError, digest, json_bytes, read_json, safe_child, write_json
+from .core import MigrationError, digest, io_path, json_bytes, read_json, safe_child, write_json
 
 RUNS_FOLDER = 'runs'
 ARTIFACT_NAME = 'artifact.json'
@@ -31,7 +31,7 @@ def _fingerprint(path) -> str | None:
     """
     if not path:
         return None
-    target = path if isinstance(path, Path) else Path(str(path))
+    target = io_path(path)
     if target.is_dir():
         target = target / 'manifest.json'
     try:
@@ -41,7 +41,7 @@ def _fingerprint(path) -> str | None:
 
 
 def capture_root(project) -> Path:
-    return Path(project) / 'spec/ref/provider-runs'
+    return io_path(project) / 'spec/ref/provider-runs'
 
 
 def identity_of(operation, source_sha256, config_sha256, input_sha256) -> str:
@@ -69,11 +69,11 @@ class ProviderRun:
     """One provider try: fresh directory, traceable run id, no overwrite of earlier evidence."""
 
     def __init__(self, project, operation, source_sha256, *, config=None, input_path=None):
-        self.project = Path(project)
+        self.project = io_path(project)
         self.operation = operation
         self.source_sha256 = source_sha256
-        self._config_path = Path(config) if config else None
-        self._input_path = Path(input_path) if input_path else None
+        self._config_path = io_path(config) if config else None
+        self._input_path = io_path(input_path) if input_path else None
         self._config_bytes = self._read_initial(self._config_path)
         manifest = self._input_path / 'manifest.json' if self._input_path and self._input_path.is_dir() else self._input_path
         self._input_bytes = self._read_initial(manifest)
@@ -143,9 +143,9 @@ class ProviderRun:
         """
         if not self.reserved:
             raise MigrationError('Provider attempt must be reserved before fixing inputs')
-        temporary_root = Path(tempfile.gettempdir())
+        temporary_root = io_path(tempfile.gettempdir())
         with tempfile.TemporaryDirectory(prefix='hmigbot-provider-inputs-', dir=temporary_root) as directory:
-            private = Path(directory)
+            private = io_path(directory)
             config, bundle = None, None
             if self._config_path is not None:
                 if self._config_bytes is None:
@@ -261,7 +261,7 @@ def retained_failures(artifact_path):
     Only the attempt-scoped layout is scanned. A legacy flat capture has no attempt siblings, so
     previously saved graphs keep validating exactly as before instead of gaining new issues.
     """
-    artifact = Path(artifact_path)
+    artifact = io_path(artifact_path)
     attempt, identity_dir = artifact.parent, artifact.parent.parent
     if identity_dir.parent.name != RUNS_FOLDER or not ATTEMPT_PATTERN.match(attempt.name):
         return []

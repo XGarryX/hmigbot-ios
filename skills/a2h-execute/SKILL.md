@@ -1,6 +1,6 @@
 ---
 name: a2h-execute
-description: "iOS→HarmonyOS 迁移第三步（Execute，四拍执行引擎）：读 a2h-plan 冻结的 indexed 计划与 plan IR（plan-<wave>.json），next-batch 取批 → 按任务书派 a2h-ios-converter/a2h-migration-worker/a2h-closer、hmos-builder → 同路径 ios-receipt v2 回执 → land-results 落账，循环至 done；把 Swift/ObjC、SwiftUI/UIKit 源行为落成 ArkTS 目标代码，资源前置/UI Pipeline/Feature Base/Feature Slices 与结构、编译闭环均在其中收口。当用户说“执行迁移”“开始执行”“按 plan 开始做”“继续执行”时触发，支持 --wave understand|domains 与重试/断点/换会话续跑部分执行。不要用于：生成 Spec（用 a2h-spec）、排计划（用 a2h-plan）、验证产出（用 a2h-verify）；spec/plan 未就绪时先跑 a2h-spec/a2h-plan。"
+description: "iOS→HarmonyOS 迁移第三步（Execute，四拍执行引擎）：读 a2h-plan 冻结的 indexed 计划与 plan IR（plan-understand.json / plan-domains.json），next-batch 取批 → 按任务书派 a2h-ios-converter/a2h-migration-worker/a2h-closer、hmos-builder → 同路径 ios-receipt v2 回执 → land-results 落账，循环至 done；把 Swift/ObjC、SwiftUI/UIKit 源行为落成 ArkTS 目标代码，资源前置/UI Pipeline/Feature Base/Feature Slices 与结构、编译闭环均在其中收口。当用户说“执行迁移”“开始执行”“按 plan 开始做”“继续执行”时触发，支持 --wave understand|domains 与重试/断点/换会话续跑部分执行。不要用于：生成 Spec（用 a2h-spec）、排计划（用 a2h-plan）、验证产出（用 a2h-verify）；spec/plan 未就绪时先跑 a2h-spec/a2h-plan。"
 metadata:
   type: pipeline
   domain: migration
@@ -72,7 +72,7 @@ metadata:
 
 | 命令 | 用途 | 关键 flags | exit code 语义 | FAIL 处置 |
 |---|---|---|---|---|
-| `plan-check` | 只校验 plan 请求（validate_only，不生成） | `--project`、`--input <typed-plan.json>`（必填） | 0=PASS，2=FAIL | 读错误修请求重跑，≤2 轮；仍 FAIL → 记欠账放行（E266） |
+| `plan-check` | 只校验 plan 请求（validate_only，不生成） | `--project`、`--input <typed-plan.json>`（必填） | 0=PASS，2=FAIL | 读错误修请求重跑，≤2 轮；仍 FAIL → blocked，保留恢复条件（E266） |
 | `plan-ir` | 生成并冻结 plan IR（blueprint/plan/prompts/contracts） | `--project`、`--input`（必填） | 0=生成完成，2=FAIL（契约/门禁不通过） | 同上；existing plan 不可变，用 replan |
 | `next-batch` | 拍①取批（含冻结输入/围栏/源/图校验） | `--project`、`--wave`（缺省 `domains`）、`--usage-ledger <path>` + `--usage-run-id`（派发前用量门） | 0=有动作，2=契约违规/升级/失败 | 按 `action` 处置（下表） |
 | `land-results` | 拍④落账（验回执、越权文件、摘要、findings） | `--project`、`--wave` | 0=落账完成，2=有 blocked/escalate/失败落账 | 按 `action` + `landed[]` 处置 |
@@ -93,7 +93,7 @@ metadata:
 | `escalate` | 门禁升级/重试超限 → 呈报升级材料，按根因修后 `replan`，**禁归档重建账本**；输出带 `hint` 时照 hint 走 |
 
 - `next-batch`/`land-results` **exit 2 = 契约违规**（典型：plan `contract_hash` 与 state 不一致 / 源快照变化 / 任务的冻结输入被改）→ 停，契约变更**必须显式走 replan + 部分重跑**，禁改 state/blueprint 硬闯。
-- **无人值守处置阶梯（E266，每个门禁 FAIL 都套用）**：FAIL → 按 `retry_hint` 派修复并重跑同一命令，**最多 2 轮**；2 轮仍不过或确定模型修不了 → **记欠账放行**（账要记全：修过几轮、每轮失败原因、判「修不了」的依据）；要拍板的模型自决并留痕；**任何分支不得停机呈报人工**（`gates.stage_debt=true` 时例外：仅设备/账号类门允许欠账；静态门即便开了 stage_debt 也照常修到 PASS）。
+- **无人值守处置阶梯（E266）**：FAIL → 按 `retry_hint` 派修复并重跑同一命令，**最多 2 轮**；仍不过或无可执行修复时保留失败、修复记录与恢复条件，依赖失败输入的部分保持 **blocked**，独立工作可继续。源合同、静态、冻结输入与本阶段硬门必须重跑PASS；仅设备/账号缺失按对应规则保留未执行，不升级为成功。重试超限不能改控制账本或降低门禁，产品取舍不能由模型自行批准。
 - **主会话不得修改产品文件（`entry/**`）与 skill/脚本自身**；脚本报错（exit 2 / traceback / 解不开的契约违规）= 停机呈报，按材料等用户裁决，**不得热改脚本/数据绕过**。
 
 ## 3. Stage 0：资源前置（HARD-GATE，必须最先执行）

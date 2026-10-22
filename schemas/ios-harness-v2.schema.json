@@ -77,6 +77,24 @@
       },
       "additionalProperties": false
     },
+    "promptScope": {
+      "description": "Explicit author-adopted prompt consumers only; omitted scope keeps a decision global. Runtime also validates known IDs and at least one actual consumer.",
+      "type": "object",
+      "properties": {
+        "task_ids": {"type": "array", "items": {"type": "string"}},
+        "ac_ids": {"type": "array", "items": {"type": "string"}},
+        "fact_ids": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "decision": {
+      "description": "Existing decision fields remain open for compatibility; prompt_scope controls inlining, never ownership or acceptance.",
+      "type": "object",
+      "properties": {
+        "prompt_scope": {"$ref": "#/$defs/promptScope"}
+      },
+      "additionalProperties": true
+    },
     "planRequest": {
       "type": "object",
       "required": [
@@ -114,7 +132,7 @@
         "decisions": {
           "type": "array",
           "items": {
-            "type": "object"
+            "$ref": "#/$defs/decision"
           }
         },
         "replan_review": {

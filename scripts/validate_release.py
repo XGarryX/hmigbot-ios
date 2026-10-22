@@ -11,36 +11,74 @@ import tomllib
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def unit_timeout_seconds(value):
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError('Unit timeout must be an integer from 1 to 7200 seconds')
+    if not 1 <= seconds <= 7200:
+        raise argparse.ArgumentTypeError('Unit timeout must be an integer from 1 to 7200 seconds')
+    return seconds
+
+
+def fresh_test_temp(output, selected=None):
+    """Pytest purges basetemp: accept only a fresh, dedicated, non-evidence path."""
+    selected = selected if selected is not None else output / 'test-temp'
+    if selected.exists() or selected.is_symlink():
+        raise ValueError('Use a new, nonexistent dedicated --test-temp directory, never an existing path or drive root')
+    path = selected.resolve()
+    if path == Path(path.anchor) or path.exists():
+        raise ValueError('Use a new, nonexistent dedicated --test-temp directory, never an existing path or drive root')
+    if path == output or path in output.parents:
+        raise ValueError('--test-temp must not contain the evidence directory')
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--plugin-validator', type=Path)
     parser.add_argument('--skill-validator', type=Path)
+    parser.add_argument('--unit-timeout-seconds', type=unit_timeout_seconds, default=1800,
+                        help='Full pytest-suite timeout in seconds (1..7200; default: 1800)')
+    parser.add_argument('--test-temp', type=Path,
+                        help='New nonexistent dedicated pytest basetemp; use a short path on Windows')
     args = parser.parse_args()
     output = args.output.resolve()
     if output.exists():
         raise SystemExit('Use a new evidence directory')
+    try:
+        test_temp = fresh_test_temp(output, args.test_temp)
+    except ValueError as exc:
+        parser.error(str(exc))
     output.mkdir(parents=True)
+    # Reserve exclusively before starting pytest. An intervening directory must
+    # fail here rather than authorizing pytest to remove someone else's files.
+    test_temp.mkdir(parents=True, exist_ok=False)
     checks = []
-    def command(name, arguments):
+    def command(name, arguments, *, timeout_seconds=600):
         env = {**os.environ, 'PYTHONUTF8': '1', 'PYTHONDONTWRITEBYTECODE': '1',
                'HMIGBOT_TEST_RUNTIME': str(ROOT),
                'PYTHONPATH': str(ROOT / 'src') + os.pathsep + os.environ.get('PYTHONPATH', '')}
+        timed_out = False
         try:
-            result = subprocess.run(arguments, cwd=ROOT, env=env, capture_output=True, timeout=600, shell=False)
+            result = subprocess.run(arguments, cwd=ROOT, env=env, capture_output=True, timeout=timeout_seconds, shell=False)
             stdout, stderr, code = result.stdout, result.stderr, result.returncode
         except subprocess.TimeoutExpired as exc:
             stdout, stderr, code = exc.stdout or b'', exc.stderr or b'', None
+            timed_out = True
         except OSError as exc:
             stdout, stderr, code = b'', str(exc).encode('utf-8'), None
         (output / (name + '.stdout.log')).write_bytes(stdout)
         (output / (name + '.stderr.log')).write_bytes(stderr)
-        checks.append({'name': name, 'passed': code == 0, 'exit_code': code})
+        checks.append({'name': name, 'passed': code == 0, 'exit_code': code,
+                       'timeout_seconds': timeout_seconds, 'timed_out': timed_out})
     # Collect both unittest classes and function-style pytest tests (doctor,
     # Swift boundaries). unittest discovery only imports the latter silently.
     command('unit-tests', [sys.executable, '-X', 'utf8', '-m', 'pytest', 'tests',
-                          '-q', '-p', 'no:cacheprovider', '--basetemp', str(output / 'test-temp'),
-                          '--ignore=tests/fixtures', '--ignore=tests/evaluations'])
+                          '-q', '-p', 'no:cacheprovider', '--basetemp', str(test_temp),
+                          '--ignore=tests/fixtures', '--ignore=tests/evaluations'],
+            timeout_seconds=args.unit_timeout_seconds)
     command('upstream-resource-audit', [sys.executable, '-X', 'utf8', 'scripts/audit_upstream.py'])
     command('scheduler-resource-audit', [sys.executable, '-X', 'utf8', 'scripts/audit_scheduler.py'])
     command('external-expertise-audit', [sys.executable, '-X', 'utf8', 'scripts/a2h_ios.py', 'expertise-audit'])
@@ -94,6 +132,9 @@ def main():
                 failures.append({'skill': skill.name, 'stdout': result.stdout.decode('utf-8', errors='replace'), 'stderr': result.stderr.decode('utf-8', errors='replace')})
         checks.append({'name': 'official-skill-validator', 'passed': not failures, 'checked': len(skills), 'failures': failures})
     report = {'version': version, 'status': 'passed' if all(c['passed'] for c in checks) else 'failed', 'checks': checks,
+              'runner_options': {'unit_timeout_seconds': args.unit_timeout_seconds,
+                                 'test_temp': str(test_temp),
+                                 'test_temp_ownership': 'new dedicated directory reserved exclusively before pytest'},
               'scope': 'Tool/contract/packaging checks; excludes application device and equivalence acceptance'}
     (output / 'release-checks.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(report, ensure_ascii=False, indent=2))

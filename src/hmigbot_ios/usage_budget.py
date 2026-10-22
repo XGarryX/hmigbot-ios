@@ -288,7 +288,7 @@ def _observe(data: dict) -> None:
 def _load(path: Path) -> dict:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        if data["schema_version"] != 1:
+        if type(data["schema_version"]) is not int or data["schema_version"] not in {1, 2}:
             raise BudgetError("unsupported ledger schema")
         root = _path(data["project_root"])
         if not path.is_relative_to(root):
@@ -340,6 +340,36 @@ def _load(path: Path) -> dict:
                 raise BudgetError("attempt starts at 1")
             if call["normalized"] != _normalize(call["raw_usage"], call["normalization_mode"]):
                 raise BudgetError("stored normalization disagrees with raw usage")
+        reservations = data.get("reservations", [])
+        if not isinstance(reservations, list):
+            raise BudgetError("invalid reservations")
+        if (data['schema_version'] == 1 and reservations) or (data['schema_version'] == 2 and 'reservations' not in data):
+            raise BudgetError('reservation evidence requires ledger schema 2')
+        reserved_ids = set()
+        calls = {call["call_id"]: call for call in data["calls"]}
+        for item in reservations:
+            for field in ("call_id", "run_id", "stage", "agent", "provider"):
+                _name(item[field], field)
+            if item['call_id'] in reserved_ids or item['run_id'] != data['run_id']:
+                raise BudgetError("duplicate reservation or mismatched run identity")
+            reserved_ids.add(item['call_id'])
+            if _integer(item['attempt'], 'attempt') < 1 or _integer(item['token_upper_bound'], 'token_upper_bound') < 1:
+                raise BudgetError("reservation attempt and bound must be positive")
+            state = item['state']
+            if state not in {'active', 'usage_unknown', 'settled', 'released'}:
+                raise BudgetError("invalid reservation state")
+            if 'release_reason' in item:
+                _name(item['release_reason'], 'release_reason')
+            call = calls.get(item['call_id'])
+            if call is None:
+                if state not in {'active', 'released'} or (state == 'released') != ('release_reason' in item):
+                    raise BudgetError("reservation state has no matching call/release evidence")
+            else:
+                if any(item[k] != call[k] for k in ('run_id', 'stage', 'agent', 'provider', 'attempt')):
+                    raise BudgetError("reservation and call identity disagree")
+                expected = 'settled' if call['normalized']['verified'] else 'usage_unknown'
+                if state != expected:
+                    raise BudgetError("reservation state disagrees with raw call evidence")
         return data
     except (KeyError, TypeError, json.JSONDecodeError) as error:
         raise BudgetError("invalid ledger evidence") from error
@@ -356,6 +386,16 @@ def _summary(data: dict) -> dict:
     calls = data["calls"]
     total = sum(call["normalized"]["total_tokens"] for call in calls)
     unknown = sum(not call["normalized"]["verified"] for call in calls)
+    calls_by_id = {call['call_id']: call for call in calls}
+    reservations = data.get('reservations', [])
+    active = [item for item in reservations if item['state'] in {'active', 'usage_unknown'}]
+    # Known partial usage is already in total; hold the rest of the supplied
+    # bound until usage is complete. Unknown usage independently stops dispatch.
+    reserved = sum(max(0, item['token_upper_bound'] -
+                       calls_by_id.get(item['call_id'], {}).get('normalized', {}).get('total_tokens', 0))
+                   for item in active)
+    overruns = sum(calls_by_id.get(item['call_id'], {}).get('normalized', {}).get('total_tokens', 0)
+                   > item['token_upper_bound'] for item in reservations)
     failed = []
     if total >= TARGET_TOKENS:
         failed.append("strict_20M_target_exceeded")
@@ -363,11 +403,15 @@ def _summary(data: dict) -> dict:
         failed.append("run_token_limit_exceeded")
     if data["elapsed_seconds"] > data["walltime_limit_seconds"]:
         failed.append("walltime_limit_exceeded")
+    if any('release_reason' in item and item['call_id'] in calls_by_id for item in reservations):
+        failed.append('released_reservation_was_used')
     uncertain = []
     if unknown:
         uncertain.append("unverified_usage")
     if data["clock_anomalies"]:
         uncertain.append("unverified_clock")
+    if active:
+        uncertain.append('unsettled_reservations')
     if not data["finished"]:
         uncertain.append("run_not_finished")
     status = "FAIL" if failed else ("UNKNOWN" if uncertain else "PASS")
@@ -377,13 +421,16 @@ def _summary(data: dict) -> dict:
             "known_cached_input_tokens": sum(call["normalized"]["cached_input_tokens"] or 0 for call in calls),
             "known_output_tokens": sum(call["normalized"]["output_tokens"] or 0 for call in calls),
             "total_tokens": total, "token_limit": data["token_limit"],
+            "reserved_tokens": reserved, "active_reservation_count": len(active),
+            "reservation_overrun_count": overruns,
+            "available_tokens": max(0, data['token_limit'] - total - reserved),
             "target_tokens_exclusive": TARGET_TOKENS,
             "elapsed_seconds": data["elapsed_seconds"],
             "walltime_limit_seconds": data["walltime_limit_seconds"],
             "clock_anomalies": list(data["clock_anomalies"]),
             "reasons": failed + uncertain,
-            "can_continue": not data["finished"] and not unknown and not data["clock_anomalies"]
-                and total < data["token_limit"] and data["elapsed_seconds"] < data["walltime_limit_seconds"]}
+            "can_continue": not data["finished"] and not unknown and not data["clock_anomalies"] and not failed
+                and total + reserved < data["token_limit"] and data["elapsed_seconds"] < data["walltime_limit_seconds"]}
 
 
 def start(ledger: str | Path, run_id: str, *, project_root: str | Path,
@@ -414,7 +461,7 @@ def start(ledger: str | Path, run_id: str, *, project_root: str | Path,
                 "clock_source": _clock_source(),
                 "clock_boot_id": boot_id,
                 "clock": {"start_wall": wall, "start_mono": mono, "last_wall": wall, "last_mono": mono},
-                "calls": []}
+                "calls": [], "reservations": []}
         _save(path, data)
         return _summary(data)
 
@@ -426,7 +473,8 @@ def record(ledger: str | Path, call_id: str, raw_usage: dict | None, *, run_id: 
 
     Reusing an ID is idempotent only when raw evidence AND all identity fields
     are unchanged. Child-agent input/output belongs here too. Finished runs are
-    immutable. This does not reserve future tokens or dispatch provider work.
+    immutable. A matching reservation settles only with complete usage. This
+    never dispatches provider work; unreserved evidence is still always counted.
     """
     path = _path(ledger)
     call = {"call_id": _name(call_id, "call_id"), "run_id": _name(run_id, "run_id"),
@@ -443,8 +491,96 @@ def record(ledger: str | Path, call_id: str, raw_usage: dict | None, *, run_id: 
         previous = next((item for item in data["calls"] if item["call_id"] == call_id), None)
         if previous is not None and previous != call:
             raise BudgetError("call_id conflicts with existing evidence")
+        reservation = next((item for item in data.get('reservations', []) if item['call_id'] == call_id), None)
+        if reservation is not None:
+            if any(reservation[k] != call[k] for k in ('run_id', 'stage', 'agent', 'provider', 'attempt')):
+                raise BudgetError('call identity conflicts with reservation')
+            reservation['state'] = 'settled' if call['normalized']['verified'] else 'usage_unknown'
         if previous is None:
             data["calls"].append(call)
+        _observe(data)
+        _save(path, data)
+        return _summary(data)
+
+
+def reserve(ledger: str | Path, call_id: str, token_upper_bound: int, *, run_id: str,
+            project_root: str | Path, stage: str, agent: str, provider: str,
+            attempt: int = 1) -> dict:
+    """Atomically hold a caller-supplied inclusive input+output upper bound.
+
+    This is a permit for this identity, not automatic host/model integration.
+    available_tokens/can_continue describe capacity for *additional* work. A
+    retry needs a new call_id and reservation; evidence is never a prediction.
+    Replaying an active reservation is idempotent bookkeeping, not permission
+    to invoke a provider twice; the caller must enforce unique execution IDs.
+    """
+    path, root = _path(ledger), _path(project_root)
+    item = {'call_id': _name(call_id, 'call_id'), 'run_id': _name(run_id, 'run_id'),
+            'token_upper_bound': _integer(token_upper_bound, 'token_upper_bound'),
+            'stage': _name(stage, 'stage'), 'agent': _name(agent, 'agent'),
+            'provider': _name(provider, 'provider'), 'attempt': _integer(attempt, 'attempt'),
+            'state': 'active'}
+    if token_upper_bound < 1 or attempt < 1:
+        raise BudgetError('reservation attempt and bound must be positive')
+    if not path.is_relative_to(root) or path == root:
+        raise BudgetError('reservation ledger must be within project_root')
+    with _lock(path):
+        data = _load(path)
+        if data['finished'] or data['run_id'] != run_id or _path(data['project_root']) != root:
+            raise BudgetError('run is finished or reservation project/run identity does not match')
+        previous = next((entry for entry in data.get('reservations', []) if entry['call_id'] == call_id), None)
+        if previous is not None:
+            if any(previous[k] != item[k] for k in item if k != 'state'):
+                raise BudgetError('call_id conflicts with existing reservation')
+            if previous['state'] != 'active':
+                raise BudgetError('reservation is no longer active; a new attempt needs a new call_id')
+            _observe(data)
+            _save(path, data)
+            current = _summary(data)
+            if (current['status'] == 'FAIL' or current['unverified_call_count'] or data['clock_anomalies']
+                    or data['elapsed_seconds'] >= data['walltime_limit_seconds']):
+                raise BudgetError('run cannot replay an active reservation')
+            return {**current, 'reservation_created': False, 'reservation_status': 'active',
+                    'reservation_call_id': call_id}
+        if any(call['call_id'] == call_id for call in data['calls']):
+            raise BudgetError('call_id already has recorded usage; do not reserve retrospectively')
+        _observe(data)
+        current = _summary(data)
+        if not current['can_continue'] or token_upper_bound > current['available_tokens']:
+            # Retain detected clock anomalies even when capacity refuses work.
+            # Calls/reservations stay unchanged; a later clock recovery cannot
+            # erase evidence of reversal and turn the run back into PASS.
+            _save(path, data)
+            raise BudgetError('reservation exceeds available budget or run cannot dispatch')
+        data.setdefault('reservations', []).append(item)
+        # Older readers reject schema 2 instead of silently ignoring holds.
+        # Legacy schema 1 ledgers remain readable until their first reservation.
+        data['schema_version'] = 2
+        _save(path, data)
+        return {**_summary(data), 'reservation_created': True, 'reservation_status': 'active',
+                'reservation_call_id': call_id}
+
+
+def release(ledger: str | Path, call_id: str, *, run_id: str, reason: str) -> dict:
+    """Audit the caller's assertion that a reserved provider call was not made.
+
+    Never releases recorded usage. A contradictory late record is retained and
+    reported as failure, rather than discarded to preserve a previous PASS.
+    """
+    path = _path(ledger)
+    _name(call_id, 'call_id')
+    _name(run_id, 'run_id')
+    _name(reason, 'reason')
+    with _lock(path):
+        data = _load(path)
+        if data['finished'] or data['run_id'] != run_id:
+            raise BudgetError('run is finished or run_id does not match')
+        item = next((entry for entry in data.get('reservations', []) if entry['call_id'] == call_id), None)
+        if item is None or any(call['call_id'] == call_id for call in data['calls']):
+            raise BudgetError('only an uncalled reservation can be released')
+        if item['state'] == 'released' and item['release_reason'] != reason:
+            raise BudgetError('release reason conflicts with existing audit evidence')
+        item.update(state='released', release_reason=reason)
         _observe(data)
         _save(path, data)
         return _summary(data)
@@ -475,7 +611,7 @@ def check_for_dispatch(ledger: str | Path, *, run_id: str,
                        project_root: str | Path) -> dict:
     """Check an explicitly selected run at the scheduler dispatch boundary.
 
-    This observes supplied evidence; it neither reserves future tokens nor
+    This observes supplied evidence (including outstanding reservations); it neither reserves future tokens nor
     verifies that the host has reported every call. Landing work remains allowed
     after this check refuses further dispatch.
     """
@@ -499,6 +635,8 @@ def finish(ledger: str | Path, *, run_id: str) -> dict:
         data = _load(path)
         if data["run_id"] != run_id:
             raise BudgetError("run_id does not match")
+        if any(item['state'] in {'active', 'usage_unknown'} for item in data.get('reservations', [])):
+            raise BudgetError('settle usage or audit uncalled reservation releases before finishing')
         _observe(data)
         data["finished"] = True
         _save(path, data)

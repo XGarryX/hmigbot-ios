@@ -48,7 +48,9 @@ class ProviderRunTests(unittest.TestCase):
         return found
 
     def test_failure_then_retry_gets_a_new_attempt_and_keeps_the_original(self):
-        plan = self.plan([{'operation': 'swift-syntax'}])  # no provider config: a real, reproducible failure
+        config = self.root / 'invalid-syntax-config.json'
+        write_json(config, {})  # structurally valid plan; real provider rejects incomplete config
+        plan = self.plan([{'operation': 'swift-syntax', 'config': str(config)}])
         with self.assertRaises(MigrationError) as first:
             refresh(self.project, self.source, provider_plan=plan)
         with self.assertRaises(MigrationError) as second:
@@ -97,7 +99,9 @@ class ProviderRunTests(unittest.TestCase):
         published = refresh(self.project, self.source, provider_plan=good)
         baseline = self.project / 'spec/baseline/ios-facts.json'
         before = baseline.read_bytes()
-        mixed = self.plan([{'operation': 'interface-builder'}, {'operation': 'clang-ast'}])  # clang-ast needs a config
+        config = self.root / 'invalid-clang-config.json'
+        write_json(config, {})  # execution failure, rather than whole-plan preflight failure
+        mixed = self.plan([{'operation': 'interface-builder'}, {'operation': 'clang-ast', 'config': str(config)}])
         with self.assertRaises(MigrationError):
             refresh(self.project, self.source, provider_plan=mixed)
         self.assertEqual(baseline.read_bytes(), before, 'a partially failed plan must not publish a new graph')

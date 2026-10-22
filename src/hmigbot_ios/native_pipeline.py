@@ -296,7 +296,7 @@ def main(argv=None):
     init.add_argument('--source', required=True, type=Path)
     init.add_argument('--project', required=True, type=Path)
     commands.add_parser('expertise-audit')
-    for name in ('source-index', 'source-analysis', 'spec-scaffold', 'source-refresh', 'source-check', 'spec-check', 'spec-authoring', 'spec-summary', 'migration-report', 'spec-upgrade', 'validate', 'build', 'literals', 'product-literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-check', 'plan-ir', 'replan', 'recover-blocked', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query', 'manifest-evaluate', 'usage-start', 'usage-record', 'usage-summary', 'usage-check', 'usage-finish'):
+    for name in ('source-index', 'source-analysis', 'spec-scaffold', 'source-refresh', 'source-check', 'spec-check', 'spec-authoring', 'spec-summary', 'migration-report', 'spec-upgrade', 'validate', 'build', 'literals', 'product-literals', 'harness-init', 'import-legacy', 'facts', 'facts-view', 'harness-check', 'behavior-check', 'plan-check', 'plan-ir', 'replan', 'recover-blocked', 'next-batch', 'land-results', 'expertise-plan', 'expertise-review', 'mcp-query', 'manifest-evaluate', 'usage-start', 'usage-record', 'usage-reserve', 'usage-release', 'usage-summary', 'usage-check', 'usage-finish'):
         p = commands.add_parser(name)
         p.add_argument('--project', required=True, type=Path)
         if name.startswith('usage-'):
@@ -306,8 +306,8 @@ def main(argv=None):
             if name == 'usage-start':
                 p.add_argument('--token-limit', type=int, default=19_900_000)
                 p.add_argument('--walltime-limit-seconds', type=int, default=7200)
-            if name == 'usage-record':
-                p.add_argument('--input', type=Path, required=True, help='Call identity, normalization_mode and raw_usage JSON')
+            if name in {'usage-record', 'usage-reserve', 'usage-release'}:
+                p.add_argument('--input', type=Path, required=True, help='Exact usage, reservation or uncalled-release request JSON')
         if name == 'recover-blocked':
             p.add_argument('--review', type=Path, required=True)
         if name == 'source-check':
@@ -391,6 +391,19 @@ def main(argv=None):
                 result = usage_budget.record(ledger, **request)
                 if not result['can_continue']:
                     code = 2 if result['status'] == 'FAIL' else 3
+            elif args.command in {'usage-reserve', 'usage-release'}:
+                request = read_json(args.input)
+                required = ({'call_id', 'token_upper_bound', 'run_id', 'stage', 'agent', 'provider'}
+                            if args.command == 'usage-reserve' else {'call_id', 'run_id', 'reason'})
+                optional = {'attempt'} if args.command == 'usage-reserve' else set()
+                if not isinstance(request, dict) or not required <= request.keys() or request.keys() - required - optional:
+                    raise MigrationError('Reservation/release request needs exact identity and bound or audit reason fields')
+                result = (usage_budget.reserve(ledger, project_root=project, **request)
+                          if args.command == 'usage-reserve' else usage_budget.release(ledger, **request))
+                # Reserve creates or replays this unique call's hold. A replay
+                # is bookkeeping, never permission to invoke the same call twice.
+                # No remaining capacity for additional calls is not an error.
+                code = 0
             else:
                 result = (usage_budget.finish(ledger, run_id=args.run_id) if args.command == 'usage-finish'
                           else usage_budget.check(ledger))

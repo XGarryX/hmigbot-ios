@@ -1,6 +1,6 @@
 ---
 name: a2h-init
-description: "iOS→HarmonyOS 迁移第 0 步（初始化）：核对 iOS 源根与鸿蒙目标根、探测 macOS+Xcode 能力与 Apple skill/MCP 状态、确认 hvigor/DevEco/hdc 环境事实，用 init 命令把 source_platform=ios 等身份字段写入 .migbot/config.json 并跑 validate。当用户说“初始化”“开始迁移”“init”或首次运行 a2h-run/spec 时使用；路径变化、源工程更换或 Xcode 环境变化时可重跑。不要用于：源理解与规格生成（用 a2h-spec）、计划（用 a2h-plan）、执行迁移（用 a2h-execute）。"
+description: "iOS→HarmonyOS 迁移第 0 步（初始化）：核对 iOS 源根与鸿蒙目标根、探测 macOS+Xcode 与目标工具能力，用 init 写入身份并经 harness-init 检查源分析配置，validate 单独报告目标构建准入。当用户说“初始化”“开始迁移”“init”或首次运行 a2h-run/spec 时使用；路径变化、源工程更换或 Xcode 环境变化时可重跑。不要用于：源理解与规格生成（用 a2h-spec）、计划（用 a2h-plan）、执行迁移（用 a2h-execute）。"
 metadata:
   type: pipeline
   domain: migration
@@ -11,16 +11,16 @@ metadata:
   layer: pipeline
 ---
 
-> **派发约定**：本 skill **不派发 subagent**，全部步骤在主会话执行。它只做只读探测、与用户确认输入、调用 init/doctor/validate 三个本包命令——不写产品文件、不建 spec 产物。
+> **派发约定**：本 skill **不派发 subagent**，全部步骤在主会话执行。它只做只读探测、按已有授权确认输入、调用 init/harness-init/doctor/validate 本包命令——不写产品文件、不建 spec 业务产物。
 >
-> 路径约定：`$IOS_SRC` = iOS 源码根；`<target>` = 鸿蒙目标工程根；`<runtime>` = 本包 runtime（`scripts/a2h_ios.py` 所在根）。本 skill 只写一个文件：`<target>/.migbot/config.json`（由 init 命令单写）。不写 spec、不动源/目标代码。
+> 路径约定：`$IOS_SRC` = iOS 源码根；`<target>` = 鸿蒙目标工程根；`<runtime>` = 本包 runtime（`scripts/a2h_ios.py` 所在根）。本 skill 的配置写入只限 `<target>/.migbot/config.json`：身份字段由 init 写，harness 标记由 harness-init 写；不手改配置、不动源/目标代码。历史v1迁移需单独的显式导入，不能在初始化中自动代做。
 
 # a2h-init — 迁移初始化与环境确认
 
 ## 0. 定位与纪律
 
 - 输入：用户提供的 iOS 源路径、鸿蒙目标路径；已有 `<target>/.migbot/config.json`（若有）。
-- 输出：`<target>/.migbot/config.json`（init 命令单写）+ init 最终报告。收尾跑 `mark-stage a2h-init`。
+- 输出：`<target>/.migbot/config.json`（init写身份，harness-init写harness标记）+ init 最终报告。收尾跑 `mark-stage a2h-init`。
 - **顺序固定**：遥测状态（§3）→ 源根确认（§4）→ 目标根确认（§5）→ hvigor/DevEco/hdc 环境事实（§6）→ **macOS+Xcode 能力探测（§7）** → 写 config（§8）→ 最终校验（§9）→ 最终报告（§10）。任何一步不许跳过。
 - 唯一交互点 = 路径确认各步的 `(keep / <new path>)` 提问；其余禁交互追问。
 - **第一条可见输出必须是**一行初始化计划（§3→§4→§5→§6→§7→§8→§9），然后才开始 §1。
@@ -86,7 +86,7 @@ metadata:
 
 ## 6. hvigor / DevEco / hdc 环境事实（记录，不写 config）
 
-本包 config.json **只承载源/目标身份字段**（§8）；hvigorw、node、SDK、hdc 属环境事实，由 `doctor` 每次显式探测或经 `--hvigor/--sdk/--node/--ohpm` 显式传入，不持久化到 config.json。init 的职责是**如实记录并报告**：
+初始化命令负责config.json中的源/目标身份字段（§8），harness-init另写其既有控制标记；hvigorw、node、SDK、hdc 属环境事实，由 `doctor` 每次显式探测或经 `--hvigor/--sdk/--node/--ohpm` 显式传入，不在此步骤伪造或覆盖配置。init 的职责是**如实记录并报告**：
 
 1. 探测链（静默依序，首个命中即停）：
 
@@ -106,7 +106,7 @@ metadata:
 按「真实 iOS 开发 = macOS + Xcode」场景，init **必须**区分并记录四类能力的三态：`available`（本机探测到）/ `configured`（用户已配置）/ `executed`（本轮实际执行过）。
 
 1. **宿主能力协商（权威来源）**：跑 `python <runtime>/scripts/a2h_ios.py doctor --project <target>`（只读），读其 `host_profile`：
-   - macOS + `xcodebuild` + `xcrun` 可用 → 源解析走 **native**（Xcode 工程成员/编译上下文 available）；
+   - macOS + `xcodebuild` + `xcrun` 可用 → **native 候选能力 available**；后续仍须真实执行provider并验证其结果，不能仅据探测声称已有工程成员/符号绑定证据；
    - Windows / macOS 无 Xcode → 源解析走 **static 回退**（`ios.swift_compiler_context: unavailable`）。
 2. 显式探测（仅 macOS；Windows 直接记 unavailable）：
 
@@ -125,28 +125,27 @@ command -v xcodebuild; command -v xcrun; command -v swift
 python <runtime>/scripts/a2h_ios.py init --source "<ios>" --project "<target>"
 ```
 
-- 命令写：`source_platform=ios`、`ios`、`harmonyos`、`language`（缺省 zh）、`telemetry_consent`（缺省 denied）、`confirmed`。**`confirmed` 由命令保持现状**（本包不设 confirmed=true 门槛；真正起步门是 §9 的 validate exit 0 + spec 阶段 `harness-init`）。
+- 命令写：`source_platform=ios`、`ios`、`harmonyos`、`language`（缺省 zh）、`telemetry_consent`（缺省 denied）、`confirmed`。**`confirmed` 由命令保持现状**；本包不设 confirmed=true 门槛。源分析起步检查用 §9 的 `harness-init`，目标构建准入单独由 `validate` 判断。
 - **禁止手 Edit 该文件**（init 是唯一写者）。路径含空格时整体加引号。
 - 命令报错（典型：Android 旧配置、源根改变）→ 读错误原文按 §4/§5 修正后重跑，最多 2 轮；仍失败 → 记欠账并如实呈报，不硬闯。
 
 ## 9. 最终校验
 
-1. `python <runtime>/scripts/a2h_ios.py validate --project <target>`：
-   - exit 0 → `Config confirmed. You can now run a2h-run (spec → plan → execute → verify → retrospect), or a2h-spec first for source analysis.`
-   - 非 0 → 列出失败项：`Config saved, but validate reports: <failures>. Re-run a2h-init or fix the inputs manually.`
-2. `python <runtime>/scripts/a2h_ios.py doctor --project <target>`：读 `overall` 与 `host_profile`，把可用/缺失/下一步写进最终报告能力清单。doctor 只统计，**绝不递归扫盘、绝不运行 Swift**。
-3. （可选）用量账本起步：`python <runtime>/scripts/a2h_ios.py usage-start --project <target> --run-id <本轮run-id>`（run-id 唯一，带日期/目标名后缀；exit 非 0 只记警告）。缺省不由 init 启动账本亦可——a2h-spec 起步时按需启动。
+1. **源分析配置门**：`python <runtime>/scripts/a2h_ios.py harness-init --project <target>`。exit 0 仅说明源/配置可进入 a2h-spec，不证明源理解完整或可编译；非0则保留错误，修配置或按现有显式导入协议处理，不能越过。已有v2配置可幂等重跑；仍由spec阶段执行source-index与后续源合同门。
+2. **目标构建准入**：`python <runtime>/scripts/a2h_ios.py validate --project <target>`。exit 0 仅说明构建工具路径与配置检查通过；非0列出真实失败项及恢复条件。缺 hvigor/build-profile **不阻断源分析**；保持目标构建 blocked，执行构建前必须修复并重跑到 exit 0，不伪造路径或削弱 validate。
+3. `python <runtime>/scripts/a2h_ios.py doctor --project <target>`：读 `overall` 与 `host_profile`，把可用/缺失/下一步分源分析、目标构建、设备验证写进最终报告。doctor 只统计，**绝不递归扫盘、绝不运行 Swift**。
+4. 本轮要求用量目标时，在首个模型任务前按主控计量规程启动 `usage-start --project <target> --run-id <本轮run-id>`；若账本不可用，源检查结果仍可报告，但用量完整性为UNKNOWN，不能声明满足Token目标。账本不会自动证明全部宿主调用均已采集。
 
 ## 10. 最终报告（必带三块）
 
-- **能力清单**：ios/harmonyos 路径与工程 marker、hvigor/DevEco/hdc 环境事实、Xcode/Apple skills/MCP 三态、native 或 static 源解析路径、可执行阶段（缺 hvigor 时标注"目标编译暂缺工具"）。
+- **能力清单**：ios/harmonyos 路径与工程 marker、hvigor/DevEco/hdc 环境事实、Xcode/Apple skills/MCP 三态、native候选能力与实际执行证据、static回退及可执行阶段（缺 hvigor 时标注"目标编译暂缺工具"）。
 - **遥测状态块**：`Current state: <denied (default — nothing uploaded) / granted>`。本包遥测默认关闭、不阻断任何阶段。
 - **下一步**：`a2h-run` 或单独 `a2h-spec`。
 
 ## Notes
 
 - 路径输入原样保留（相对路径按安装目录解析，为用户可移植性保留；不自动转绝对）。
-- 只触碰 `.migbot/config.json`（init 单写）；不改 `.agents/`、不改源/目标工程任何文件。
+- 配置由 init/harness-init 各自按既有责任写入；不手改 `.agents/`、源/目标代码或控制账本。
 - 重复运行幂等：confirmed 已 true 时按 §2 的 yes/no 分支走；源更换先重审旧 baseline（§2/§8 双保险）。
 - 无待迁移源工程时仍可完成环境自检；不创建虚构应用 baseline。
 - Xcode project/scheme/target、`CFBundleDisplayName` 等源内事实由 `source-index`/spec 阶段提取，init 不预先解析。

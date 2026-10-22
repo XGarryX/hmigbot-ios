@@ -22,7 +22,7 @@ metadata:
 
 ## 0. 定位与纪律
 
-- **前置**：`spec/baseline/` 就绪 **且** `spec/ui-coverage-report.md` 最近一次 PASS，`spec-check` 与 `source-check --harness` 双门 exit 0，`spec/baseline/decision-ledger.md` 有 D 条目。缺任一项 → 提示先跑 a2h-spec，不代跑。
+- **前置**：`spec/baseline/` 就绪 **且** `spec/ui-coverage-report.md` 最近一次 PASS，`spec-check` 与 `source-check --harness` 双门 exit 0，`spec/decision-ledger.md` 有 D 条目。缺任一项 → 提示先跑 a2h-spec，不代跑。
 - **输入**：`spec/baseline/{ui-manifest,feature-index,feature-base,ui/page_NNNN,features/FNNN}.md` 及其 `contract_refs`/`impl:` 引用闭包、`spec/.a2h/{open-findings,requirements-index}.json`、`spec/decision-ledger.md`。
 - **输出**：`spec/baseline/plans/{ui-plan,feature-plan,base-plan,coverage-matrix}.md`、`spec/baseline/plans/slices/slice-NN-<fid>.md`、`spec/placeholder-registry.md`、冻结的 `spec/blueprint/` 六件、`spec/waves/plan-<wave>.json` + `prompts/`。
 - **唯一交互点 = §8 审批门**（用户明确说 确认/通过/继续 才落 approved）；其余禁交互追问，机械检查由 exit code 判定（0=PASS，非0=FAIL）。
@@ -43,11 +43,12 @@ metadata:
 | ⑦（规格变更后）显式重排 | `python <runtime>/scripts/a2h_ios.py replan --project <target> --input <planRequest.json>` | 归档旧控制件 + 新 plan | 0=重排；2=FAIL | 需 `replan_review{reviewer,reason}`；禁继承旧 success |
 
 - `<planRequest.json>` = 主会话按 plan-delivery-contract 生成的 typed plan request：`schema_version=2`、`wave∈{understand,domains}`、`graph_sha256` 钉当前 fact graph、`tasks[]`（id/role/ownership/ac_ids/fact_ids/goal/parents/plan_item_refs/verification）、`decisions[]`、`max_parallel∈1..8`。role 必须命中 `agents-codex/*.toml`；ownership 精确路径、禁通配符。
+- **现有prompt_scope接线**：生成request前读 [决策上下文范围](references/prompt-scope.md) 与 [typed request示例](templates/plan-request-template.json)，把每条决策完整保存在冻结blueprint；仅经作者/计划合同明确采用的 `prompt_scope.task_ids/ac_ids/fact_ids` 可缩小prompt内联范围。无scope的全局/跨模块决策继续发给所有任务，机器推导只作候选；无直接fact引用不代表可以删共享约束。scope不改变AC、写权或验收义务。
 - ⑥ 后交接 a2h-execute：`python <runtime>/scripts/a2h_ios.py next-batch --project <target> --wave <wave> [--usage-ledger … --usage-run-id …]`（可带用量预算前置检查）。
 
 ## 0.2 无人值守处置阶梯（E266，适用于 ①③④⑤⑦ 每个门禁 FAIL）
 
-> FAIL → 按脚本/错误原文定位缺陷，派修复并重跑同一命令；**最多 2 轮**；2 轮仍不过或确定模型修不了 → **记欠账放行**（账要记全：修过几轮、每轮失败原因、判「修不了」的依据）；要拍板的模型自决并留痕；**任何分支不得停机呈报人工**（`gates.stage_debt=true` 例外：仅设备/账号类门允许欠账；静态门即便开了 stage_debt 也照常修到 PASS）。覆盖率 FAIL 按阶梯自愈，**不呈报用户**。
+> FAIL → 按脚本/错误原文定位缺陷，派修复并重跑同一命令；**最多 2 轮**。仍不过或无可执行修复时，保留失败、修复记录与恢复条件，依赖失败输入的部分保持 **blocked**；不依赖它的独立工作可继续。源合同、静态/覆盖/冻结输入门必须重跑PASS，重试次数不能豁免；设备/账号缺失仅按对应阶段规则记未执行，不升级为成功。新产品取舍由已有授权或明确产品决策决定，模型不自行批准行为替代。
 
 - 修复不得豁免「三写产物主线程禁自写」：仅涉 `plan-coverage.json`（补映射/更新 digest）主线程直写；涉 slice/base-plan/ui-plan 内容 → 按增量重派对应 writer subagent，主线程直改仅限 §3.0 降级条件成立。
 - findings 只能由「原 linter 重跑后不再报」关闭，不能由任一方声明「已修复」关闭。

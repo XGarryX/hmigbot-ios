@@ -1,3 +1,15 @@
+# 0.11.0 — 2026-10-22
+
+- Align decision-ledger paths, source/build admission and failed-hard-gate handling; expose existing prompt scopes through maintained author instructions, examples and schema.
+- Validate shared task input paths and conflicting hashes before hashing each distinct file once per scheduler step; retain full current evidence gates.
+- Add atomic explicit usage reservations, settlement and audited uncalled releases. First reservation upgrades ledgers to schema 2 so older readers cannot ignore in-flight bounds; unresolved usage remains blocking.
+- Preflight complete provider plans before execution; record current discovery-only host/provider guidance in source preparation receipts without claiming native execution or compiler binding.
+- Reuse existing Windows extended-length IO at provider capture/config/input/retry boundaries, with real deep-path lifecycle regression coverage and portable contract paths.
+- Distinguish exact reviewed platform comparisons from unreviewed legacy instructions in native-surface audits; preserve adjacent-command and stale-review rejection.
+- Make full-suite release timeout and fresh dedicated test paths explicit and retain timeout evidence; correct the Execute skill description for the official validator.
+- Deliver a standalone Mac handoff with backgrounds, Windows changes, Darwin clock identity gap, native evidence design, real Cuike and full acceptance work still required.
+- Preserve original pipeline, vendor resources, control-state writers and local verification semantics. Real App equivalence and end-to-end scale/time/token goals remain unverified.
+
 # 0.10.1 — 2026-10-21
 
 - Distinguish replayed identity member reads from ForEach and identity modifier calls; allow unit/contract/UI observations for value reads while retaining conservative UI judgments for calls, writes and unknown uses.

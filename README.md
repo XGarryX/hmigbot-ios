@@ -1,4 +1,6 @@
-# HMigBot-iOS 0.10.1
+# HMigBot-iOS 0.11.0
+
+0.11.0 修正规程与准入冲突，接通已有prompt_scope作者入口，减少同次调度重复hash，增加显式在途token预留及完整provider计划预检。源分析回执记录当前host发现，仍不自动执行Xcode或证明符号绑定。见 [Windows改造合同](docs/WINDOWS-FOUNDATION-20261022.md)、[预留操作](docs/USAGE-RESERVATIONS.md) 与自足的 [Mac交接](docs/MAC-HANDOFF-20261022.md)。旧源基线仍需按原流程重提/复审；首个预留将usage账本升级为schema 2，旧运行时应拒读而非忽略在途额度。工具测试不代表真实App双100%、2小时或20M目标达标。
 
 0.10.1 区分模型 `.id` 值读取与 SwiftUI 身份调用，保留真实 UI 身份判据及保守未知分支。升级须按原 `facts` 流程重提并复审旧基线，不能继承旧门禁结果。
 
@@ -8,7 +10,7 @@
 
 0.9.1 修复 WorkBuddy 评估中独立复现的解析、冻结和 raw 字符串问题，同步 Spec/Plan/Execute/Verify 的 MD 规则与检查器；增加受控旧规格诊断及真正由当前逐页证据生成、可检查是否过期的报告。见 [整改对应表](docs/WORKBUDDY-0.9.1.md) 与 [旧规格升级步骤](docs/SPEC-UPGRADE.md)。
 
-本地对齐开发（feature/ios-xcode-alignment，未发布）：① 六个流水线技能（a2h-init/spec/plan/execute/verify/retrospect）参照原版 HMigBot 1.7.0 的写作方法论整体重写——统一「精确命令表 / 黑体硬约束 / 无人值守处置阶梯 / 读取时机表 / 交接闸 / mark-stage 收尾」骨架，全部命令核对真实 `a2h_ios.py` flags；a2h-verify 补回原版 CHECK-5 行为验证语义（`behavior-check` 只报告、不参与整体判定）。② 七个 ios-* 技能深化到安卓原版对应技能的等价深度（接口接缝框架、pbxproj 分层、状态装饰器分类、行为链六维度、xcassets 全表等），iOS 语义红线逐条保留。③ `doctor` 输出新增 `host_profile` 宿主能力协商：macOS+Xcode → native 源解析，Windows/Linux → static 回退，Apple skill/Xcode MCP 按 available/configured/executed 三态记录。④ 明确维护原则：原版共享技能（arkts-*/hmos-* 等）冻结不改，只改 iOS 版新增/修改的技能。审计与写作基线见 [对齐审计](docs/IOS-ALIGNMENT-1.7-AUDIT.md) 与 [技能写法方法论](docs/SKILL-AUTHORING-METHODOLOGY.md)。
+已合入main的iOS对齐工作：① 六个流水线技能（a2h-init/spec/plan/execute/verify/retrospect）参照原版 HMigBot 1.7.0 的写作方法论整体重写——统一「精确命令表 / 黑体硬约束 / 无人值守处置阶梯 / 读取时机表 / 交接闸 / mark-stage 收尾」骨架，全部命令核对真实 `a2h_ios.py` flags；a2h-verify 补回原版 CHECK-5 行为验证语义（`behavior-check` 只报告、不参与整体判定）。② 七个 ios-* 技能深化到安卓原版对应技能的等价深度（接口接缝框架、pbxproj 分层、状态装饰器分类、行为链六维度、xcassets 全表等），iOS 语义红线逐条保留。③ `doctor` 输出新增 `host_profile` 宿主能力协商：macOS+Xcode → 原生能力候选，Windows/Linux → static候选；可用性不代表已执行原生解析，Apple skill/Xcode MCP 按 available/configured/executed 三态记录。④ 明确维护原则：原版共享技能（arkts-*/hmos-* 等）冻结不改，只改 iOS 版新增/修改的技能。审计与写作基线见 [对齐审计](docs/IOS-ALIGNMENT-1.7-AUDIT.md) 与 [技能写法方法论](docs/SKILL-AUTHORING-METHODOLOGY.md)。
 
 读取原生 iOS 源码与功能特征，按原 HMigBot 五阶段生成 spec、计划和原生鸿蒙代码。
 本工具保留独立 HMigBot CodeX 1.6.1 的实施/验证资源，并接入 1.7.0 调度核心；所需资源随包提供，无需原插件目录。
@@ -309,8 +311,8 @@ python -m pip install '.[test]'
 python -X utf8 -m pytest -q -p no:cacheprovider
 python -X utf8 scripts/audit_native_surface.py
 python -X utf8 scripts/validate_release.py --output work/release-check
-python scripts/package_plugin.py --output dist/hmigbot-ios-0.10.1.zip
-python scripts/smoke_package.py --package dist/hmigbot-ios-0.10.1.zip --output work/package-check.json
+python scripts/package_plugin.py --output dist/hmigbot-ios-0.11.0.zip
+python scripts/smoke_package.py --package dist/hmigbot-ios-0.11.0.zip --output work/package-check.json
 ```
 
 仓库根目录未指定路径时，pytest 通过 `pyproject.toml` 的

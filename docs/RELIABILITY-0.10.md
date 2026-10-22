@@ -61,7 +61,7 @@ python scripts/a2h_ios.py usage-check --project 'D:/Projects/cuike-harmony'
 python scripts/a2h_ios.py usage-finish --project 'D:/Projects/cuike-harmony' --run-id 'cuike-run-001'
 ```
 
-默认账本为 `spec/reports/derived/usage-budget.json`。可用 `--ledger` 指向 derived 子目录下同名文件，为新运行保留独立账本。开始拒绝覆盖；完成后调用记录不可追加。默认运行额度 19.9M，20M 严格不通过，时间上限 7200 秒。运行中 `usage-check` 为 UNKNOWN/退出 3；完成且证据充分才 PASS/退出 0；明确超限为 FAIL/退出 2。`can_continue` 是当前已记录用量的观察，不为将来的并发调用预留额度。
+默认账本为 `spec/reports/derived/usage-budget.json`。可用 `--ledger` 指向 derived 子目录下同名文件，为新运行保留独立账本。开始拒绝覆盖；完成后调用记录不可追加。默认运行额度 19.9M，20M 严格不通过，时间上限 7200 秒。运行中 `usage-check` 为 UNKNOWN/退出 3；完成且证据充分才 PASS/退出 0；明确超限为 FAIL/退出 2。0.11.0 的 `can_continue` 同时考虑显式在途预留；它仍不会自动为未来调用估算/预留。见 [显式预留与结算](USAGE-RESERVATIONS.md)。
 
 调用输入示例（用量为合成示例）：
 
@@ -92,7 +92,7 @@ python scripts/a2h_ios.py usage-finish --project 'D:/Projects/cuike-harmony' --r
 python scripts/a2h_ios.py next-batch --project 'D:/Projects/cuike-harmony' --usage-ledger 'spec/reports/derived/usage-budget.json' --usage-run-id 'cuike-run-001'
 ```
 
-两个选项必须同时提供。调度器在原 `next_batch` 更新控制状态之前，核对账本的工程和运行身份，并检查已登记用量、当前耗时、时钟及结束状态；未知、额度耗尽、超时或已结束均拒绝新派发。`land-results` 仍可收回已有工作的结果。此连接按次显式选择，未选择时保留旧调度行为；调用者须在每次 `next-batch` 传入这两个选项。它不采集宿主遗漏的调用、不预留并发调用额度，也不终止已经运行的模型请求。
+两个选项必须同时提供。调度器在原 `next_batch` 更新控制状态之前，核对账本的工程和运行身份，并检查已登记用量、当前耗时、时钟及结束状态；未知、额度耗尽、超时或已结束均拒绝新派发。`land-results` 仍可收回已有工作的结果。此连接按次显式选择，未选择时保留旧调度行为；调用者须在每次 `next-batch` 传入这两个选项。它不采集宿主遗漏的调用、不自动预留并发调用额度，也不终止已经运行的模型请求；0.11.0 的显式usage-reserve/record/release由调用宿主接线，泛检查会考虑现有预留。
 
 计时校验包含墙钟、单调钟、启动及主机身份，结束后仍复验身份。内部计时证据不一致会拒绝或保持 UNKNOWN；无法确认启动身份的平台不能伪造时间 PASS。缺失真实模型用量的订阅工具调用须保持未知，订阅额度充足不等于 token 目标达标。
 

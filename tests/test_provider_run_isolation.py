@@ -8,13 +8,22 @@ import sys
 import pytest
 
 from hmigbot_ios.atoms import run_atom
-from hmigbot_ios.core import MigrationError, digest, read_json, snapshot, write_json
+from hmigbot_ios.core import MigrationError, digest, io_path, read_json, snapshot, write_json
 from hmigbot_ios.evidence import pack
 from hmigbot_ios.ios_facts import refresh, validate_graph
 from hmigbot_ios.provider_runs import ProviderRun
 
 
 RUNTIME = Path(__file__).resolve().parents[1] / 'src'
+
+
+def filesystem_files(project, pattern):
+    # pathlib glob on Python 3.14 bypasses Path.__fspath__; use an extended IO
+    # address only while observing the real files, then restore normal identity.
+    root = Path(os.fspath(io_path(project)))
+    return [io_path(path) for path in root.rglob(pattern)]
+
+
 WORKER = '''
 import json, pathlib, sys, time
 sys.path.insert(0, sys.argv[1])
@@ -108,8 +117,8 @@ def test_real_processes_get_exclusive_attempts_and_keep_all_evidence(tmp_path, c
     assert len({item['run_id'] for item in results}) == 2
     records = [read_json(Path(item['directory']) / 'run.json') for item in results]
     assert sum(record['status'] == 'succeeded' for record in records) == successes
-    assert len(list(project.rglob('artifact.json'))) == successes
-    failures = [read_json(path) for path in project.rglob('failure.json')]
+    assert len(filesystem_files(project, 'artifact.json')) == successes
+    failures = [read_json(path) for path in filesystem_files(project, 'failure.json')]
     assert len(failures) == 2 - successes
     assert len({item['error'] for item in failures}) == len(failures)
 
@@ -122,14 +131,14 @@ def test_tool_replaced_at_same_path_is_executed_again(tmp_path):
     write_json(config, provider_config(tool))
     plan = make_plan(tmp_path, 'swift-syntax', config)
     first = refresh(project, source, provider_plan=plan)['provider_artifacts'][0]
-    original_artifact = (project / first['path']).read_bytes()
+    original_artifact = io_path(project / first['path']).read_bytes()
     config_hash = digest(config.read_bytes())
     make_provider(tool, 'fixture-version-2')
     second = refresh(project, source, provider_plan=plan)['provider_artifacts'][0]
     assert digest(config.read_bytes()) == config_hash
     assert first['path'] != second['path']
     assert read_json(project / second['path'])['data']['tool_version_output'] == 'fixture-version-2'
-    assert (project / first['path']).read_bytes() == original_artifact
+    assert io_path(project / first['path']).read_bytes() == original_artifact
     assert ProviderRun(project, 'swift-syntax', snapshot(source)['sha256'], config=config).reusable() is None
     assert ProviderRun(project, 'clang-ast', snapshot(source)['sha256'], config=config).reusable() is None
 
@@ -189,7 +198,7 @@ def test_config_aba_consumes_initial_bytes_and_erases_private_copy(tmp_path, mon
     assert read_json(artifact)['data']['implementation_marker'] == 'config-A'
     assert read_json(artifact.parent / 'run.json')['config_sha256'] == digest(original)
     assert all(not path.exists() for path in fixed_paths)
-    assert all(b'private-fixture-value' not in path.read_bytes() for path in project.rglob('*') if path.is_file())
+    assert all(b'private-fixture-value' not in path.read_bytes() for path in filesystem_files(project, '*') if path.is_file())
 
 
 def test_relative_provider_arguments_keep_original_cwd(tmp_path, monkeypatch):
@@ -220,7 +229,7 @@ def test_tampered_private_config_is_not_published(tmp_path, monkeypatch):
     with pytest.raises(MigrationError, match='Provider failed'):
         refresh(project, source, provider_plan=make_plan(tmp_path, 'swift-syntax', config))
     assert not (project / 'spec/baseline/ios-facts.json').exists()
-    record, = [read_json(path) for path in project.rglob('run.json')]
+    record, = [read_json(path) for path in filesystem_files(project, 'run.json')]
     assert record['status'] == 'failed'
 
 
@@ -245,8 +254,8 @@ def test_persistent_config_drift_fails_and_keeps_published_baseline_valid(tmp_pa
         refresh(project, source, provider_plan=plan)
     assert (project / 'spec/baseline/ios-facts.json').read_bytes() == baseline
     validate_graph(source, project)
-    assert len(list(project.rglob('failure.json'))) == 1
-    assert [read_json(path)['status'] for path in sorted(project.rglob('run.json'))] == ['succeeded', 'failed']
+    assert len(filesystem_files(project, 'failure.json')) == 1
+    assert [read_json(path)['status'] for path in sorted(filesystem_files(project, 'run.json'))] == ['succeeded', 'failed']
 
 
 def test_input_manifest_aba_consumes_fixed_hashed_payloads(tmp_path, monkeypatch):

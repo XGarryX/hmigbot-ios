@@ -478,6 +478,28 @@ def generate(project, input_path, *, validate_only=False):
             'state_writer': 'original state_update.py', 'behavior_verified': False}
 
 
+def _validate_task_inputs(project, task_inputs):
+    """Hash each immutable contract file once at this step's input boundary.
+
+    Resolve every reference, including repeats, before deduplicating so an
+    unsafe alias or conflicting expected hash cannot hide behind a prior ref.
+    This cache lasts only for this call; it does not inherit PASS across steps,
+    rely on stat metadata, or replace graph/baseline/final evidence validation.
+    As with the other snapshot gates, callers must not mutate frozen inputs
+    concurrently; one boundary check is not continuous filesystem monitoring.
+    """
+    files = {}
+    for refs in task_inputs.values():
+        for ref in refs:
+            path = safe_child(project, ref['path'])
+            if path in files and files[path]['sha256'] != ref['sha256']:
+                raise MigrationError('Conflicting pinned task contract input hashes: ' + ref['path'])
+            files.setdefault(path, ref)
+    for path, ref in files.items():
+        if digest(path.read_bytes()) != ref['sha256']:
+            raise MigrationError('Pinned task contract input changed: ' + ref['path'] + '#' + ref['heading'])
+
+
 def step(project, wave, *, landing=False, usage_ledger=None, usage_run_id=None):
     from .native_pipeline import context
     source, project = context(project)
@@ -494,10 +516,7 @@ def step(project, wave, *, landing=False, usage_ledger=None, usage_run_id=None):
     contract = read_json(project / 'spec/blueprint/contracts.json')
     from .plan_contract import assert_pinned
     assert_pinned(project, contract)
-    for refs in contract.get('task_inputs', {}).values():
-        for ref in refs:
-            if digest(safe_child(project, ref['path']).read_bytes()) != ref['sha256']:
-                raise MigrationError('Pinned task contract input changed: ' + ref['path'] + '#' + ref['heading'])
+    _validate_task_inputs(project, contract.get('task_inputs', {}))
     if digest(json_bytes({k: v for k, v in plan.items() if k != 'contract_hash'})) != contract.get('plan_identity_sha256'):
         raise MigrationError('Plan IR changed after generation; do not dispatch edited tasks')
     for path, expected in contract.get('prompt_hashes', {}).items():

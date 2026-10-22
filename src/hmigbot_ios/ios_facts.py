@@ -477,7 +477,7 @@ def obligations(graph):
                              **_fact_rule(fact)} for fact in graph['facts']]}
 
 
-def _capture_providers(project, source, graph, provider_plan):
+def _capture_providers(project, source, graph, providers):
     """Run each planned provider into its own attempt directory; return saved references and issues.
 
     Only a published artifact becomes a graph reference. A failed try keeps its diagnostics under
@@ -486,13 +486,8 @@ def _capture_providers(project, source, graph, provider_plan):
     """
     from .atoms import run_atom
     from .provider_runs import ProviderRun, retained_failures
-    providers = read_json(provider_plan)
-    if not isinstance(providers, dict) or providers.get('schema_version') != 2 or not isinstance(providers.get('providers'), list):
-        raise MigrationError('Provider plan requires v2 providers array')
     artifacts, issues = [], []
-    for provider in providers['providers']:
-        if provider.get('operation') not in {'swift-syntax', 'clang-ast', 'build-settings', 'interface-builder', 'asset-inventory', 'localization-inventory'}:
-            raise MigrationError('Unsupported source provider operation')
+    for provider in providers:
         name = provider['operation']
         config = Path(provider['config']) if provider.get('config') else None
         input_path = Path(provider['input']) if provider.get('input') else None
@@ -521,13 +516,15 @@ def _capture_providers(project, source, graph, provider_plan):
 
 
 def refresh(project, source, variant=None, provider_plan=None, manifest_evidence=None):
+    from .provider_plan import preflight
+    providers = preflight(provider_plan) if provider_plan is not None else None
     if manifest_evidence is not None:
         manifest_evidence = Path(manifest_evidence).resolve()
         if not manifest_evidence.is_relative_to((project / 'spec/ref/ios-manifest-evidence').resolve()):
             raise MigrationError('Manifest evidence must be under project/spec/ref/ios-manifest-evidence for pinned consumption')
     graph = extract(source, variant, manifest_evidence=manifest_evidence)
-    if provider_plan:
-        graph['provider_artifacts'], provider_issues = _capture_providers(project, source, graph, provider_plan)
+    if providers:
+        graph['provider_artifacts'], provider_issues = _capture_providers(project, source, graph, providers)
         graph['issues'].extend(provider_issues)
     if snapshot(source)['sha256'] != graph['source_sha256']:
         raise MigrationError('Source changed while extracting; the previous baseline stays published and nothing new is written')
