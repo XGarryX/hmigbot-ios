@@ -1,20 +1,15 @@
 ---
 name: a2h-build-zh
-description: "验证原生 iOS 迁移的鸿蒙目标配置并运行真实 hvigor assembleHap，保存日志、退出码和 HAP 证据。"
+description: 触发：`$a2h-build-zh` 或自然语言。校验插件配置并在 HarmonyOS 仓上跑 hvigorw assembleHap
 ---
 
+> **iOS 源输入适配**：执行源分析/源设备操作前，读 [原生输入协议](../a2h-spec/references/native-input.md)。它仅替换平台输入；原阶段、模板、规则、门禁、模式和 target 侧执行保持 1.5.2。
 
-# 鸿蒙目标编译
+> Codex skill (converted from the `a2h-build-zh` slash command). Invoke with `$a2h-build-zh`, or pick it in `/skills` (the default_prompt below auto-runs). Codex has no custom slash commands, so the `$` prefix replaces `/`.
 
-读取 `.migbot/config.json`，确认 source_platform=ios 与真实 harmonyos 目标根。
-缺路径先用 a2h-init；缺工具用 hmos-env-doctor。已有路径不反复询问。
 
-1. 运行 `python <runtime>/scripts/a2h_ios.py validate --project <target>`。
-2. 通过后运行 `python <runtime>/scripts/a2h_ios.py build --project <target>`。
-   runtime 是本插件根，工作区安装时为 `.hmigbot-ios/plugin`。
-3. 检查实际退出码、构建成功标记和本轮 HAP 指纹，不使用旧 HAP 冒充新构建。
-4. 失败调用 hmos-fix-build-errors，修复后重跑。日志保留，超时或环境错误不能写成功。
-5. 报告构建范围、工具/SDK 版本、产物和限制；编译不等于设备行为验证。
+> **Windows：** 绝不走 `bash`。改用 `powershell -NoProfile -ExecutionPolicy Bypass -File .migbot\bin\a2h-tool.ps1 <validate|build>` 与 `.migbot\bin\a2h.exe <子命令>`（见 `$a2h-init` §0）。
 
-Windows 可调用 `.migbot/bin/a2h-tool.ps1 validate|build`；POSIX 用 a2h-tool。
-封装仅执行相同原生命令，不查询源设备或上传遥测。
+1. 跑 `.migbot/bin/a2h-tool validate`。返回 `{ok:false}` → 把每条失败列给用户，建议跑 `$a2h-init` 修正路径，然后停下。
+2. 否则跑 `.migbot/bin/a2h-tool build`。流式输出。报告最终退出码。
+3. 上报本阶段 token 用量：跑 `Bash: .migbot/bin/a2h mark-stage a2h-build`。尽力而为、受授权门控——忽略其退出码（绝不影响构建结果）。

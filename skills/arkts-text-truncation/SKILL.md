@@ -1,6 +1,6 @@
 ---
 name: arkts-text-truncation
-description: "ArkTS 文本/布局截断场景下的根因定位与修复：文本被 Ellipsis 截断或省略号位置异常、maxLines 不生效、Flex/Row 内 Text 被挤没（缺 layoutWeight/flexShrink）、弹窗/CustomDialog/bindSheet 超出屏幕高度被裁切、布局撑破容器、文本选择手柄或光标在截断边界错位、标题栏/NavBar 长文本异常、RichEditor/TextInput 截断等。若主要是系统字体缩放导致的截断，优先用 arkts-large-font。**边界**：本 skill 仅限文本字符级截断（Text/RichEditor/TextInput）+ 弹窗超屏裁切；图片裁切 / 列表显示不全 / AlphabetIndexer 溢出 / 多设备适配 / 折叠屏布局切换 / 响应式断点 → arkts-truncation-fix。"
+description: ArkTS 文本/布局截断场景下的根因定位与修复：文本被 Ellipsis 截断或省略号位置异常、maxLines 不生效、Flex/Row 内 Text 被挤没（缺 layoutWeight/flexShrink）、弹窗/CustomDialog/bindSheet 超出屏幕高度被裁切、布局撑破容器、文本选择手柄或光标在截断边界错位、标题栏/NavBar 长文本异常、RichEditor/TextInput 截断等。若主要是系统字体缩放导致的截断，优先用 arkts-large-font。**边界**：本 skill 仅限文本字符级截断（Text/RichEditor/TextInput）+ 弹窗超屏裁切；图片裁切 / 列表显示不全 / AlphabetIndexer 溢出 / 多设备适配 / 折叠屏布局切换 / 响应式断点 → [arkts-truncation-fix](../arkts-truncation-fix/SKILL.md)。
 metadata:
   type: domain
   domain: ui
@@ -180,7 +180,7 @@ struct Editor {
 | 设了 `TextOverflow.Ellipsis` 却没省略号 | `.maxLines` 未设 / 父容器宽度未收敛（无 `layoutWeight` 或宽度） |
 | 省略号是 `"..."` 三个点 | 代码里用字符串拼接；应改 `"\u2026"`（`…`） |
 | 图文混排省略号字号异常小 | `ImageSpan` 未继承父字号，显式 `.fontSize` |
-| 跨平台（iOS/鸿蒙）省略号垂直居中 | `fontFamily` 未指定，显式设 `sans-serif` |
+| 跨平台（iOS/iOS）省略号垂直居中 | `fontFamily` 未指定，显式设 `sans-serif` |
 | `Text` 没超宽却被截断 | 父容器宽度计算在临界值；或外部加了额外 padding/margin |
 | Dialog 按钮文字被裁 | `Button` 缺 `.flexShrink(1)` |
 | 标题栏自适应字号不生效 | 运行时误动 `.minFontSize`，或未设 `.heightAdaptivePolicy` |

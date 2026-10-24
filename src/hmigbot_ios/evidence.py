@@ -3,7 +3,7 @@ from pathlib import Path
 
 from .core import SCHEMA, MigrationError, digest, json_bytes, read_json, safe_child, snapshot, source_files, write_new_tree
 
-KINDS = {"source_build", "source_tests", "source_scenario", "source_screenshot", "source_snapshot",
+KINDS = {"source_build", "source_build_settings", "source_tests", "source_scenario", "source_screenshot", "source_snapshot",
          "source_trace", "source_network", "source_data", "source_debug", "source_performance"}
 
 

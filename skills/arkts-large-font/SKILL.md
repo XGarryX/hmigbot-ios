@@ -1,6 +1,6 @@
 ---
 name: arkts-large-font
-description: "ArkTS 大字体场景下的根因定位与修复（V2 优先，兼容 V1）：系统字体缩放（fontSizeScale 1.15 / 1.45 / 1.75 / 2.0 / 3.2x）下文本/布局/图标出现截断、溢出、重叠、位置错乱、SymbolGlyph 异常放大、浮层/菜单变小或越界、切换档位后不刷新等。若文本被 Ellipsis 截断但与字体档位无关，改用 arkts-text-truncation；若主要是读屏/焦点/热区等无障碍功能，改用 arkts-accessibility。"
+description: ArkTS 大字体场景下的根因定位与修复（V2 优先，兼容 V1）：系统字体缩放（fontSizeScale 1.15 / 1.45 / 1.75 / 2.0 / 3.2x）下文本/布局/图标出现截断、溢出、重叠、位置错乱、SymbolGlyph 异常放大、浮层/菜单变小或越界、切换档位后不刷新等。若文本被 Ellipsis 截断但与字体档位无关，改用 arkts-text-truncation；若主要是读屏/焦点/热区等无障碍功能，改用 arkts-accessibility。
 metadata:
   type: domain
   domain: ui
@@ -83,7 +83,7 @@ ArkUI 文本类组件（`Text / Button / Search / TextInput / TextArea / Badge /
 
 ```ts
 SymbolGlyph($r('sys.symbol.xxx'))
-  .fontSize(24)                 // 纯数字 = vp，不随字号缩放
+  .fontSize(24)                 // fontSize 的裸数字默认 fp；下一行局部锁定系统字体缩放
   .minFontScale(1.0).maxFontScale(1.0)
 ```
 
@@ -201,7 +201,7 @@ onConfigurationUpdate(newCfg: Configuration): void {
 
 - 给所有受影响文本类组件加 `.maxFontScale(2.0).minFontScale(1.0)`（适老化以 2.0 为上限是常见取舍）
 - 输入类组件 `TextInput / TextArea / Search` 务必锁 `.maxFontScale(2.0)`，避免超大档下光标/选区算错
-- 把 `SymbolGlyph(...).fontSize(24)`（裸数字 = vp）+ `.minFontScale(1.0).maxFontScale(1.0)` 锁死图标
+- 源语义要求图标固定字号时，保留 `SymbolGlyph(...).fontSize(24)`（fontSize 的裸数字默认 fp），用 `.minFontScale(1.0).maxFontScale(1.0)` 局部锁定系统字体缩放
 - 删掉文本容器的固定 `.height(...)`，改 `.constraintSize({ minHeight: ... })` 让内容撑
 - 自定义浮层位置算法要**同时 clamp 左右 / 上下两边**：`offset.x ∈ [edge, windowRect.width - popupWidth - edge]`；只 clamp 单边在大字体放大后会越界
 - 在 `EntryAbility.onConfigurationUpdate` 里把当前 `fontSizeScale` 写进 `AppStorageV2`（V1：`AppStorage`），弹窗 / 子窗用 `AppStorageV2.connect(FontScaleModel, ...)` 持有的 `@Local` 实例驱动重建（V1 等价：`@StorageLink`）

@@ -1,6 +1,6 @@
 ---
 name: arkts-data-layer
-description: "生成 ArkTS/HarmonyOS 数据层代码（V2 优先，API 12+）。当用户需要创建数据模型、网络请求服务、IDataSource/LazyDataSource/BasicDataSource、EventHub 事件通信、HTTP 请求、Promise/async-await 异步、Preferences 持久化、文件读写、JSON 解析、RdbStore CRUD，或任何数据获取/存储/传输相关代码时，务必触发此 skill。即使只说\"怎么请求接口\"\"存一下数据\"也应触发。完整业务功能（下拉刷新列表、列表详情页）优先 arkts-pattern-library。"
+description: 生成 ArkTS/HarmonyOS 数据层代码（V2 优先，API 12+）。当用户需要创建数据模型、网络请求服务、IDataSource/LazyDataSource/BasicDataSource、EventHub 事件通信、HTTP 请求、Promise/async-await 异步、Preferences 持久化、文件读写、JSON 解析、RdbStore CRUD，或任何数据获取/存储/传输相关代码时，务必触发此 skill。即使只说"怎么请求接口""存一下数据"也应触发。完整业务功能（下拉刷新列表、列表详情页）优先 arkts-pattern-library。
 metadata:
   type: domain
   domain: data
@@ -74,8 +74,8 @@ V2 数据层关键差异（vs V1）：
 ├─ 本地关系型数据库（结构化数据、需要 SQL 查询）
 │   └─ RdbStore / relationalStore（见 references/rdbstore-dao-patterns.md）
 │       · 单例初始化 + SecurityLevel
-│       · 手写 CREATE TABLE SQL（目标 schema 从源数据模型与迁移契约推导）
-│       · DAO 类 + querySql()（实现目标数据访问接口）
+│       · 手写 CREATE TABLE SQL（替代 Room @Entity）
+│       · DAO 类 + querySql()（替代 Room @Dao）
 │       · ResultSet 必须 close()
 │
 ├─ 跨页 / 全局运行时状态（不持久）

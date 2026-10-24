@@ -1,6 +1,6 @@
 ---
 name: arkts-login
-description: "ArkTS/HarmonyOS 第三方**登录**通用集成技能（页面/组件示例采用 V2：@ComponentV2/@Local/AppStorageV2.connect/@Monitor，兼顾 V1：@Component/@State/@StorageProp 老项目对照）。覆盖微信、支付宝、华为 Account Kit 一键登录、手机号+SMS 四条路径的客户端职责与 OAuth 2.0 / OpenID Connect 协议约束，不绑定特定后端字段。**用户提到登录、授权、一键登录、账号绑定、登录 SDK 集成时务必立即触发**——含接入微信 SendAuthReq、调起支付宝授权、接华为 Account Kit、SMS 验证码倒计时、一键登录 SDK 选型（闪验/极光/阿里 PNVS/个推/华为）、iOS 登录模块迁移鸿蒙等。**即使只说'加个登录'、'接微信'、'闪验怎么换鸿蒙版本'，也应触发**。**调试场景必触**：登录无回调、支付宝登录跳到支付页、华为匿名手机号为空、Account Kit 权益未生效、上架被拒未接华为账号登录、验证码发不出去、Bundle ID 校验不通过、scope 错误等。关键词：login、auth、登录、授权、一键登录、wechat-login、alipay-login、huawei-login、account-kit、闪验、极光认证、SendAuthReq、authorizationCode、cashiersdk、quickLoginAnonymousPhone、OAuth、SMS、验证码。**不适用**：纯 UI 走 arkts-component-builder；**支付/订单/IAP 走 arkts-payment**；后端接口设计本 skill 不约束。"
+description: ArkTS/HarmonyOS 第三方**登录**通用集成技能（页面/组件示例采用 V2：@ComponentV2/@Local/AppStorageV2.connect/@Monitor，兼顾 V1：@Component/@State/@StorageProp 老项目对照）。覆盖微信、支付宝、华为 Account Kit 一键登录、手机号+SMS 四条路径的客户端职责与 OAuth 2.0 / OpenID Connect 协议约束，不绑定特定后端字段。**用户提到登录、授权、一键登录、账号绑定、登录 SDK 集成时务必立即触发**——含接入微信 SendAuthReq、调起支付宝授权、接华为 Account Kit、SMS 验证码倒计时、一键登录 SDK 选型（闪验/极光/阿里 PNVS/个推/华为）、iOS 登录模块迁移鸿蒙等。**即使只说'加个登录'、'接微信'、'闪验怎么换鸿蒙版本'，也应触发**。**调试场景必触**：登录无回调、支付宝登录跳到支付页、华为匿名手机号为空、Account Kit 权益未生效、上架被拒未接华为账号登录、验证码发不出去、Bundle ID 校验不通过、scope 错误等。关键词：login、auth、登录、授权、一键登录、wechat-login、alipay-login、huawei-login、account-kit、闪验、极光认证、SendAuthReq、authorizationCode、cashiersdk、quickLoginAnonymousPhone、OAuth、SMS、验证码。**不适用**：纯 UI 走 arkts-component-builder；**支付/订单/IAP 走 arkts-payment**；后端接口设计本 skill 不约束。
 metadata:
   type: domain
   domain: system
@@ -240,8 +240,8 @@ import { authentication } from '@kit.AccountKit'
 
 本 skill **不替用户做选型决策**。当需要确定接哪条/哪几条路径时，按以下优先级获取：
 
-1. **用户直接说明** — 用户明确指定"接微信 + SMS"、"只用华为一键登录"、"按 iOS 端原方案 1:1 复刻"等指令，**严格按用户指令执行**
-2. **用户给定的参考源码仓** — 用户提供 iOS / 其他平台已有项目作为参考时，**按源码仓现有方案对应迁移**：
+1. **用户直接说明** — 用户明确指定"接微信 + SMS"、"只用华为一键登录"、"按 iOS 源端原方案 1:1 复刻"等指令，**严格按用户指令执行**
+2. **用户给定的参考源码仓** — 用户提供 iOS / iOS / 其他平台已有项目作为参考时，**按源码仓现有方案对应迁移**：
    - iOS 用了闪验 SHANYAN → 鸿蒙端按 D-4 决策（华为 Account Kit / 三方鸿蒙版 SDK 替换，见 [06 §10](references/06-huawei-account-kit.md)）
    - iOS 用了微信开放平台 SDK → 鸿蒙端用 `@tencent/wechat_open_sdk`（路径 A）
    - iOS 用了支付宝授权 → 鸿蒙端用 `@cashier_alipay/cashiersdk`（路径 B）

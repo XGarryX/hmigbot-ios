@@ -18,6 +18,7 @@ from .core import MigrationError
 # outside this grammar's resolve set, so it is reported, not silently accepted.
 SUPPORTED_INTERPOLATION_DEPTH = 64
 SUPPORTED_STRING_NESTING_DEPTH = 64
+EXTENDED_REGEX_LITERAL = re.compile(r"#+/")
 
 
 @dataclass(frozen=True)
@@ -75,7 +76,7 @@ def _interpolation_end(text, start, depth):
             pos = len(text) if end == -1 else end
         elif text.startswith('/*', pos):
             pos = _block_comment_end(text, pos)
-        elif text[pos] == '#' and re.match(r'#+/', text[pos:]):
+        elif text[pos] == '#' and EXTENDED_REGEX_LITERAL.match(text, pos):
             # Regex contents can contain parentheses, quotes and comment-like
             # text. This lexer cannot assign their expression boundaries.
             raise RequiresSyntaxProvider(
@@ -156,6 +157,11 @@ def tokenize(text: str) -> list[Token]:
             start = pos
             pos = _block_comment_end(text, pos)
             line += text[start:pos].count("\n")
+        elif char == '#' and EXTENDED_REGEX_LITERAL.match(text, pos):
+            # Reject at the opener, before a #// pattern can be mistaken for a
+            # line comment and erase valid declarations later on the same line.
+            raise RequiresSyntaxProvider(
+                f"Regex literal requires syntax provider at line {line}")
         elif _string_opening(text, pos) is not None:
             start, start_line = pos, line
             pos, hashes, quotes = _string_end(text, pos, 0)
@@ -166,7 +172,7 @@ def tokenize(text: str) -> list[Token]:
             match = re.match(r"[A-Za-z_][A-Za-z_0-9]*|[0-9]+(?:\.[0-9]+)?|\+=|-=|==|->", text[pos:])
             value = match.group() if match else char
             kind = "identifier" if re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", value) else "symbol"
-            result.append(Token(value, line, kind))
+            result.append(Token(value, line, kind, end_line=line, start=pos, end=pos + len(value)))
             pos += len(value)
     return result
 

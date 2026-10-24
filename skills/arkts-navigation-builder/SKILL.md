@@ -1,6 +1,6 @@
 ---
 name: arkts-navigation-builder
-description: "生成 ArkTS/HarmonyOS 页面导航和路由代码（V2 优先，API 12+）。当用户需要实现页面跳转、Navigation 容器、NavPathStack 导航栈、NavDestination 页面注册、Tab/底部/侧边栏导航、@Builder 路由映射、pushPathByName 传参跳转、页面返回传值、路由拦截等功能时，务必触发此 skill。即使只说\"做个多页面应用\"\"页面怎么跳转\"也应触发。仅组件内状态管理（@Local/@Param/@Provider 等）用 arkts-state-manager。"
+description: 生成 ArkTS/HarmonyOS 页面导航和路由代码（V2 优先，API 12+）。当用户需要实现页面跳转、Navigation 容器、NavPathStack 导航栈、NavDestination 页面注册、Tab/底部/侧边栏导航、@Builder 路由映射、pushPathByName 传参跳转、页面返回传值、路由拦截等功能时，务必触发此 skill。即使只说"做个多页面应用""页面怎么跳转"也应触发。仅组件内状态管理（@Local/@Param/@Provider 等）用 arkts-state-manager。
 metadata:
   type: domain
   domain: navigation

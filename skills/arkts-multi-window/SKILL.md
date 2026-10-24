@@ -1,6 +1,6 @@
 ---
 name: arkts-multi-window
-description: "ArkTS 窗口形态切换场景下的根因定位与修复（V2 优先，兼容 V1）：分屏（PRIMARY/SECONDARY）、自由窗口（FLOATING）、悬浮窗、画中画（PiP）、UIExtension 子窗口、系统子窗、窗口缩放/拖拽、模式切换（FULLSCREEN ↔ FLOATING ↔ SPLIT）下出现布局错位、Dialog/Menu/Toast/Sheet 位置漂移、键盘避让失败、拖拽/调整大小白屏、沉浸式/safeArea 异常、状态残留（选中高亮/菜单）等。代码示例使用 ArkTS V2 装饰器（`@ComponentV2 / @Local / @Param`），V1（`@Component / @State / @Prop`）写法仅作历史对照。跨设备/断点/折叠屏铰链改用 arkts-multi-device。"
+description: ArkTS 窗口形态切换场景下的根因定位与修复（V2 优先，兼容 V1）：分屏（PRIMARY/SECONDARY）、自由窗口（FLOATING）、悬浮窗、画中画（PiP）、UIExtension 子窗口、系统子窗、窗口缩放/拖拽、模式切换（FULLSCREEN ↔ FLOATING ↔ SPLIT）下出现布局错位、Dialog/Menu/Toast/Sheet 位置漂移、键盘避让失败、拖拽/调整大小白屏、沉浸式/safeArea 异常、状态残留（选中高亮/菜单）等。代码示例使用 ArkTS V2 装饰器（`@ComponentV2 / @Local / @Param`），V1（`@Component / @State / @Prop`）写法仅作历史对照。跨设备/断点/折叠屏铰链改用 arkts-multi-device。
 metadata:
   type: domain
   domain: ui

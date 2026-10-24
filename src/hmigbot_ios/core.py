@@ -213,7 +213,7 @@ def resolve_anchors(record: dict):
     if modern is not None and legacy is not None and modern != legacy:
         raise MigrationError("Conflicting source_anchors_ref and android_source_anchors_ref")
     if record.get("source_platform") == "ios" and legacy is not None:
-        raise MigrationError("iOS facts must not contain Android source anchors")
+        raise MigrationError("iOS facts must not contain incompatible source-platform anchors")
     return modern if modern is not None else legacy
 
 

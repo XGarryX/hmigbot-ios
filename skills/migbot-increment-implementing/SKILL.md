@@ -1,6 +1,9 @@
 ---
 name: migbot-increment-implementing
-description: "Migbot-Increment IMPLEMENTING 阶段 skill，用于代码开发任务分解与规划。 当用户说\"执行 migbot-increment-implementing\"、\"开始开发xxx\"、\"任务分解\"或类似表述时触发。 本 skill 负责 IMPLEMENTING 阶段的所有工作：任务分解、任务排序、产出 tasks.md。"
+description: |
+  Migbot-Increment IMPLEMENTING 阶段 skill，用于代码开发任务分解与规划。
+  当用户说"执行 migbot-increment-implementing"、"开始开发xxx"、"任务分解"或类似表述时触发。
+  本 skill 负责 IMPLEMENTING 阶段的所有工作：任务分解、任务排序、产出 tasks.md。
 ---
 
 # migbot-increment-implementing Skill

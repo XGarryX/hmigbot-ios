@@ -1,6 +1,6 @@
 ---
 name: arkts-codebase-debug
-description: "针对ArkTS语言的Harmony应用代码仓功能缺陷类问答技能。专门用于回答\"xx不生效\"、\"报错怎么办/为什么？\"等功能缺陷类问题，快速定位问题入口和可疑点，分析问题原因并提供修复建议。适用于HarmonyOS应用开发者快速诊断和解决开发中的功能缺陷问题。使用场景包括：(1) 功能不生效问题诊断，(2) 运行时错误分析和解决，(3) 行为异常排查，(4) 性能问题定位，(5) 代码缺陷修复建议。本技能同时识别 ArkTS V1（@Component / @State / @Prop / @Link / @Provide / @Consume / @Observed / @ObjectLink / @StorageLink / @Watch）与 V2（@ComponentV2 / @Local / @Param / @Event / @Once / @Provider / @Consumer / @ObservedV2 / @Trace / @Monitor / @Computed / AppStorageV2 / PersistenceV2）装饰器代码，混用导致的缺陷也在诊断范围。本技能基于arkts-locator提供的定位信息，结合DAG探索模式，确保回答基于真实代码仓内容。"
+description: 针对ArkTS语言的Harmony应用代码仓功能缺陷类问答技能。专门用于回答"xx不生效"、"报错怎么办/为什么？"等功能缺陷类问题，快速定位问题入口和可疑点，分析问题原因并提供修复建议。适用于HarmonyOS应用开发者快速诊断和解决开发中的功能缺陷问题。使用场景包括：(1) 功能不生效问题诊断，(2) 运行时错误分析和解决，(3) 行为异常排查，(4) 性能问题定位，(5) 代码缺陷修复建议。本技能同时识别 ArkTS V1（@Component / @State / @Prop / @Link / @Provide / @Consume / @Observed / @ObjectLink / @StorageLink / @Watch）与 V2（@ComponentV2 / @Local / @Param / @Event / @Once / @Provider / @Consumer / @ObservedV2 / @Trace / @Monitor / @Computed / AppStorageV2 / PersistenceV2）装饰器代码，混用导致的缺陷也在诊断范围。本技能基于arkts-locator提供的定位信息，结合DAG探索模式，确保回答基于真实代码仓内容。
 metadata:
   type: codebase
   domain: general

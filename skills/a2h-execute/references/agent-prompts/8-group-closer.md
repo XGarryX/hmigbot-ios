@@ -16,7 +16,7 @@ mode=group。你是 Stage 3 parallel_group [{group_id}] 的 group-closer，本�
   本组产出文件: {group_ets_files}
   组内 slice 复杂度事实（max_iter 查表输入）: {slices_complexity}   # 各 slice 的 complexity
   defer_structural_to_fv: {true|false}                    # 仅末组 true（execute 按索引判定；结构验证交 FV-1）
-  iOS 源根: {source_root}
+  iOS 源根: {ios_source_dir}
   HarmonyOS 工程根: {harmony_project_dir}
 ```
 

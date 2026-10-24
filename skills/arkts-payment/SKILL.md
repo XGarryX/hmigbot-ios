@@ -1,6 +1,6 @@
 ---
 name: arkts-payment
-description: "ArkTS/HarmonyOS 第三方支付通用集成技能（与生态无关）。专注于微信支付 SDK、支付宝 SDK、H5 支付 WebView 容器、跨 App 跳转、华为 IAP 选型等平台级能力与协议约束，不绑定任何特定后端字段/私有 lib。当用户需要从零集成第三方支付、接入 wxopensdk 或 cashiersdk、构建通用 H5 支付容器、适配 HarmonyOS WebView 支付白屏问题、设计保护窗口与订单查询重试策略、决策 IAP vs 三方 SDK 时使用此技能。也适用于新项目脚手架阶段、跨项目支付代码提炼、或当项目未使用 lib_payment/lib_common 等私有库时。**调试场景触发**：'商家参数格式有误'、'微信 H5 白屏'、'支付回调不触发'、'scheme 跳不过去'、'UIAbilityContext 找不到'、'Bundle ID 校验不通过'、'应用未注册'等。关键词：pay、payment、wxpay、alipay、third-party、cashier、sdk、webview、scheme、H5、IAP。本 skill 为通用平台方案（与生态无关）；如有项目专属生态版本另行集成。"
+description: ArkTS/HarmonyOS 第三方支付通用集成技能（与生态无关）。专注于微信支付 SDK、支付宝 SDK、H5 支付 WebView 容器、跨 App 跳转、华为 IAP 选型等平台级能力与协议约束，不绑定任何特定后端字段/私有 lib。当用户需要从零集成第三方支付、接入 wxopensdk 或 cashiersdk、构建通用 H5 支付容器、适配 HarmonyOS WebView 支付白屏问题、设计保护窗口与订单查询重试策略、决策 IAP vs 三方 SDK 时使用此技能。也适用于新项目脚手架阶段、跨项目支付代码提炼、或当项目未使用 lib_payment/lib_common 等私有库时。**调试场景触发**：'商家参数格式有误'、'微信 H5 白屏'、'支付回调不触发'、'scheme 跳不过去'、'UIAbilityContext 找不到'、'Bundle ID 校验不通过'、'应用未注册'等。关键词：pay、payment、wxpay、alipay、third-party、cashier、sdk、webview、scheme、H5、IAP。本 skill 为通用平台方案（与生态无关）；如有项目专属生态版本另行集成。
 metadata:
   type: domain
   domain: system
@@ -145,7 +145,7 @@ private async onPaySuccess(): Promise<void> {
 |---|---|
 | 虚拟商品（VIP/点数/道具）+ 华为应用市场 | IAP |
 | 订阅型自动续费 | IAP |
-| 多端统一（源平台/HarmonyOS）| 三方 SDK |
+| 多端统一（iOS/iOS/HarmonyOS）| 三方 SDK |
 | 实物商品/线下服务 | 三方 SDK |
 
 详细决策树见 [06-huawei-iap-selection.md](references/06-huawei-iap-selection.md)。

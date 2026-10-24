@@ -1,6 +1,6 @@
 ---
 name: arkts-immersive-safearea
-description: "在 ArkTS / HarmonyOS 项目中同时实现\"沉浸式背景延伸到全屏\"和\"前景内容避开状态栏/导航条/挖孔区\"的标准方案。当用户提到\"沉浸式\"、\"状态栏遮住内容\"、\"底部导航条挡住按钮\"、\"页面顶部白边\"、\"背景没延伸到状态栏\"、\"折叠屏适配\"、\"安全区\"、\"setWindowLayoutFullScreen\"、\"expandSafeArea\"、\"windowTopPadding/windowBottomPadding\"，或者新建/迁移 NavDestination 页面时，务必触发此 skill。即使用户只说\"页面背景没满屏\"或\"按钮被系统栏盖住\"，也应触发——因为这两类问题 99% 都对应这套四层架构里的某一层缺失。"
+description: 在 ArkTS / HarmonyOS 项目中同时实现"沉浸式背景延伸到全屏"和"前景内容避开状态栏/导航条/挖孔区"的标准方案。当用户提到"沉浸式"、"状态栏遮住内容"、"底部导航条挡住按钮"、"页面顶部白边"、"背景没延伸到状态栏"、"折叠屏适配"、"安全区"、"setWindowLayoutFullScreen"、"expandSafeArea"、"windowTopPadding/windowBottomPadding"，或者新建/迁移 NavDestination 页面时，务必触发此 skill。即使用户只说"页面背景没满屏"或"按钮被系统栏盖住"，也应触发——因为这两类问题 99% 都对应这套四层架构里的某一层缺失。
 metadata:
   type: domain
   domain: ui
@@ -145,6 +145,7 @@ ArkTS 应用经常遇到两类对立又共存的需求：
 | **滚动列表 + 沉浸式 banner** | 首页 banner + 上下滚 | [references/scroll-bleed.md](references/scroll-bleed.md) |
 | **V1（@Component）混栈 / 老代码** | 不能用 V2 装饰器的场景 | [references/v1-v2-compat.md](references/v1-v2-compat.md) |
 | **Hero 顶部白边 / Image y 不为 0 / BottomBar 飘到顶** | Layer 3 layout 写法触发了 ArkUI 自动让位 | [references/layout-traps.md](references/layout-traps.md) |
+| **iOS Activity 迁移到 NavDestination** | 见下表"iOS 映射" | 主文件下面 |
 
 ## 默认 V2 模板（场景 A：MainPage 子页 / NavPathStack 子页）
 
@@ -201,11 +202,14 @@ struct MyPage {
 }
 ```
 
+## 原生页面安全区 → NavDestination 映射
 
-| iOS | ArkTS 等价 |
+| iOS 源证据 | ArkTS 对接要点 |
 |---|---|
-| `setDecorFitsSystemWindows(false)` | Layer 1 已统一开了 `setWindowLayoutFullScreen(true)`，**不要每页重做** |
-| `view.setPadding(0, statusBar, 0, navBar)` | `padding({ top: windowTopPadding, bottom: windowBottomPadding })` |
+| SwiftUI ignoresSafeArea 的边和 owner | 背景延伸按本技能四层架构实现，不对前景重复放开安全区 |
+| safeAreaInset / safeAreaPadding | 记录实际内容与 inset；使用共享窗口 padding 处理前景，避免重复增加 |
+| UIView.safeAreaInsets / safeAreaLayoutGuide | 记录约束/时机；目标采用 windowTopPadding / windowBottomPadding |
+| viewSafeAreaInsetsDidChange / trait 或窗口变化 | 保留动态更新行为，不只在页面首次创建时读一次 |
 
 ## 诊断症状 → 修复路径
 
@@ -295,6 +299,7 @@ struct MyPage {
 
 ## 主题状态栏色的合法落点（与 theme_brief/theme_gate 的接口，2026-08-25）
 
+源页面通过状态栏样式、导航栏 appearance 或背景声明了系统栏视觉，而目标走本 skill 四层架构时：
 - Layer 1 仍按本契约把系统栏设**透明**——不得为了主题色改回不透明系统栏；
 - 主题状态栏色由**页面顶部背景**承载：顶部安全区高度的背景色（或专用色条）取该主题色，
   视觉效果等价于 iOS 的着色状态栏；

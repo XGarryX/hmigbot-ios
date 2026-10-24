@@ -252,6 +252,8 @@ class _Project:
                     if not actual.is_file():
                         raise MigrationError(f'Declared source does not exist: {actual}')
                     relative = actual.relative_to(self.source).as_posix()
+                    if key in self.synchronized_exclusions.get(relative, set()):
+                        raise MigrationError(f'Conflicting explicit/synchronized membership in target {target["name"]}: {relative}')
                     if relative in seen:
                         raise MigrationError(f'Duplicate source membership in target {target["name"]}: {relative}')
                     if actual.suffix.lower() not in COMPILE_SUFFIXES:
@@ -264,7 +266,7 @@ class _Project:
 
     def derive(self, requested, configuration, snap):
         roots = []
-        for name in requested:
+        for name in sorted(requested):
             if name not in self.names:
                 raise MigrationError(f'Unknown requested target: {name}')
             key = self.names[name]

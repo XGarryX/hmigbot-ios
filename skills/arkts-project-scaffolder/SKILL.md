@@ -1,6 +1,6 @@
 ---
 name: arkts-project-scaffolder
-description: "生成 ArkTS/HarmonyOS 项目结构和配置文件（V2 装饰器优先，API 12+）。当用户需要创建新项目、设计多模块架构（commons/features/products）、编写 module.json5 / build-profile.json5 / oh-package.json5 / app.json5、创建 EntryAbility（含 AppStorageV2 / PersistenceV2 全局状态预热）、配置权限、或搭建任何 HarmonyOS 项目骨架时，务必触发此 skill；说\"从零搭建完整应用\"时也优先触发，它会引导调用其他 skill。即使只说\"新建个项目\"\"项目怎么搭建\"也应触发。不适用于状态管理深度用法（见 arkts-state-manager）。"
+description: 生成 ArkTS/HarmonyOS 项目结构和配置文件（V2 装饰器优先，API 12+）。当用户需要创建新项目、设计多模块架构（commons/features/products）、编写 module.json5 / build-profile.json5 / oh-package.json5 / app.json5、创建 EntryAbility（含 AppStorageV2 / PersistenceV2 全局状态预热）、配置权限、或搭建任何 HarmonyOS 项目骨架时，务必触发此 skill；说"从零搭建完整应用"时也优先触发，它会引导调用其他 skill。即使只说"新建个项目""项目怎么搭建"也应触发。不适用于状态管理深度用法（见 arkts-state-manager）。
 metadata:
   type: domain
   domain: engineering

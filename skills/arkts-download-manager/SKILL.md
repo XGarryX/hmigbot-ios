@@ -1,6 +1,6 @@
 ---
 name: arkts-download-manager
-description: "生成 ArkTS/HarmonyOS 文件下载代码。当用户需要实现大文件下载（request.agent）、下载进度追踪、下载队列管理、暂停/取消/删除下载、断点续传、下载文件的存储与移动（cacheDir→沙箱目录）时触发。即使只说\"下载个文件\"\"怎么显示下载进度\"也应触发。不适用于流媒体边下边播（用 arkts-media-playback / arkts-video-playback）。"
+description: 生成 ArkTS/HarmonyOS 文件下载代码。当用户需要实现大文件下载（request.agent）、下载进度追踪、下载队列管理、暂停/取消/删除下载、断点续传、下载文件的存储与移动（cacheDir→沙箱目录）时触发。即使只说"下载个文件""怎么显示下载进度"也应触发。不适用于流媒体边下边播（用 arkts-media-playback / arkts-video-playback）。
 metadata:
   type: domain
   domain: media

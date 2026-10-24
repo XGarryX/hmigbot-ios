@@ -1,33 +1,83 @@
-# 失败处理与复检
+# 验证失败回环（适用于 CHECK-1~5 + CHECK-7 的 CRASH/URL 功能性子类）
 
-本次设备项选择沿用启动时的范围，回环不重新询问或补跑未选项。只从本次实际执行结果提取失败，未选项的历史报告不触发修复。
+> 配合 SKILL.md §5 使用。
+> - **CHECK-7 拆两级**：ALIGN 纯视觉差异只记报告等离线消化（不回环）；**CRASH/URL（页面打不开/崩溃）是功能性失败**——visual-verify 自身无循环，这类失败若不进本回环就无人修复，因此视同 CHECK-1~5 走老路径。
 
-## 修复归属
+---
 
-| 失败来源 | 处理 |
-|---|---|
-| CHECK-1 静态 ERROR | 在当前任务允许修复时生成执行阶段修复任务 |
-| CHECK-2 身份 FAIL | 在当前任务允许修复时生成配置/资源修复任务 |
-| CHECK-3 功能性失败 | 先读取 visual verifier 的修复与复测结果，仍需执行阶段处理的遗留项进入外层回环 |
-| CHECK-3 纯 ALIGN 差异 | 记建议项，修复由 visual verifier 的约定流程处理 |
-| CHECK-4 | 由 UT verifier 按选定模式处理；a2h-verify 不再包一层同类 fix-loop |
-| 输入缺失、设备不可用或执行环境失败 | 写明恢复条件；不把基础设施故障转成补业务代码任务 |
+## 回环算法
 
-仅验证任务记录失败并结束；已有修复授权的任务按对应范围继续处理。
+验证失败时**不终止流水线**，自动生成修复 plan 回环到 a2h-execute：
 
-## 外层回环
+```
+a2h-verify
+  │
+  ├─ 全部通过 → 输出报告，进入 a2h-retrospect
+  │
+  ├─ 仅 CHECK-6/9 或 CHECK-7 的 ALIGN 子类失败 → 不进本节
+  │     CHECK-6: router-verify 已自跑修复闭环，reopened/必崩项写进 ROUTE_VERIFY_SUMMARY.md，提示人工或重跑
+  │     CHECK-7(仅 ALIGN): 纯视觉差异 markdown 已写盘，提示用户或后续 a2h-fixer 离线处理
+  │
+  └─ CHECK-1~5 任一失败，或 CHECK-7 存在 CRASH/URL → 走老路径:
+      │
+      ├─ Step 0（编译短路）: 若失败项含 CHECK-1 编译 → 本轮先不跑设备段（见 SKILL.md §3.0），
+      │   优先修编译；CHECK-6 路由静态可照跑
+      │
+      ├─ Step 1: 从失败项提取修复任务
+      │   ├─ CHECK-1  编译失败 → task: 编译修复 (hmos-fix-build-errors)
+      │   ├─ CHECK-2  静态违规（仅 ERROR 级）→ task: 修正违规代码 (knowledge-verifier)
+      │   ├─ CHECK-3  占位符未回填 → task: 回填占位符代码
+      │   ├─ CHECK-4  App 身份异常 → task: 修正 App 配置 (arkts-app-identity)
+      │   ├─ CHECK-5  P0 页面未转换 / 产物缺失 → task: 补全页面转换
+      │   └─ CHECK-7  CRASH/URL（页面崩溃/不可达）→ task: 修复崩溃 / 补页面注册与可达性
+      │        （输入即 spec/fix/round-N/ui/ 下对应 CRASH_*/URL_*.md；ALIGN_*.md 不提取）
+      │
+      ├─ Step 2: 生成修复 plan
+      │   文件: spec/plans/plan-fix-<timestamp>.md
+      │
+      ├─ Step 3: 委托 a2h-execute 执行修复 plan
+      │
+      └─ Step 4: 重新执行 a2h-verify（重验范围见下节，不是只查之前失败的项）
+```
 
-适用于 CHECK-1/2 和 CHECK-3 尚需执行阶段处理的功能性失败，最多 3 轮：
+老路径回环最多 3 轮。3 轮后仍有失败项，输出报告并提示用户手动介入。
 
-1. 从真实失败证据提取任务，写入 `spec/plans/plan-fix-<timestamp>.md`，注明来源 CHECK、问题位置、预期行为和复检方式。
-2. 委托 `a2h-execute` 执行该修复计划。
-3. 读取实际改动，按下节范围复检并更新报告。
+---
 
-失败已解决即退出；达到 3 轮、无可执行修复、缺少外部条件或需要产品决策时结束自动回环，保留准确的失败和未验证范围。再次调用 a2h-verify 时继承本次外层轮数，不重置预算。
+## 回环轮重验范围（防回归盲区）
 
-## 修复后的复检范围
+修复本身会改源码，**之前 PASS 的结论可能被修复打破**——"只查之前失败的项"会让回归静默漏过门控。每轮回环重跑 a2h-verify 时按下表收程（这是 execution-discipline 铁律唯一认可的合法缩程）：
 
-- 有生产源码改动时重跑 CHECK-1；涉及 App 配置、名称或图标资源时重跑 CHECK-2。
-- 修复 CHECK-3 功能性失败后，由 visual verifier 重新实测确认关闭。
-- 对本次已选且已通过的 CHECK-3/4，若后续改动影响其已测代码、配置或行为，则串行重跑受影响部分并保留未受影响的有效证据。不能确定影响范围时重跑该项；未选项仍为 SKIP。
-- 无法完成复检时，原结论注明未覆盖当前改动，该项记 PARTIAL；已有确认失败不能因此消失。
+| 项 | 回环轮是否重跑 | 理由 |
+|---|---|---|
+| 之前 FAIL 的项 | 必跑 | 回环目标本身 |
+| CHECK-1 编译 | **必跑** | 任何源码修复都可能破坏编译（与 §3.0 终态复检同一精神）|
+| CHECK-2 / CHECK-3 | **必跑（全量重扫）** | 秒级 grep 成本可忽略；修复最容易引入新违规 / 新 TODO 占位 |
+| CHECK-4 | 修复触碰 AppScope/ 资源文件时重跑，否则沿用 | 常规代码修复不碰身份配置 |
+| CHECK-5 | 之前 FAIL 才重跑 | 输入是 spec 状态与文件存在性，修复只增不减 |
+| CHECK-6 | 已 PASS 但修复触碰了**路由面**时必须重跑，否则沿用 | 编译修复改坏刚修好的路由是已知回归路径 |
+| CHECK-7 | 老路径不直接"修"它们，但 **FAIL-functional 的 CHECK-7 属于"之前 FAIL 的项"——回环修复后必须按 §3 正常序重跑 visual 确认 CRASH/URL 已消**；编译短路解除后 DEFERRED 的设备段补跑 | 各 verifier 自管内部循环 |
+
+**"触碰路由面"的判定**：本轮修复改动的文件 ∩（`spec/verify/route/fix_plan.json` 各项 `files_changed` ∪ 路由注册文件 `main_pages.json`/`route_map.json`/pageMap 所在文件 ∪ 任何含 `pushUrl`/`pushPathByName`/`openDialog` 调用的被改文件）非空。
+
+**CHECK-7 已 PASS 后才发生的回环修复**：不强制重测（设备实测成本不对称），但报告门控判定区必须标注"第 N 轮回环修复发生在视觉实测之后，视觉未覆盖该修复"。
+
+> ⚠️ **铁律提醒**："最多 3 轮"是硬上限不是建议。回环必须由本算法的"3 轮跑满"或"全部 PASS"两个出口停下，主线程不得因"省时 / 累计 token / 预估剩余难度高"等理由提前 break。详见 `execution-discipline.md`。
+
+---
+
+## 两类失败同时存在时（CHECK-6 + CHECK-X）
+
+先跑老路径修 CHECK-1~5 与 CHECK-7 功能性项（可能影响编译/源码），通过后**重跑 a2h-verify**（按上节重验范围），到达 CHECK-6/7 时各 verifier 内部循环会自然处理（避免循环里撞编译错误）。失败项含 CHECK-1 编译时尤其如此——编译不过，设备段本轮根本不跑（§3.0 编译短路）。
+
+---
+
+## 门控关系
+
+- CHECK-1（编译）**阻塞门控**——且门控取的是 §3.0 **终态编译复检**结果（CHECK-6 修完源码后重测），不是本轮开头那次
+- CHECK-2（静态分析 ERROR 级）/ CHECK-3（占位符）/ CHECK-4（App 身份）失败**阻塞门控**（WARN 不阻塞）
+- CHECK-6（路由）失败**阻塞门控**（DEFERRED 时不阻塞）——router-verify 自带修复闭环，失败=有 reopened 或运行时必崩项未解
+- CHECK-7 **ALIGN 子类不阻塞门控**（仅记录差异，由用户/a2h-fixer 离线处理）；**CRASH/URL 子类阻塞门控**（FAIL-functional，进老路径回环；DEFERRED 时不阻塞）
+- 老路径修复范围 = CHECK-1~5 + CHECK-7 的 CRASH/URL；不直接修 CHECK-6 与 ALIGN 视觉差异
+- 外圈最多 3 轮（硬上限），CHECK-6 内部 fix-loop 轮数由各 verifier 自管，互不嵌套
+- 门控在若干 DEFERRED 下达成时，报告必须显著标注（见 SKILL.md §6 末注）；门控通过后执行 §6.1 verified 回写

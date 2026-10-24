@@ -1,6 +1,6 @@
 ---
 name: arkts-codebase-explainer
-description: "专门针对ArkTS语言HarmonyOS应用代码仓的功能解释类问题回答。用于回答\"点击后会发生什么？\"\"为什么会重试？\"\"图片滚动是怎么实现的？\"\"音频资源的释放方法是什么？\"等关于功能实现、行为解释、机制说明的技术问题。当用户询问Harmony应用中某个功能的具体实现原理、执行流程、交互逻辑或技术细节时使用此skill。本技能同时识别并解释 ArkTS V1（@Component / @State / @Prop / @Link / @Provide / @Consume / @Observed / @ObjectLink / @StorageLink / @Watch）与 V2（@ComponentV2 / @Local / @Param / @Event / @Once / @Provider / @Consumer / @ObservedV2 / @Trace / @Monitor / @Computed / AppStorageV2 / PersistenceV2）装饰器代码。"
+description: 专门针对ArkTS语言HarmonyOS应用代码仓的功能解释类问题回答。用于回答"点击后会发生什么？""为什么会重试？""图片滚动是怎么实现的？""音频资源的释放方法是什么？"等关于功能实现、行为解释、机制说明的技术问题。当用户询问Harmony应用中某个功能的具体实现原理、执行流程、交互逻辑或技术细节时使用此skill。本技能同时识别并解释 ArkTS V1（@Component / @State / @Prop / @Link / @Provide / @Consume / @Observed / @ObjectLink / @StorageLink / @Watch）与 V2（@ComponentV2 / @Local / @Param / @Event / @Once / @Provider / @Consumer / @ObservedV2 / @Trace / @Monitor / @Computed / AppStorageV2 / PersistenceV2）装饰器代码。
 metadata:
   type: codebase
   domain: general

@@ -1,6 +1,6 @@
 ---
 name: arkts-animation-builder
-description: "生成 ArkTS/HarmonyOS 动画和交互效果代码（V2 优先，API 12+）。当用户需要实现 animateTo 显式动画、属性动画 animation()、transition 转场、geometryTransition 共享元素转场、Spring 弹簧动画、手势跟随、循环动画、淡入淡出/缩放/位移/旋转等 UI 动效时，务必触发此 skill。即使只说\"加个动画\"\"让它动起来\"也应触发。从 iOS 动画框架迁移（SwiftUI/Core Animation/Lottie 等）的识别与还原决策用 arkts-animation-migrate。"
+description: 生成 ArkTS/HarmonyOS 动画和交互效果代码（V2 优先，API 12+）。当用户需要实现 animateTo 显式动画、属性动画 animation()、transition 转场、geometryTransition 共享元素转场、Spring 弹簧动画、手势跟随、循环动画、淡入淡出/缩放/位移/旋转等 UI 动效时，务必触发此 skill。即使只说"加个动画""让它动起来"也应触发。从 iOS 动画框架迁移（Lottie/ObjectAnimator/帧动画/SVGA 等）的识别与还原决策用 arkts-animation-migrate。
 metadata:
   type: domain
   domain: ui
@@ -13,7 +13,7 @@ metadata:
 # ArkTS Animation Builder — 动画效果生成器（V2 优先）
 
 > **从 iOS 项目迁移动画 → see [arkts-animation-migrate](../arkts-animation-migrate/SKILL.md)**
-> 含 SwiftUI / UIKit / Core Animation / Lottie / 转场 全套迁移视角与 iOS→ArkTS 映射表。
+> 含 Lottie / 属性 / 补间 / 帧 / SVGA / Transition / 共享元素 / MotionLayout 全套迁移视角与 iOS→ArkTS 映射表。
 > 本 skill 提供完整可运行的 ArkTS 动画 demo（被 migrate 内部 see also 引用）。
 
 ## API 版本与项目策略

@@ -56,7 +56,7 @@ def interface_builder(root, files):
     return {'documents': documents}, issues
 
 
-def run_atom(operation, root, output, *, provider_config=None, input_path=None, default_locale=None):
+def run_atom(operation, root, output, *, provider_config=None, input_path=None, default_locale=None, source_view=None):
     if operation not in OPERATIONS:
         raise MigrationError('Unknown atomic operation')
     root, output = root.resolve(), output.resolve()
@@ -72,7 +72,7 @@ def run_atom(operation, root, output, *, provider_config=None, input_path=None, 
     elif operation == 'swift-syntax':
         if not provider_config:
             raise MigrationError('swift-syntax requires --provider-config with explicit executable argument arrays')
-        value, issues = swift_syntax(root, files, provider_config)
+        value, issues = swift_syntax(root, files, provider_config, source_view=source_view)
     elif operation == 'clang-ast':
         if not provider_config:
             raise MigrationError('clang-ast requires an explicit provider configuration')
@@ -96,12 +96,15 @@ def run_atom(operation, root, output, *, provider_config=None, input_path=None, 
             raise MigrationError('build-settings requires a source evidence bundle via --input')
         from .evidence import validate
         evidence = validate(root, input_path)
-        if evidence['kind'] != 'source_build':
-            raise MigrationError('Build settings require source_build evidence')
+        if evidence['kind'] not in {'source_build', 'source_build_settings'}:
+            raise MigrationError('Build settings require source_build or source_build_settings evidence')
         manifest = read_json(input_path / 'manifest.json')
-        if 'artifacts/build-settings.json' not in manifest['artifacts']:
+        names = [n for n in ('artifacts/build-settings.json', 'artifacts/release-build-settings.json') if n in manifest['artifacts']]
+        if not names:
             raise MigrationError('Bundle must contain hashed artifacts/build-settings.json')
-        value = normalize_build_settings(read_json(input_path / 'artifacts/build-settings.json'))
+        if len(names) == 2 and manifest['artifacts'][names[0]] != manifest['artifacts'][names[1]]:
+            raise MigrationError('Conflicting build-settings captures')
+        value = normalize_build_settings(read_json(input_path / names[0]))
         issues = []
         extra = {'input_manifest_sha256': digest((input_path / 'manifest.json').read_bytes())}
     if snapshot(root)['sha256'] != before['sha256']:

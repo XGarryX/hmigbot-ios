@@ -1,19 +1,10 @@
 ---
 name: arkts-webview-manager
-description: "ArkTS/HarmonyOS WebView 开发技能（V2 优先，API 12+，兼容 V1）。覆盖 WebviewController API、CSS/JS 注入、多 WebView 分屏、页面模式（桌面/阅读/隐私）、字体样式控制、页内搜索、标签页管理、页面原地翻译、TTS 朗读等。状态管理使用 V2 装饰器（`@ComponentV2 / @Local / @Param / @Event / @Once / AppStorageV2 / PersistenceV2 / @ObservedV2 / @Trace`）；老项目 V1 装饰器（`@Component / @State / @Prop / @Link / @StorageLink / @Watch`）也可识别。当用户需要在 ArkTS 中使用 Web 组件加载网页、向页面注入脚本或样式、实现浏览器功能（前进后退、搜索、标签页、分屏）、控制 WebView 字体/颜色/阅读模式、实现页面翻译或内容朗读时，务必触发此 skill。即使用户只是说\"加个深色模式\"、\"注入一段 CSS\"、\"实现页内搜索\"、\"翻译这个页面\"、\"朗读页面内容\"，也应触发。"
-metadata:
-  type: domain
-  domain: system
-  tags:
-  - domain
-  - system
-  - webview
-  - web
-  - browser
-  - css-injection
-  - js-injection
-  - tts
-  - translate
+description: >
+  ArkTS/HarmonyOS WebView 开发技能（V2 优先，API 12+，兼容 V1）。覆盖 WebviewController API、CSS/JS 注入、多 WebView 分屏、页面模式（桌面/阅读/隐私）、字体样式控制、页内搜索、标签页管理、页面原地翻译、TTS 朗读等。状态管理使用 V2 装饰器（`@ComponentV2 / @Local / @Param / @Event / @Once / AppStorageV2 / PersistenceV2 / @ObservedV2 / @Trace`）；老项目 V1 装饰器（`@Component / @State / @Prop / @Link / @StorageLink / @Watch`）也可识别。当用户需要在 ArkTS 中使用 Web 组件加载网页、向页面注入脚本或样式、实现浏览器功能（前进后退、搜索、标签页、分屏）、控制 WebView 字体/颜色/阅读模式、实现页面翻译或内容朗读时，务必触发此 skill。即使用户只是说"加个深色模式"、"注入一段 CSS"、"实现页内搜索"、"翻译这个页面"、"朗读页面内容"，也应触发。
+type: domain
+domain: system
+tags: [domain, system, webview, web, browser, css-injection, js-injection, tts, translate]
 ---
 
 # ArkTS WebView 开发指南

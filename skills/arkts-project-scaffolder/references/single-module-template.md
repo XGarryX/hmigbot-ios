@@ -1,3 +1,5 @@
+> **iOS 源输入**：读取 Swift/Objective-C、SwiftUI/UIKit、Xcode 工程及原生资源；实际源构建与设备观测依赖可用的源平台环境。鸿蒙侧构建和验收保持原流程。源侧操作详见 `a2h-spec/references/native-input.md`。
+
 # Single-Module HarmonyOS Project Template
 
 A minimal, runnable HarmonyOS (API 12+) single-module project. Every file is shown in full with inline comments explaining each field.
@@ -171,7 +173,7 @@ This is the **module-level** configuration for the entry module. It declares abi
         // true for the main launcher ability.
         "exported": true,
 
-        // Skills define the ability action, entity and URI matching rules.
+        // Skills define the IntentFilter-like matching rules.
         // This makes the ability appear in the device launcher.
         "skills": [
           {
@@ -604,6 +606,7 @@ Root-level package configuration for the entire project (workspace).
 
 ## 11. hvigorfile.ts (root level)
 
+The root-level build script. Hvigor is HarmonyOS's build system (similar to Gradle).
 
 ```typescript
 // Import the appTasks plugin which provides top-level build tasks

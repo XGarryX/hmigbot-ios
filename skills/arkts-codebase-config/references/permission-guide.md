@@ -383,7 +383,7 @@ console.log('Granted permissions:', permissions);
 ### 重置权限状态（开发环境）
 - 在设备设置中手动清除应用权限
 - 重新安装应用
-- 在测试设备的应用权限设置中重置授权，再复现实验并记录前置状态
+- 使用adb命令清除权限（需要root）
 
 ### 日志调试
 ```typescript

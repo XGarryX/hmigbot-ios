@@ -1,6 +1,6 @@
 ---
 name: arkts-knowledge-verifier
-description: "ArkTS 知识验证与查找入口（V2 优先，兼容 V1 查询）。当你对任何 ArkTS/HarmonyOS 知识点不确定时——API 版本兼容性、组件属性是否存在、装饰器语法、V1↔V2 装饰器迁移、权限字符串、ArkTS 与 TypeScript 的差异、配置字段含义、导入路径是否正确——务必触发此 skill。它会指引你到正确的 reference 文件查确切信息，避免生成错误代码。即使只是问\"@State 是 V2 合法装饰器吗\"\"ArkTS 能用 any 吗\"也应触发。"
+description: ArkTS 知识验证与查找入口（V2 优先，兼容 V1 查询）。当你对任何 ArkTS/HarmonyOS 知识点不确定时——API 版本兼容性、组件属性是否存在、装饰器语法、V1↔V2 装饰器迁移、权限字符串、ArkTS 与 TypeScript 的差异、配置字段含义、导入路径是否正确——务必触发此 skill。它会指引你到正确的 reference 文件查确切信息，避免生成错误代码。即使只是问"@State 是 V2 合法装饰器吗""ArkTS 能用 any 吗"也应触发。
 metadata:
   type: domain
   domain: engineering
@@ -205,7 +205,7 @@ LLM 生成 ArkTS 代码时最常犯的 11 类错误，遇到时请特别警惕�
 
 | 场景 | 权限字符串 | 成对 / 约束 |
 |---|---|---|
-| **精确定位** | `ohos.permission.LOCATION` | **不能单独申请**，必须**同时**申请 `ohos.permission.APPROXIMATELY_LOCATION`（模糊定位）；即精确定位 = 两个一起。单独 `APPROXIMATELY_LOCATION` 只给模糊位置；单独 `LOCATION` 申请会失败。源定位授权状态需由 iOS API 行为单独映射，不按权限名判断等价。 |
+| **精确定位** | `ohos.permission.LOCATION` | **不能单独申请**，必须**同时**申请 `ohos.permission.APPROXIMATELY_LOCATION`（模糊定位）；即精确定位 = 两个一起。单独 `APPROXIMATELY_LOCATION` 只给模糊位置；单独 `LOCATION` 申请会失败。**不是** iOS 的 `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION`。 |
 | 后台持续定位 | `ohos.permission.LOCATION_IN_BACKGROUND` | 建立在已获前台定位权限之上，额外申请。 |
 
 ### 9. 使用 @ohos.* 导入
@@ -403,7 +403,7 @@ if (canIUse('SystemCapability.Multimedia.Camera.Core')) {
 │
 ├─ 要文件下载/下载管理 → 读取 arkts-download-manager/SKILL.md
 │
-├─ 要 iOS 原生 UI 对齐 → 读取 arkts-ui-alignment/SKILL.md
+├─ 要 iOS UI 对齐/Material 迁移 → 读取 arkts-ui-alignment/SKILL.md
 │
 └─ 要系统能力（媒体/权限/文件/后台任务） → 读取 arkts-system-capabilities/SKILL.md
 ```

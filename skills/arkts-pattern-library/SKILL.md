@@ -1,6 +1,6 @@
 ---
 name: arkts-pattern-library
-description: "生成 ArkTS/HarmonyOS 常见业务功能的完整实现方案（V2 优先，API 12+）。当用户需要实现搜索、列表详情页、登录注册、下拉刷新/加载更多、Tab 内容切换、个人中心、设置页、主题切换、空状态、骨架屏、播放器 UI、下载管理 UI、Feed 详情页，或任何完整业务功能时，务必触发此 skill。即使只说\"做个搜索\"\"写个列表页\"也应触发。这是综合模式库，与其他 skill 配合使用。仅单个组件或技术点（非完整业务功能）→ arkts-component-builder / arkts-navigation-builder。"
+description: 生成 ArkTS/HarmonyOS 常见业务功能的完整实现方案（V2 优先，API 12+）。当用户需要实现搜索、列表详情页、登录注册、下拉刷新/加载更多、Tab 内容切换、个人中心、设置页、主题切换、空状态、骨架屏、播放器 UI、下载管理 UI、Feed 详情页，或任何完整业务功能时，务必触发此 skill。即使只说"做个搜索""写个列表页"也应触发。这是综合模式库，与其他 skill 配合使用。仅单个组件或技术点（非完整业务功能）→ arkts-component-builder / arkts-navigation-builder。
 metadata:
   type: domain
   domain: ui

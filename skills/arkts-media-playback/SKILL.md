@@ -1,6 +1,6 @@
 ---
 name: arkts-media-playback
-description: "生成 ArkTS/HarmonyOS **音频**播放代码。当用户需要实现 AVPlayer 音频播放、本地音频文件播放(fd://协议)、后台音频播放(ContinuousTask+AVSession)、播放速度控制、播放位置保存、队列自动切歌、睡眠定时器时触发。**视频播放（XComponent + Surface + letterbox + 横屏全屏 + 自动隐藏控件 + PiP）请走 arkts-video-playback。**"
+description: 生成 ArkTS/HarmonyOS **音频**播放代码。当用户需要实现 AVPlayer 音频播放、本地音频文件播放(fd://协议)、后台音频播放(ContinuousTask+AVSession)、播放速度控制、播放位置保存、队列自动切歌、睡眠定时器时触发。**视频播放（XComponent + Surface + letterbox + 横屏全屏 + 自动隐藏控件 + PiP）请走 [arkts-video-playback](../arkts-video-playback/SKILL.md)。**
 metadata:
   type: domain
   domain: media

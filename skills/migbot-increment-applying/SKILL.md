@@ -1,7 +1,12 @@
 ---
 name: migbot-increment-applying
-description: "Migbot-Increment APPLYING 阶段 skill，用于代码应用与测试。 当用户说\"执行 migbot-increment-applying\"、\"应用代码\"、\"测试xxx\"或类似表述时触发。 本 skill 负责 APPLYING 阶段的所有工作：代码应用、单元测试、lint 检查、产出应用报告。"
+description: |
+  Migbot-Increment APPLYING 阶段 skill，用于代码应用与测试。
+  当用户说"执行 migbot-increment-applying"、"应用代码"、"测试xxx"或类似表述时触发。
+  本 skill 负责 APPLYING 阶段的所有工作：代码应用、单元测试、lint 检查、产出应用报告。
 ---
+
+> **iOS 源输入**：读取 Swift/Objective-C、SwiftUI/UIKit、Xcode 工程及原生资源；实际源构建与设备观测依赖可用的源平台环境。鸿蒙侧构建和验收保持原流程。源侧操作详见 `a2h-spec/references/native-input.md`。
 
 # migbot-increment-applying Skill
 
@@ -72,6 +77,8 @@ step3-0（环境检查）→ step3-1（确认应用条件）→ step3-2（代码
 |---------|---------|---------|---------|
 | `hvigorw` | HarmonyOS | `hvigorw assembleHap` | `hvigorw test@entry` |
 | `package.json` | Node/JS/TS | `npm run build` | `npm test` |
+| `gradlew` | Gradle/iOS | `gradlew assembleDebug` | `gradlew test` |
+| `pom.xml` / `build.gradle` | Maven/Java/Kotlin | `mvn compile` / `gradle compileJava` | `mvn test` / `gradle test` |
 | `Cargo.toml` | Rust | `cargo build` | `cargo test` |
 | `Makefile` | C/C++ | `make` | `make test` |
 | 其他 | 未知类型 | 询问用户 | 询问用户 |
@@ -90,6 +97,7 @@ step3-0（环境检查）→ step3-1（确认应用条件）→ step3-2（代码
 |---------|---------|---------|
 | HarmonyOS | `hvigorw --version` | 输出版本号 |
 | Node/JS/TS | `node --version && npm --version` | 输出版本号 |
+| Gradle | `gradlew --version` | 输出版本号 |
 | Maven | `mvn --version` | 输出版本号 |
 | Rust | `cargo --version` | 输出版本号 |
 | C/C++ | `make --version` | 输出版本号 |
@@ -107,6 +115,7 @@ step3-0（环境检查）→ step3-1（确认应用条件）→ step3-2（代码
 |---------|---------|---------|
 | HarmonyOS | `hvigorw assembleHap` | BUILD SUCCESS |
 | Node/JS/TS | `npm run build` | 退出码 0 |
+| Gradle | `gradlew assembleDebug` | BUILD SUCCESSFUL |
 | Maven | `mvn compile` | BUILD SUCCESS |
 | Rust | `cargo build` | 退出码 0 |
 | C/C++ | `make` | 退出码 0 |
@@ -124,6 +133,7 @@ step3-0（环境检查）→ step3-1（确认应用条件）→ step3-2（代码
 |---------|---------|---------|
 | HarmonyOS | `hvigorw test@entry --help` | 输出帮助信息 |
 | Node/JS/TS | `npm test -- --help` 或 `jest --version` | 输出版本或帮助 |
+| Gradle | `gradlew test --help` | 输出帮助信息 |
 | Maven | `mvn test --help` | 输出帮助信息 |
 | Rust | `cargo test --help` | 输出帮助信息 |
 | C/C++ | `make test` 或检查 Makefile | 目标存在 |

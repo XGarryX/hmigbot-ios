@@ -1,6 +1,6 @@
 ---
 name: arkts-system-capabilities
-description: "HarmonyOS 系统 API 使用指南。当用户需要使用 photoAccessHelper 媒体查询、abilityAccessCtrl 权限申请、fileIo 文件操作、后台任务（workScheduler/ContinuousTask）、沙箱路径、相册访问、文件读写、权限检查、前台服务等系统能力时，务必触发此 skill。即使只说\"怎么获取相册图片\"\"怎么申请权限\"也应触发。不含 AVPlayer 完整生命周期（用 arkts-media-playback）和文件下载队列（用 arkts-download-manager）。"
+description: HarmonyOS 系统 API 使用指南。当用户需要使用 photoAccessHelper 媒体查询、abilityAccessCtrl 权限申请、fileIo 文件操作、后台任务（workScheduler/ContinuousTask）、沙箱路径、相册访问、文件读写、权限检查、前台服务等系统能力时，务必触发此 skill。即使只说"怎么获取相册图片""怎么申请权限"也应触发。不含 AVPlayer 完整生命周期（用 arkts-media-playback）和文件下载队列（用 arkts-download-manager）。
 metadata:
   type: domain
   domain: system

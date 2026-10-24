@@ -1,6 +1,6 @@
 ---
 name: migbot-increment-reviewing
-description: "审阅 SDD / Spec 类 Markdown 文档（spec、arch、design）及需求提案、需求解析、需求澄清、代码仓理解产物，先判断作者意图与文档类型，再输出更贴近原意的优化稿。默认走轻量模式；只有在用户明确要求完整审计时，才进入 audit mode。"
+description: 审阅 SDD / Spec 类 Markdown 文档（spec、arch、design）及需求提案、需求解析、需求澄清、代码仓理解产物，先判断作者意图与文档类型，再输出更贴近原意的优化稿。默认走轻量模式；只有在用户明确要求完整审计时，才进入 audit mode。
 ---
 
 # SDD / Spec 文档审阅

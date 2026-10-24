@@ -1,6 +1,6 @@
 ---
 name: arkts-accessibility
-description: "ArkTS 无障碍/适老化场景下的根因定位与修复（V2 优先，兼容 V1）：焦点丢失或 tabIndex 顺序错乱、触达热区过小（＜ 48vp）、屏幕朗读标签缺失、对比度不足、选中/勾选状态未播报、装饰性元素被误读、XComponent/Web 内容读不到等。代码示例使用 ArkTS V2 装饰器（`@ComponentV2 / @Local / @Param + @Once / @Event`），V1（`@Component / @State / @Prop`）写法仅作历史对照。若主要是字体缩放撑破布局，改用 arkts-large-font。"
+description: ArkTS 无障碍/适老化场景下的根因定位与修复（V2 优先，兼容 V1）：焦点丢失或 tabIndex 顺序错乱、触达热区过小（< 48vp）、屏幕朗读标签缺失、对比度不足、选中/勾选状态未播报、装饰性元素被误读、XComponent/Web 内容读不到等。代码示例使用 ArkTS V2 装饰器（`@ComponentV2 / @Local / @Param + @Once / @Event`），V1（`@Component / @State / @Prop`）写法仅作历史对照。若主要是字体缩放撑破布局，改用 arkts-large-font。
 metadata:
   type: domain
   domain: ui

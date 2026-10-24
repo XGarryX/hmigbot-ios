@@ -1,6 +1,6 @@
 ---
 name: migbot-increment-archive
-description: "Trigger: `$migbot-increment-archive` or natural language. 归档 migbot-increment-workflow 完成的变更到 specs/archives/ 目录"
+description: Trigger: `$migbot-increment-archive` or natural language. 归档 migbot-increment-workflow 完成的变更到 specs/archives/ 目录
 ---
 
 > Codex skill (converted from the `migbot-increment-archive` slash command). Invoke with `$migbot-increment-archive`, or pick it in `/skills` (the default_prompt below auto-runs). Codex has no custom slash commands, so the `$` prefix replaces `/`.

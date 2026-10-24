@@ -1,6 +1,6 @@
 ---
 name: arkts-ad
-description: "iOS 广告 SDK 迁移到 HarmonyOS ArkTS 的全流程指导。识别 iOS 项目使用的主流广告三方库（穿山甲 CSJ/Pangle、优量汇 GDT、快手 KS、华为 HMS Ads、百度联盟、GroMore 聚合等），匹配鸿蒙端可用 SDK，引导下载 HAR / ohpm 配置 / module.json5 权限明示与用户选择 / EntryAbility 初始化 / WindowStage 绑定 / 按行为契约适配 / 服务层抽象 / 验证排障。当用户提到\"广告 SDK 接入 / 广告库迁移 / 检测广告 SDK / 鸿蒙广告 / iOS 广告库迁移 / 穿山甲 / CSJ / Pangle / GroMore / GDT / 优量汇 / KS / 快手广告 / HMS Ads / 华为广告 / 百度联盟 / 开屏 / 插屏 / 信息流 / Banner / 激励视频 / 热启动广告 / Tab 切换广告 / 广告不展示 / HAR / ohpm / WindowStage / init / start / 广告权限 / 广告频控 / 广告隐私\"等场景时触发本 skill。"
+description: iOS 广告 SDK 迁移到 HarmonyOS ArkTS 的全流程指导。识别 iOS 项目使用的主流广告三方库（穿山甲 CSJ/Pangle、优量汇 GDT、快手 KS、华为 HMS Ads、百度联盟、GroMore 聚合等），匹配鸿蒙端可用 SDK，引导下载 HAR / ohpm 配置 / module.json5 权限明示与用户选择 / EntryAbility 初始化 / WindowStage 绑定 / API 1:1 适配 / 服务层抽象 / 验证排障。当用户提到"广告 SDK 接入 / 广告库迁移 / 检测广告 SDK / 鸿蒙广告 / iOS 广告库迁移 / 穿山甲 / CSJ / Pangle / GroMore / GDT / 优量汇 / KS / 快手广告 / HMS Ads / 华为广告 / 百度联盟 / 开屏 / 插屏 / 信息流 / Banner / 激励视频 / 热启动广告 / Tab 切换广告 / 广告不展示 / HAR / ohpm / WindowStage / init / start / 广告权限 / 广告频控 / 广告隐私"等场景时触发本 skill。
 metadata:
   type: domain
   domain: system
@@ -16,9 +16,12 @@ metadata:
   - baidu
   - gromore
 ---
+
+> **iOS 源输入**：读取 Swift/Objective-C、SwiftUI/UIKit、Xcode 工程及原生资源；实际源构建与设备观测依赖可用的源平台环境。鸿蒙侧构建和验收保持原流程。源侧操作详见 `a2h-spec/references/native-input.md`。
+
 # ArkTS 广告 SDK 迁移
 
-将 iOS 广告体系迁移到 HarmonyOS ArkTS 的全流程：detect 识别 → catalog 匹配 → 下载集成（含权限明示与用户选择）→ 按行为契约适配 → 验证排障。
+将 iOS 广告体系迁移到 HarmonyOS ArkTS 的全流程：detect 识别 → catalog 匹配 → 下载集成（含权限明示与用户选择）→ API 1:1 适配 → 验证排障。
 
 本 skill 不是 Fitness 专用 skill。Fitness 项目中的 `TabBarComponent` / `MainPage` / `AdService` / `TabAdController` 等只作为参考范例，不能作为通用前提。
 
@@ -56,7 +59,7 @@ metadata:
 - 依赖配置文件：根目录 `oh-package.json5` / `entry/oh-package.json5` / `entry/oh-package-lock.json5`
 - HarmonyOS 模块配置：`entry/src/main/module.json5`
 - `entry/libs/` 下已有广告 SDK 库
-- iOS 侧广告 SDK 依赖、封装类、初始化入口、广告场景代码、频控代码、上层触发链路
+- iOS 源侧广告 SDK 依赖、封装类、初始化入口、广告场景代码、频控代码、上层触发链路
 - 本次变更目标广告场景
 - 是否已有隐私协议流程，以及同意状态存储位置
 
@@ -66,11 +69,12 @@ metadata:
 
 ### Stage 0: Detect — 识别 iOS 项目使用的广告 SDK
 
-加载 `references/detect-commands.md`，按其中的 原生依赖与调用核验步骤在 iOS 项目根目录跑 grep：
+加载 `references/detect-commands.md`，按其中的 4 类扫描命令在 iOS 项目根目录跑 grep：
 
+1. 选定 Xcode target 的 SwiftPM/CocoaPods/工程 framework 与锁定依赖
 2. SDK init 调用扫描（佐证）
-3. Manifest 权限佐证（弱信号）
-4. ProGuard keep 规则佐证（弱信号）
+3. Info.plist / entitlements / 隐私配置佐证（弱信号）
+4. 实际 wrapper / 初始化封装 / 三方 bundle 佐证（弱信号）
 
 输出"使用的 SDK 清单"按以下格式：
 
@@ -78,7 +82,7 @@ metadata:
 |---|---|---|---|
 | ... | ... | ... | ... |
 
-未命中任何 SDK → 输出"未识别到广告 SDK 使用，跳过迁移"，结束 skill。
+未命中候选先检查动态封装与真实页面调用；仅在源码证据支持未使用时记录无此场景，不能用零正则命中证明不存在。
 
 ### Stage 1: 匹配 + 鲜度提示
 
@@ -216,7 +220,7 @@ UI 组件事件 → 页面级回调 → 场景控制器（频控门禁）→ AdS
 ## References
 
 - `references/sdk-catalog.md` — 严选 6 SDK 索引表
-- `references/detect-commands.md` — iOS 端识别命令清单
+- `references/detect-commands.md` — iOS 源端识别命令清单
 - `references/sdk-hms-ads.md` — 华为 HMS Ads
 - `references/sdk-csj.md` — 穿山甲 CSJ / Pangle
 - `references/sdk-gdt.md` — 优量汇 GDT

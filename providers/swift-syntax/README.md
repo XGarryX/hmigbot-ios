@@ -1,9 +1,10 @@
-# SwiftSyntax provider
+# Mac Swift source provider
 
-官方依赖：[swiftlang/swift-syntax](https://github.com/swiftlang/swift-syntax)。SwiftSyntax 解析语法，不解析跨模块类型绑定；本 provider 不执行传入的 App 源码。
+当前发行版在 macOS 使用选择的完整 Xcode 自带 SwiftParser、SwiftSyntax、SwiftIfConfig。`hmigbot_ios.apple_tools` 负责官方工具发现、按工具链及源码身份构建小型 provider，以及校验缓存哈希；构建目录在安装归属之外。
 
-源代码可通过 Swift 6.0 工具链 `swift build -c release` 构建，Package.swift 固定 SwiftSyntax 600.0.1。修改工具链时应同步核对 SwiftSyntax 版本。SwiftPM 构建需要取得依赖；本次实际验证使用已有 Swift 6.0.3 工具链随附的 SwiftSyntax/SwiftParser 库解释执行 main.swift，记录在验证报告中，不将其他平台的构建方式视为已验证。
+- 原语法协议继续带 `protocol_version=1`，新增 `schema_version=2`，保留 `semantic_resolution=false`。返回 AST 声明、枚举、官方词法 tokens、字符串解码、UTF-8 位置和解析诊断。
+- 条件请求协议 2 要求实际 `compiler_context`。查询通过 Apple swiftc 的 JSON AST 探针取得；生成的探针不含 App 实现，也不执行。SwiftIfConfig 在原始树上选择分支并生成位置不变的源码掩码。
+- 历史协议 1 的 custom-boolean 模式只作内部兼容，不是 SDK/编译器语义能力。
+- 未知或失败不能变成空成功。Xcode host 库是版本相关兼容接口；不将它描述为稳定 API。SwiftSyntax 的 SwiftPM 清单保留固定 604.0.0 作为源码来源参考，当前 Mac 入口实际使用的库版本取自所选 Xcode。
 
-复制 provider.example.json，填写实际可执行文件及 Swift 版本命令，然后传入 `atom swift-syntax --provider-config <file>`。配置为参数数组，不拼接 shell 命令。可使用 Mac、本机 Linux 或显式配置的 WSL 调用；本地 WSL 的运行路径保存在 work，未硬编码到分发代码。
-
-协议：stdin 为 UTF-8 JSON `files[{path,sha256,source}]`；stdout 为协议版本 1 的 JSON。输出包括声明、函数、变量、调用、属性和编译条件及 UTF-8 范围、行列、解析诊断。source hash/文件集合/位置检查均通过后才接受输出。语法错误保留为 partial；不计作已解析的有效 App。源码编译、宏展开、活跃编译条件、类型与调用绑定仍需 Xcode/SourceKit。
+类型绑定、App 构建、签名、运行及行为等价不由语法 provider 证明。

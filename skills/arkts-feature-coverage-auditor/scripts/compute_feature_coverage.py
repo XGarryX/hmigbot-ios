@@ -1,10 +1,12 @@
-"""Invoke a bundled, source-neutral HMigBot helper."""
 from pathlib import Path
-import json, subprocess, sys
-here = Path(__file__).resolve()
-skill = next(p for p in here.parents if (p / 'SKILL.md').is_file())
-runtime = skill / 'runtime.json'
-root = (skill / json.loads(runtime.read_text())['runtime_relative']).resolve() if runtime.exists() else skill.parents[1]
-helper = root / 'vendor/hmigbot' / 'skills/arkts-feature-coverage-auditor/scripts/compute_feature_coverage.py'
-if not helper.is_file(): raise SystemExit('Bundled helper missing; reinstall the complete plugin')
-raise SystemExit(subprocess.run([sys.executable, str(helper), *sys.argv[1:]], shell=False).returncode)
+import sys
+_here=Path(__file__).resolve()
+for _parent in _here.parents:
+    _runtime=_parent/'runtime.json'
+    if _runtime.is_file():
+        import json
+        _root=(_parent/json.loads(_runtime.read_text(encoding='utf-8'))['runtime_relative']).resolve()
+        if (_root/'src/hmigbot_ios152').is_dir(): sys.path.insert(0,str(_root/'src')); break
+    if (_parent/'src/hmigbot_ios152').is_dir(): sys.path.insert(0,str(_parent/'src')); break
+from hmigbot_ios152.feature_audit import main
+raise SystemExit(main())

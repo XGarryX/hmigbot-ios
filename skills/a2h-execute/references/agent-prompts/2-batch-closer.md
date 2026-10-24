@@ -12,7 +12,7 @@ mode=batch。你是 Stage 1 Batch [{batch_n}] 的收尾者，本批所有并发 
 
   本批页面: {batch_pages}                    # 序号 + ArkTS 文件路径清单
   本批生成/改动的 .ets: {batch_ets_files}
-  iOS 源根: {source_root}
+  iOS 源根: {ios_source_dir}
   HarmonyOS 工程根: {harmony_project_dir}
 ```
 

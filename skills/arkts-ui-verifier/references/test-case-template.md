@@ -1,348 +1,410 @@
-# UI 测试代码模板
+# UI 测试用例模版（UI Code）
 
-本模板供测试代码生成与执行验证时使用。目标是验证用户从页面声明的真实生产入口能够完成的真实操作，而不是证明测试桥能挂载某个组件。目标 UI surface 可以由被测应用、系统 UI 或系统宿主呈现；下文沿用 `Page Object` 文件命名，但它也负责封装系统/宿主 surface 上的 selector、唯一可见 landmark 与原子动作，不暗含 surface 必须属于被测应用。
+第三步「测试用例生成」按设计文档落地。三类工件：
 
-先读 execution-session-contract.md 与 page-source-map.md：前期导航运行与页面编写并行；两侧完成后构建最终包，每页真实点击准入再测功能，不额外先跑独立全量导航。辅助类/方法由生成 owner 实装，不是 UiTest 自带 API。
+1. **`.id()` 注入**到 `entry/src/main/ets/{pages,components}/` 源码
+2. **测试数据 + 桥**：`entry/src/main/ets/test/TestDataSetup.ets` + EntryAbility / 根页桥
+3. **UI 测试代码**：`entry/src/ohosTest/ets/test/ui/P{编号}_{PageName}_UI.test.ets`
 
-## 1. 生成目录与职责
+---
 
-```text
-entry/src/ohosTest/ets/test/ui/
-├── support/                         # 会话、等待、SDK 适配；不放页面 selector
-│   ├── UiTestSupport.ets
-│   └── AppSession.ets
-├── pages/
-│   └── <page_short>/
-│       ├── <PageName>Page.ets       # scaffold owner：导航 selector、landmark、原子动作
-│       ├── <PageName>Features.ets   # page owner：页内功能/弹窗 selector 与动作
-│       └── PNNNN_<PageName>.test.ets# 仅有 surface 内业务功能时生成
-├── navigation/
-│   └── to_<target_short>/
-│       ├── from_<source_short>_<path>.flow.ets # 全部到页路径，含外部真实入口
-│       └── <flow_id>.preflight.test.ets      # 同 ID 到页契约
-└── journeys/                        # 可选；仅放有明确跨页业务验收的旅程
-    └── <journey>.test.ets
-```
-
-职责边界：
-
-- Page Object 独占当前应用、系统或宿主 UI surface 的 selector、唯一可见 landmark 和原子动作。它不写 `describe/it`，不决定如何从其他 surface 到达本 surface。
-- navigation flow 只调用 Page Object 的动作：`IN_APP` 按真实可见组件逐跳点击，`SYSTEM_ENTRY`/`DEEPLINK_ENTRY`/`CROSS_APP_ENTRY` 使用有产品证据的真实入口触发；每一跳随后等待目标 UI surface 的唯一可见 landmark。flow 中禁止出现 `ON.id/text/type`。
-- 页面测试只调用入口态恢复、canonical flow 和目标 Page Object/Features；一个 `it()` 只验证一个用户可观察功能点。
-- 若“从本页点击进入下一页”本身就是该功能点，PAGE 用例可复用 `navigation/` 中对应 transition flow，并通过目标 Page Object 观察到达结果；点击与等待的编排仍集中在 navigation，不复制到 test 中。这次业务动作的失败归原 PAGE ID，不作为套级准入的导航观察。
-- journeys 只在需求本身跨页时生成，不得把普通页面到达测试复制成“旅程”。
-- support 不知道任何业务 selector，也不保存跨用例 `Component` 或滚动位置。
-
-导航共享文件由 scaffold owner 先发布；page owner 在导航运行期间独占编写 Features.ets 和测试，不修改导航 Page Object/support/flow。Page Object 是逻辑角色，可拆成导航与 Features 两个文件；普通 Dialog 留在宿主页 Features/测试中。
-
-## 2. SDK/API 探测与导入
-
-先读项目使用的 SDK 与实际 `.d.ets`，再生成 import。不要依据旧案例猜 API：
-
-1. 从项目 `build-profile.json5`、SDK 配置和 DevEco 当前 SDK 解析 compile/compatible API。
-2. 在当前 SDK 中确认 `@kit.TestKit.d.ts` 是否导出 `Driver / ON / On / Component / abilityDelegatorRegistry`，并确认实际方法签名。
-3. 把探测结果写入生成摘要；发现项目 API 与已安装 SDK 不一致时 BLOCK，不要靠 `@ts-ignore` 蒙混。
-
-API 9+ 的默认写法：
+## 1. 文件骨架
 
 ```typescript
-import { Driver, ON, On, Component, abilityDelegatorRegistry } from '@kit.TestKit'
-```
+import { describe, it, expect, beforeEach } from '@ohos/hypium'
+import { Driver, ON, Component } from '@ohos.UiTest'
+import { abilityDelegatorRegistry } from '@kit.TestKit'
+import { UIAbility, Want } from '@kit.AbilityKit'
 
-`Driver / ON / On / Component` 是当前接口。API 8 的 `UiDriver / BY / By / UiComponent` 已废弃，只有项目确实锁定 API 8 且本机 SDK 声明可用时才整体切到 legacy 模板；禁止在同一文件混用两套命名。`@ohos.UiTest` 可以是 SDK 内部声明来源，但生成代码默认从 kit 聚合入口 `@kit.TestKit` 导入。
+// （顶部：共享 helpers，见 §6）
 
-关键签名：
-
-- `Driver.create(): Driver` 是同步工厂，写 `driver = Driver.create()`，不要 `await Driver.create()`。
-- 除 `Driver.create()`、`Driver.createUIEventObserver()` 外，Driver 和 Component 操作均按 Promise 处理，逐个 `await`。
-- UI 测试 API 不允许并发调用；禁止将任何 Driver/Component 操作放进 `Promise.all`、`Promise.race`、未等待的回调或自制超时竞速。
-
-应用侧布局 dump/自动快照属于高版本能力。只有项目 SDK 与设备都达到 API 26，且当前 `.d.ets` 确实声明对应接口时才可生成；Release 6.1/API 23 等环境不得调用或用 `@ts-ignore` 假装支持。
-
-## 3. Locator 规则（不修改生产组件）
-
-Page Object 内按以下优先级声明 locator；证据可以来自被测应用源码/资源，也可以来自系统或宿主 surface 的运行时控件树与官方稳定界面契约：
-
-1. `ON.id('<当前 UI surface 已暴露的 stable id>')`：被测产品可控组件必须由生产源码和运行时控件树共同证明其已存在；系统/宿主组件必须由运行时控件树及可用的稳定界面依据证明。两者都只有在当前 surface 稳定且唯一时才使用。
-2. 组件没有 ID 时使用 `ON.text('<设备当前语言下的用户可见文本>')`。文本必须在当前界面唯一；若重复，只能通过 `within` 等当前 SDK 支持的关系 matcher，把它限制在唯一、可见且稳定的容器语境内。用于操作时，matcher 必须命中真实可操作的可见组件；若只能命中不可操作的文字子节点且无法按当前 SDK 关系 API 定位其操作容器，视为无合法 locator。
-3. `ON.type('<源码/SDK 中确认的真实组件类型>')` 只可帮助限定可见容器语境，不能单独用来从多个同型可操作组件中猜一个。
-
-可见文本必须能追溯到被测应用资源/源码、系统文案、宿主界面事实或运行时控件树。禁止凭空翻译、依赖列表固定下标、把通用 `Column/Row` 当 UI surface landmark、在 test/flow/support 中散落 locator；locator 变化只应修改 Page Object。
-
-不得给生产组件新增、改写或拼接 `.id()`，不得增加 `idPrefix`、测试专用 prop 或 ID manifest。也不得用坐标硬点、内部路由、组件数组下标或内部状态绕过定位。
-
-若某个必需操作或 landmark 既无可复用 stable ID，也无可唯一定位的可见文本/合法关系语义 locator，则不要生成猜测式 locator 或可执行 flow：
-
-- iOS 源码确认要求且构成到页路径的入口、edge action、handler、route 或目标 landmark 根本未实现：`ENTRY_GAP` 导航根 `RED/IMPL_MISSING`。
-- 已到达目标 landmark，但构造用例必需的页内业务 trigger/action/control 完全不存在：该功能点记 `IMPL_MISSING_STATIC` 并合成 `RED/IMPL_MISSING`；不生成导航根或下游 `BLOCKED_BY_NAVIGATION`。若 action/control 可执行且 expected matcher 可由 Spec/资源/UI 契约表达，即使当前结果完全未呈现也必须生成测试并真实运行。
-- 存在真实页面/路径，但必需操作或 landmark 无法用上述规则唯一定位，或需求本身没有公开 UI 路径/观察面：只写一份页面级 `ERROR/UNREACHABLE_BY_UI`，移出 runnable UI inventory，转 UT/集成或人工验证。不生成 flow/test，也不生成下游 `BLOCKED_BY_NAVIGATION`。
-
-上述“不生成/移出”只针对受影响需求与工件。canonical 路径或页面 landmark 无法定位才影响整页；仅一个页内 action/观察点无法定位时，仍保留页面 flow/preflight 和其他可执行功能。上述根问题不得通过修改生产组件来迎合测试。只有产品自身需求另行决定改善可访问语义时，才由产品流程独立处理；本 verifier 不实施此类变更。
-
-## 4. Page Object 模板
-
-下例将导航接口和功能接口分文件，分别由 scaffold owner 与页面 writer 维护。导航运行期间页面 writer 只写 Features 与测试，不改共享导航文件。
-
-Page Object 不缓存 `Component`。每次操作前都重新查询；页面切换、弹窗开关、列表刷新、滚动或重渲染后，旧句柄视为失效。
-
-```typescript
-// SettingsPage.ets — scaffold owner
-import { Driver, ON, On } from '@kit.TestKit'
-import { waitForLandmark } from '../../support/UiTestSupport'
-
-export class SettingsPage {
-  private readonly driver: Driver
-
-  // “设置”是设备当前语言下该页唯一可见标题；产品没有为页面根提供 ID。
-  private static readonly ROOT: On = ON.text('设置')
-  constructor(driver: Driver) {
-    this.driver = driver
-  }
-
-  async waitUntilReady(): Promise<void> {
-    await waitForLandmark(this.driver, SettingsPage.ROOT, 'settings root', 8000)
-  }
-
-}
-```
-
-```typescript
-// SettingsFeatures.ets — page owner
-import { Driver, ON, On, Component } from '@kit.TestKit'
-import { requireComponent, waitForIdleChecked } from '../../support/UiTestSupport'
-
-export class SettingsFeatures {
-  private readonly driver: Driver
-  // 已有产品 ID，只读复用；普通 Dialog 的动作也归宿主页。
-  private static readonly AUTOPLAY: On = ON.id('settings_autoplay_toggle')
-  private static readonly FONT_ENTRY: On = ON.text('字体大小')
-
-  constructor(driver: Driver) {
-    this.driver = driver
-  }
-
-  private async findAutoplayToggle(): Promise<Component> {
-    return await requireComponent(
-      this.driver, SettingsFeatures.AUTOPLAY, 'settings autoplay toggle', 5000)
-  }
-
-  async readAutoplayChecked(): Promise<boolean> {
-    const toggle: Component = await this.findAutoplayToggle()
-    return await toggle.isChecked()
-  }
-
-  async toggleAutoplay(): Promise<void> {
-    const toggle: Component = await this.findAutoplayToggle()
-    await toggle.click()
-    await waitForIdleChecked(this.driver, 300, 3000)
-  }
-
-  async openFontDialog(): Promise<void> {
-    const entry: Component = await requireComponent(
-      this.driver, SettingsFeatures.FONT_ENTRY, 'visible font settings entry', 5000)
-    await entry.click()
-  }
-}
-```
-
-`Component.scrollSearch()` 是长列表默认方案：先定位明确的可滚动容器，再在该容器中搜索目标。不要把有限次坐标 `swipe` 当通用搜索；确有自绘/特殊容器无法使用 `scrollSearch` 时，须在设计里记录 SDK/组件证据和边界，再在该 Page Object 中实现专用动作。
-
-## 5. Navigation flow 模板
-
-所有目标 UI surface 的 reachability flow 都集中在 `ui/navigation/to_<target_short>/`。每个文件表示“到某个目标 surface 的一条明确生产路径”，多条入口按路径拆文件。`SYSTEM_ENTRY`/`DEEPLINK_ENTRY`/`CROSS_APP_ENTRY` 也在这里生成 flow 与同 ID preflight；目标 surface 可位于被测应用、系统 UI 或系统宿主。`ui/journeys/` 只在到达之外还需跨 surface 验收业务结果时使用。
-
-```typescript
-import { Driver } from '@kit.TestKit'
-import { HomePage } from '../../pages/home/HomePage'
-import { SettingsPage } from '../../pages/settings/SettingsPage'
-
-export const FLOW_TO_SETTINGS_FROM_HOME: string = 'NAV_P0010_FROM_APP_ENTRY'
-
-export async function navigateToSettingsFromHome(driver: Driver): Promise<SettingsPage> {
-  const home = new HomePage(driver)
-  await home.waitUntilReady()
-  await home.openOverflow()
-  await home.chooseSettings()
-
-  // 点击造成页面切换后，不再使用旧 Component；构造目标页对象并等待目标 landmark。
-  const settings = new SettingsPage(driver)
-  await settings.waitUntilReady()
-  return settings
-}
-```
-
-多跳 flow 必须逐跳执行 `sourcePage.<action>()` → `targetPage.waitUntilReady()`，并给每条边稳定 `edge_id`。flow 不允许直接调用 router、NavPathStack、`loadContent`、内部 ViewModel 或 AppStorage，也不允许注入测试专用目标页参数。
-
-每条可执行 canonical flow 生成一个同 ID 的 preflight test。它完整重走 flow，并验证设计声明的 UI 返回/恢复路径；每跳记录 edge_id，失败时用首个失败 edge 作为 `failed_step`。普通 edge 不单独生成 setup `it()`；某条 edge 本身是独立需求时，另写一个业务导航用例。
-
-## 6. 等待、串行与错误传播
-
-```typescript
-import { Driver, On, Component } from '@kit.TestKit'
-
-export async function requireComponent(driver: Driver, selector: On,
-  label: string, timeoutMs: number = 5000): Promise<Component> {
-  const component: Component | null = await driver.waitForComponent(selector, timeoutMs)
-  if (component === null) {
-    throw new Error(`component not found: ${label}`)
-  }
-  return component
-}
-
-export async function waitForLandmark(driver: Driver, landmark: On,
-  label: string, timeoutMs: number = 8000): Promise<void> {
-  await requireComponent(driver, landmark, label, timeoutMs)
-}
-
-export async function waitForIdleChecked(driver: Driver, idleMs: number = 300,
-  timeoutMs: number = 3000): Promise<void> {
-  const becameIdle: boolean = await driver.waitForIdle(idleMs, timeoutMs)
-  if (!becameIdle) {
-    throw new Error(`UI did not become idle within ${timeoutMs}ms`)
-  }
-}
-```
-
-- 页面、系统 UI、宿主 surface、弹窗或菜单的到达以 `waitForComponent(target UI surface landmark)` 为主。
-- `waitForIdle` 只作动画或批量重绘的辅助，必须检查返回的 boolean；它不能代替目标 landmark。
-- 禁止用固定 `delayMs(500/1500/...)` 判断页面到达。只有被测需求本身包含明确时间语义（例如 debounce）时，才可使用与需求对应的时间等待，并仍断言最终可见结果。
-- 不捕获 selector/点击/等待异常后返回 `null`、继续执行或静默 fallthrough。若为补充 edge 上下文而 catch，必须保留原始消息并立即重新抛出。
-- 不用 setTimeout/Promise.race 给 UI API 做“可取消超时”；底层调用并未取消，会与下一次调用并发。
-
-## 7. 按页会话与逐例 UI 基线
-
-普通功能批次只连接运行中的应用，不主动重启。页面 beforeAll 检查最终包 run-context，经真实组件点击路径进入并确认 landmark/记录本包准入；beforeEach 重新确认页面及本例状态；afterEach 通过 UI 清理。所有页面切换/恢复编排在 navigation 内，未知界面或清理失败立即停止新的业务操作。
-
-以下是设置页单功能点的生成形态。`AppSession` 的 attach/run-context/admission/safety/event 方法与 `enterSettingsFromObservedUi`、`restoreSettingsFromObservedUi` 都由 scaffold 根据执行会话契约和导航设计实装；不在本示例伪造生产返回按钮或默认页面位置。
-
-```typescript
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from '@ohos/hypium'
-import { Driver } from '@kit.TestKit'
-import { AppSession } from '../../support/AppSession'
-import { SettingsPage } from './SettingsPage'
-import { SettingsFeatures } from './SettingsFeatures'
-import { enterSettingsFromObservedUi, restoreSettingsFromObservedUi }
-  from '../../navigation/to_settings/from_observed_ui.flow'
-
-export default function P0010_SettingsPage_UI() {
-  describe('PAGE_settings', () => {
+export default function <PageName>_UI() {
+  describe('<PageName>_UI', () => {
     let driver: Driver
-    let session: AppSession
-    let page: SettingsPage
-    let features: SettingsFeatures
-    let originalAutoplay: boolean | null = null
-
-    beforeAll(async () => {
-      driver = Driver.create()
-      session = new AppSession(driver)
-      await session.attachRunningApplication() // 不调用 start/stop/reset Ability
-      await session.requireFinalRunContext()
-      page = await enterSettingsFromObservedUi(driver) // 真实组件点击，不猜导航栈
-      await page.waitUntilReady()
-      await session.recordPageAdmission('P0010') // 关联实际 flow/landmark/包与会话证据
-      features = new SettingsFeatures(driver)
-    })
 
     beforeEach(async () => {
-      originalAutoplay = null
-      await session.requireSafeBatch()
-      try {
-        await page.waitUntilReady()
-        originalAutoplay = await features.readAutoplayChecked()
-      } catch (error) {
-        session.markUnsafe('P0010', 'baseline check failed')
-        throw error
-      }
+      if (driver === undefined) driver = await Driver.create()   // 懒 create
+      await mountPage(driver, '<PageName>')
+      await driver.assertComponentExist(ON.id('<page_short>_root'))
     })
 
-    afterEach(async () => {
-      // 仅在本例已完成初态采集且会话允许恢复时执行；不能依赖上一例的值。
-      if (originalAutoplay !== null) {
-        try {
-          page = await restoreSettingsFromObservedUi(driver)
-          const current: boolean = await features.readAutoplayChecked()
-          if (current !== originalAutoplay) {
-            await features.toggleAutoplay()
-          }
-          expect(await features.readAutoplayChecked()).assertEqual(originalAutoplay)
-        } catch (error) {
-          session.markUnsafe('P0010', 'autoplay cleanup failed')
-          throw error
-        }
-      }
-    })
-
-    it('P0010_UI_INTERACT_autoplay_toggle_changes_visible_state', 0, async () => {
-      const before: boolean = await features.readAutoplayChecked()
-      await features.toggleAutoplay()
-      expect(await features.readAutoplayChecked()).assertEqual(!before)
-    })
+    // it() 块...
   })
 }
 ```
 
-本例只改 toggle；弹窗、输入、删除等用例按各自设计增加可逆清理，不能直接照抄它的恢复逻辑。生产 UI/真实数据契约无法提供独立基线时报告问题，不顺序依赖、不注入状态。
+注册到 `entry/src/ohosTest/ets/test/List.test.ets`（由 register 模式重建）。
 
-runner 必须把业务观察和 hook/清理观察分别归档后确定该 ID 的唯一结果：业务原失败优先保留；业务通过但清理失败不算整例 GREEN。无法安全恢复时停止新的业务操作，调度器明确未执行项用 DEFERRED；不能空返回伪通过，也不能把所有后续用例判功能失败。beforeAll 导航失败归其原 flow ID。
+命名：`P{编号}_UI_{SMOKE|COMP|NAV|INTERACT}_xxx` 或 `F{编号}_UI_AC{序号}_xxx`。
 
-重新安装、崩溃恢复、冷启动/重启持久化专项是契约规定的例外；重启只到正常生产入口，然后依旧通过 UI 到页。专项安排在普通批次之后，不把重启逻辑藏入通用 beforeEach/afterEach。
+---
 
-## 8. 只断言用户可观察结果
+## 2. UiTest API（能用什么、不能用什么）
 
-允许的结果包括：目标组件出现/消失、可见文本、enabled/checked/selected 状态、列表可见项、Dialog/Menu/Sheet、通过生产导航到达的页面以及系统可见反馈。
-
-禁止把 `AppStorage.get()`、`@State`、ViewModel 字段、数据库行、导航栈内容或“driver 不为 null”当 UI 功能验收。只有真实业务 action/control 可执行且预期 matcher 能由现有 UI 契约表达时，才按 iOS 源码证实的预期断言可见结果，让错误或缺失结果自然 RED。若目标 page/surface landmark 可达，但完成该功能所必需的业务 action/control 经源码与控件树确认完全不存在，则保留原稳定功能 ID 为 `IMPL_MISSING_STATIC`，不生成伪 action 或不可执行测试；由 reconcile 合成 `RED/IMPL_MISSING`、`test_file=null`、`business_assertions_run=false`。两种情形都不得写注定通过的替代断言。
-
-持久化功能采用黑盒复核：
-
-1. 在目标页通过 UI 修改设置/内容。
-2. 通过真实组件离开该页。
-3. 重新走 canonical flow 进入该页；若需求声明跨重启持久化，必须真实终止并重新启动被测应用并记录新会话，再按原 `entry_kind/start_context` 经真实 UI 重新建立入口后走 flow；只离页重进或重建入口不算跨重启。
-4. 重新查询控件并断言 UI 显示的新状态。
-
-一个 `it()` 只验证一个功能点。若同一动作必须同时产生多个可见结果，可在同一用例验证同一功能的必要结果；不同设置项、菜单项、CAB 动作和独立导航边分别拆开。
-
-## 9. 生产入口分类
-
-设计和生成必须给每页标一个入口类别：
-
-| 类别 | 自动化方式 |
+| 用 | 不能用 / 注意 |
 |---|---|
-| `IN_APP` | 从默认应用入口开始，完全通过可见组件点击的 canonical flow 到达 |
-| `SYSTEM_ENTRY` | 通过被测应用或系统宿主中的真实可见按钮、通知、分享项触发。在 `ui/navigation/to_<target_short>/` 中复现 `start_context` 并生成同 ID preflight，记录设备前置与目标 surface 的唯一可见 landmark |
-| `DEEPLINK_ENTRY` | 点击真实页面上产品公开的可见链接组件；在 `ui/navigation/to_<target_short>/` 中生成 flow/preflight，不得直接启动 URI/Want 代替点击 |
-| `CROSS_APP_ENTRY` | 通过另一应用中的真实可见操作触发；在 `ui/navigation/to_<target_short>/` 中生成 flow/preflight 并记录两端入口与环境前置 |
-| `ENTRY_GAP` | iOS 源码确认要求生产入口但产品未实现；不生成 flow/test，登记 `RED/IMPL_MISSING` 导航根 |
-| `UNREACHABLE_BY_UI` | 没有应用内点击路径/可验证的生产外部入口/UI 观察面，或必需操作/landmark 无合法唯一语义 locator；只写 `ERROR/UNREACHABLE_BY_UI`，移出 runnable UI inventory，不生成 flow/test 或 blocked 记录 |
+| `driver.findComponent(ON.id/text/type)` 返回单个 | `driver.scrollSearch` **不存在**（编译错），只有 `Component.scrollSearch` |
+| `driver.findComponents(...)` 返回数组 | `driver.dumpLayout` **不存在**（不要写） |
+| `driver.assertComponentExist(ON.x)` | `driver.pressBack` 部分 SDK 用 `triggerKey(KeyCode.KEY_BACK)` |
+| `driver.delayMs(ms)` 等待 | `driver.swipe` 返回 `Promise<void>`，不要赋值 |
+| `comp.click()` / `longClick()` / `inputText()` / `getText()` / `getId()` / `isChecked()` / `isEnabled()` / `scrollSearch()` | `component.dumpInfo` **不存在** |
 
-`SYSTEM_ENTRY`/`DEEPLINK_ENTRY`/`CROSS_APP_ENTRY` 必须有 `module.json5`/skills 配置、跨应用产品链路或产品文档证据，但不是组件点击规则的例外。内部页面名、router URL、NavPathStack route 不是“生产深链”；即使 URI 已公开，也不能用 shell/Want/接口直达目标替代真实链接点击。只能正常启动应用/宿主默认入口建立起点。
-这三类的到页 flow 和 preflight 与 `IN_APP` 一样都属于 `ui/navigation/to_<target_short>/`。只有另一个业务功能必须跨页验收结果时，才另写 `ui/journeys/` 用例。
+---
 
-## 10. 常见反模式
+## 3. Selector 优先级（强制）
 
-| 反模式 | 正确做法 |
+1. **`ON.id('<page_short>_<purpose>_<kind>')`** ← manifest 默认
+2. **`ON.text('<value>')`** ← LazyForEach 动态项 / bindMenu 菜单项；value **必须**来自 manifest「字符串映射」（`string.json`），禁止凭空翻译
+3. **`ON.type('Toggle' / 'Swiper' / ...)`** ← spec `## 转换决策` 真实类型兜底
+4. **关系选择器 `On.isBefore(on)` / `isAfter(on)` / `within(on)`**（since 9/10）—— 当目标控件本身没法直接拿到 id（@Builder 复用、ForEach 子项、NavigationMenuItem），但**附近有可定位锚点**（label 文本 / 父容器 id）时，用：`ON.type('Toggle').isAfter(ON.text('<label 字面量>'))` 把"按 label 找邻近 Toggle"一次解决，**无需改源码加 idSuffix**。对 SettingsPage 类页（5+ 个 @Builder 复用上百个调用点）尤其关键。
+5. **禁用**：凭空翻译的中英文字面量；写完全文 grep `ON.text(...)` 字面量必须可追溯到 manifest
+
+---
+
+## 4. `.id()` 注入规则（命名 + 9 类组件）
+
+**格式**：`<page_short>_<purpose>_<kind>`，全小写 snake_case，≤32 字符，页面内唯一。
+
+- `page_short`：`page_NNNN_<Xxx>.md` → `<Xxx>` 去 `Activity/Fragment/Page` 后缀 + snake_case（`MainActivity` → `main`，`WidgetConfigureActivity` → `widget_config`）
+- `purpose`：英文小词（`overflow` / `search` / `autoplay`）
+- `kind`：见下表
+
+**注入位置**：链式调用紧接第一行（`.width()` 之前）。
+
+| 规则 | 组件形态 | kind | 命名例 |
+|------|---------|------|--------|
+| A1 | 顶部 ActionBar 图标按钮（Image + onClick）| `btn` | `main_overflow_btn`（资源名 `more` → `overflow`；`search` / `back` / `save` / `delete` / `edit` / `settings` / `add` / `filter` / `sort` / `refresh` / `play` / `pause` 各对应关键词） |
+| A2 | 顶部标题文本 | `text` | `main_toolbar_title` |
+| A3 | 顶层数据容器 | `grid` / `list` / `swiper` / `refresh` / `tabs` / `waterflow` | `main_directory_grid` |
+| A4 | 设置行 + 其内 Toggle | `row` / `toggle` | `settings_autoplay_videos_row` / `settings_autoplay_videos_toggle`（`<setting>` 取 `$r('app.string.xxx')` 的 `xxx`） |
+| A5 | FAB / 主操作按钮 | `fab` / `btn` | `edit_save_btn` |
+| A6 | 输入框（TextInput / Search） | `input` | `search_query_input` |
+| A7 | Dialog 内按钮 + Dialog 根 | `_confirm_btn` / `_cancel_btn` / `dialog` | `delete_confirm_dialog` |
+| A8 | 页面根容器（Navigation / Column / Stack 最外层）| `root` | `main_root` |
+| A9 | bindMenu / bindContextMenu / bindSheet 触发器 | 同 A1 | (弹出菜单项**不加** id，靠 `ON.text` 定位) |
+
+**不加 id**：LazyForEach/ForEach 动态子项（重复 id 冲突，用 `findComponents(ON.type)[idx]`）；装饰容器；纯显示 Image/Text。
+
+**灰色地带（标 `[NEEDS_REVIEW]`，不直接加）**：@Builder 内 ≥5 同形态 Image；嵌套容器哪层是真列表不清；同名重复（用 `_primary` / `_secondary` 区分）。
+
+**跨页面复用子组件**（components/ 被 ≥2 个 page import）：优先改 `idPrefix: string` prop，父页传 `'settings'` / `'data_list'`，子组件内 `.id(this.idPrefix + '_xxx')`；不想改源码 → 用 `<component_short>` 自前缀。
+
+**Settings 类页下限**：`<page>_<key>_toggle` 行数 ≥ 去重后 `@State boolean` 行数；`<page>_<key>_row` 行数 ≥ 去重后布尔行数 + TextValueRow/OneLinerRow 行数。
+
+**Manifest**：写到 `entry/src/main/ets/test/testable-id-manifest.md`，含 `Page → page_short 映射` + 每页 ID 表（ID / 行号 / 组件 / 规则）+ 字符串映射（key / base / zh_CN / en_US / 设备实际） + NEEDS_REVIEW 表。
+
+---
+
+## 5. 测试数据 setup
+
+**EntryAbility `onCreate`** 检测测试模式（已存在跳过）：
+
+```typescript
+const isTestMode: boolean = (want?.parameters?.['__test_mode__'] as boolean) ?? false
+AppStorage.setOrCreate<boolean>('__TEST_MODE__', isTestMode)
+if (isTestMode) {
+  const { TestDataSetup } = await import('../test/TestDataSetup')
+  await TestDataSetup.injectMockData()
+}
+```
+
+**`entry/src/main/ets/test/TestDataSetup.ets`**：
+
+```typescript
+export class TestDataSetup {
+  static async injectMockData(): Promise<void> {
+    AppStorage.setOrCreate('__MOCK_DIRECTORIES__', [
+      { path: 'DCIM/Camera', name: 'Camera' },
+      { path: 'Pictures/Test', name: 'Test' },
+    ])
+    // 数量小（≤10）+ 覆盖边界（收藏/未收藏/已删除/超期）+ 文件名带 test_ 前缀
+  }
+}
+```
+
+**Service 旁路**（不改生产逻辑，只在测试模式下旁路）：
+
+```typescript
+if (AppStorage.get<boolean>('__TEST_MODE__')) {
+  const mock = AppStorage.get<XxxModel[]>('__MOCK_XXX__')
+  if (mock !== undefined) return mock
+}
+```
+
+---
+
+## 6. Mount Bridge（Navigation vs Router 二选一）
+
+**架构探测**：根页 `entry/src/main/ets/pages/<RootPage>.ets` `grep ': NavPathStack'` 命中 → `NAVIGATION_DIRECT_MOUNT`；否则 → `ROUTER_LOAD_CONTENT`。两套桥**互斥**，不要同时注入。
+
+### 6.1 共享：EntryAbility 读 want 写 AppStorage（两套桥都用）
+
+```typescript
+// onCreate(want, launchParam) 内追加；onNewWant(want, launchParam) 同样追加（singleton 切页）
+const targetPage: string = (want?.parameters?.['__target_page__'] as string) ?? ''
+if (targetPage.length > 0) {
+  const targetParams = want?.parameters?.['__target_page_params__'] as Record<string, Object> | undefined
+  AppStorage.setOrCreate<Record<string, Object> | null>('__TARGET_PAGE_PARAMS__', targetParams ?? null)
+  AppStorage.setOrCreate<string>('__TARGET_PAGE__', targetPage)
+}
+```
+
+### 6.2 NAVIGATION_DIRECT_MOUNT（根页有 `NavPathStack`）
+
+**EntryAbility 写 AppStorage 即可；根页**（持有 `<NAV_STACK_FIELD>: NavPathStack` 的页面）加：
+
+```typescript
+@StorageLink('__TARGET_PAGE__') @Watch('onTargetPageChange') directMountTarget: string = ''
+
+onTargetPageChange(): void {
+  const target: string = this.directMountTarget
+  if (target.length === 0) return
+  // 宿主页自挂载特判：pushPath 自己会静默失败，只消费 token
+  if (target === '<HOST_PAGE_NAME>') {
+    AppStorage.setOrCreate<string>('__TARGET_PAGE__', '')
+    try { this.<NAV_STACK_FIELD>.clear() } catch (e) {}
+    return
+  }
+  const params = AppStorage.get<Record<string, Object> | null>('__TARGET_PAGE_PARAMS__') ?? null
+  AppStorage.setOrCreate<string>('__TARGET_PAGE__', '')
+  this.mountTargetWithRetry(target, params)
+}
+
+// aboutToAppear 末尾加首次挂载分支（@Watch 对初始值不触发）—— 同样含 HOST_PAGE 特判
+private mountTargetWithRetry(target: string, params: Record<string, Object> | null, attempt: number = 0): void {
+  const MAX = 20  // 20 × 50ms = 1s
+  const stack = this.<NAV_STACK_FIELD>
+  if (stack === undefined || stack === null) {
+    if (attempt < MAX) setTimeout(() => this.mountTargetWithRetry(target, params, attempt + 1), 50)
+    return
+  }
+  try { stack.clear() } catch (e) {}
+  if (params !== null) stack.pushPath({ name: target, param: params })
+  else stack.pushPath({ name: target })
+}
+```
+
+> 嵌套 Navigation 的子页不可被 direct-mount 直达 → 标 `unreachable`。
+
+### 6.3 ROUTER_LOAD_CONTENT（根页无 `NavPathStack`）
+
+仅改 EntryAbility，不动根页：
+
+```typescript
+// onCreate 写 AppStorage（同 6.1）
+
+onWindowStageCreate(windowStage: window.WindowStage): void {
+  const target: string = AppStorage.get<string>('__TARGET_PAGE__') ?? ''
+  const loadPath: string = target.length > 0 ? `pages/${target}` : 'pages/<ROOT_PAGE>'
+  windowStage.loadContent(loadPath, (err) => {
+    if (err.code && target.length > 0) windowStage.loadContent('pages/<ROOT_PAGE>')  // 回退
+    AppStorage.setOrCreate<string>('__TARGET_PAGE__', '')
+  })
+}
+
+onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+  const target: string = (want?.parameters?.['__target_page__'] as string) ?? ''
+  if (target.length === 0) return
+  AppStorage.setOrCreate<string>('__TARGET_PAGE__', target)
+  // fire-and-forget；onNewWant 不能 async
+  router.replaceUrl({ url: `pages/${target}` }).catch((e: Error) => console.error(e.message))
+}
+```
+
+> `__TARGET_PAGE__` 值约定：**全路径**（`'pages/SettingPage'`）或**短名**（`'SettingPage'`），项目内统一，否则 `pages/pages/...` 双前缀错。本模板按短名 + 桥拼前缀。
+
+---
+
+## 7. UI 测试 helpers（共享，每个测试文件复用）
+
+```typescript
+const BUNDLE_NAME: string = '<BUNDLE_NAME>'
+const ABILITY_NAME: string = 'EntryAbility'
+const MODULE_NAME: string = 'entry'   // 主 HAP；ohosTest 是 'entry_test'
+let entryAbilityReady: boolean = false   // 文件级；冷热路径标志
+
+async function mountPage(driver: Driver, page: string, params?: Record<string, Object>): Promise<void> {
+  const delegator = abilityDelegatorRegistry.getAbilityDelegator()
+  const parameters: Record<string, Object> = { '__test_mode__': true as Object, '__target_page__': page as Object }
+  if (params !== undefined) parameters['__target_page_params__'] = params as Object
+  const want: Want = { bundleName: BUNDLE_NAME, abilityName: ABILITY_NAME, moduleName: MODULE_NAME, parameters }
+
+  if (!entryAbilityReady) {
+    // 冷热路径双保险：Promise.race（v10 实测，热路径 monitor 不 fire 会超时）
+    const monitor: abilityDelegatorRegistry.AbilityMonitor = { abilityName: ABILITY_NAME }
+    delegator.addAbilityMonitor(monitor)
+    await delegator.startAbility(want)
+    try {
+      const waitP: Promise<UIAbility> = delegator.waitAbilityMonitor(monitor)
+      const timeoutP: Promise<UIAbility> = new Promise<UIAbility>((_r, rej) =>
+        { setTimeout(() => rej(new Error('monitor-timeout')), 3000) })
+      const ability: UIAbility = await Promise.race<UIAbility>([waitP, timeoutP])
+      await delegator.doAbilityForeground(ability)
+    } catch (_e) { /* 热路径 fallthrough：startAbility 已触发 onNewWant，桥重新挂目标页 */ }
+    delegator.removeAbilityMonitor(monitor)
+    entryAbilityReady = true
+  } else {
+    await delegator.startAbility(want)   // 同一文件后续 it：仅触发 onNewWant
+  }
+
+  // landmark 轮询代替固定 sleep（冷启动可能 1-3s）
+  await driver.delayMs(500)
+  let elapsed = 0
+  while (elapsed < 8000) {
+    try {
+      const comp = await driver.findComponent(ON.id('<page_short>_root'))
+      if (comp !== null) return
+    } catch (_e) {}
+    await driver.delayMs(500)
+    elapsed += 500
+  }
+}
+
+// 长 Scroll 页找屏外控件 —— **禁用 Component.scrollSearch**（实测在 50+ 行 Scroll
+// 上 O(N²) 退化 + 累积内存压力，第 10 个 toggle 用例必卡死 daemon；force-cancel 又触发
+// "uitest-api dose not allow calling concurrently"）。改用有限次 driver.swipe 手动滚找：
+async function findInScroll(driver: Driver, _scrollId: string, id: string): Promise<Component | null> {
+  const direct = await driver.findComponent(ON.id(id))
+  if (direct !== null) return direct
+  let size: Point | null = null
+  try { size = await driver.getDisplaySize() } catch (_e) {}
+  const w = (size !== null && size.x > 0) ? size.x : 1080
+  const h = (size !== null && size.y > 0) ? size.y : 2340
+  const cx = Math.floor(w / 2), y1 = Math.floor(h * 0.75), y2 = Math.floor(h * 0.25)
+  for (let i = 0; i < 4; i++) {   // 上限 4 次：覆盖 ~3 屏长度；多了徒增噪声
+    try { await driver.swipe(cx, y1, cx, y2, 1200) } catch (_e) {}
+    await driver.delayMs(250)
+    const hit = await driver.findComponent(ON.id(id))
+    if (hit !== null) return hit
+  }
+  return null
+}
+
+// 状态层断言取 persistence key：查 manifest `## ID → State Key 映射` 段，禁 strip 推导
+// （P0010 教训：strip 出 snake `show_hidden_items`，SettingsKeys 真值是 camel `showHiddenItems` → 37 用例 RED）
+// 实现：把 manifest 映射在测试文件顶部以常量字典登记，运行时查表
+const STATE_KEY_MAP: Record<string, string> = {
+  // 由 step3-generate 从 manifest §map 抄入；none 标记跳过状态层
+  // 'settings_show_hidden_items_toggle': 'showHiddenItems',
+}
+function lookupStateKey(uiId: string): string | null {
+  return STATE_KEY_MAP[uiId] ?? null   // null = 仅意图层 / _IMPL_MISSING
+}
+```
+
+**关键铁律**（每条都有实测失败证据）：
+
+1. **`Driver.create()` 必须在 `beforeEach` 懒 create**，禁 `beforeAll`：beforeAll 时 delegator 未 ready，create 返回 null（不抛），后续全 `Cannot read property delayMs of null`。
+2. **跨模块 startAbility 必须 `moduleName: 'entry'`**：缺失 → 整批 `startAbility failed., error in beforeEach`。
+3. **冷热路径 `Promise.race` 双保险**：第二个测试文件起 EntryAbility 已 singleton 在前台 → `startAbility` 只触发 `onNewWant`，monitor 永不 fire，3s 超时兜底进热路径。
+4. **landmark 轮询，禁固定 delayMs(500)**：冷启动可能 1-3s。
+5. **delegator 从 `@kit.TestKit` import**，不是 `@ohos.app.ability.abilityDelegatorRegistry`。
+6. **bypass 读 mock 用 `Record<string, Object>` 取字段、mountTarget 同名 target 要幂等（栈顶相同直接 return）**：cast 成 class 类型再调 `m.isVideo()` 等方法在 plain mock 上是 TypeError；反复 destroy/create 同一 NavDestination 会触发 `libark_jsruntime + libuitest` native race → 整批 `App died`。
+
+---
+
+## 8. 每页 AC 类型 → 断言形态
+
+| AC 类型 | 断言 |
+|---------|------|
+| SMOKE | `assertComponentExist(ON.id('<page_short>_root'))` |
+| COMP | `assertComponentExist(ON.id(...) / .type(...))` — type 必须是该页 spec 真实存在的类型 |
+| NAV 入/出 | 点入口 → 落地页 landmark `ON.id('<target_short>_root')` |
+| INTERACT_toggle | `isChecked()` 前后取反 |
+| INTERACT_opens_dialog | 点击后 `ON.type('Dialog')` 或 `ON.id('xxx_dialog')` 存在 |
+| INTERACT_menu | 点触发器 → `ON.text(manifest 字符串)` 存在 |
+| INTERACT_swiper | `getPageSig()` 前后不等 |
+| INTERACT_search | `getText()` 等于输入值 |
+| INTERACT_scroll_to_bottom | `driver.swipe` + 最后一节的 row id 存在 |
+
+**示例 it 块**：
+
+```typescript
+// COMP：直接存在性
+it('P0002_UI_COMP_Grid_exists', 0, async () => {
+  await driver.assertComponentExist(ON.id('main_directory_grid'))
+})
+
+// NAV：点入口 → 落地页 landmark
+it('P0002_UI_NAV_to_MediaPage', 0, async () => {
+  const item = await driver.findComponent(ON.type('GridItem'))
+  expect(item !== null).assertTrue()
+  if (item !== null) { await item.click(); await driver.delayMs(500) }
+  await driver.assertComponentExist(ON.id('media_root'))
+})
+
+// INTERACT_toggle（长 Scroll 页用 findInScroll）
+it('P0010_UI_INTERACT_show_hidden_items_toggle_flips_checked', 0, async () => {
+  const t = await findInScroll(driver, 'settings_scroll', 'settings_show_hidden_items_toggle')
+  expect(t !== null).assertTrue()
+  if (t !== null) {
+    const before = await t.isChecked(); await t.click(); await driver.delayMs(200)
+    expect(await t.isChecked()).assertEqual(!before)
+  }
+})
+
+// 不可达页（FormExtension / 必须真实 ContentResolver）
+beforeAll(async () => {
+  throw new Error('P00xx setup: <page> unreachable from test context')   // 不降级到 MainPage landmark
+})
+```
+
+---
+
+## 9. 反模式禁止清单（False-GREEN 速查）
+
+| ❌ | ✅ |
 |---|---|
-| `await Driver.create()` | `Driver.create()` |
-| EntryAbility / router / NavPathStack / loadContent 测试桥直达目标页 | `IN_APP` 启动默认 Ability 后走 canonical click flow；外部入口重建其设计声明的真实生产触发 |
-| `__TARGET_PAGE__`、`__TEST_MODE__`、Service AppStorage 旁路 | 使用生产 UI 与显式真实环境前置 |
-| 为测试给生产组件新增/改写 `.id()`、`idPrefix` 或 ID manifest | 只复用产品已有 stable ID；没有 ID 时使用唯一可见文本或唯一可见容器语境 |
-| 无 stable ID/唯一可见文本/合法关系语义 locator 时用坐标、下标或同型组件猜测 | 只登记一份 `ERROR/UNREACHABLE_BY_UI`，移出 runnable UI inventory 并转其他测试层/人工；不生成测试或 blocked 记录 |
-| selector 散落在 test/flow/support | 全部移入目标 Page Object |
-| 点击后继续使用旧 `Component` | 等新 landmark，并重新查询目标组件 |
-| `if (comp) { ... }` 导致未命中也 PASS | `waitForComponent` + 必要断言，失败立即结束 |
-| 固定 delay 判断到页 | 等目标 landmark；idle 仅辅助且检查 bool |
-| `Promise.all` 或超时 race 包 UI API | 每次只发一个 UI 调用并 `await` |
-| catch 后忽略 | 直接传播，或补充上下文后 rethrow |
-| 默认坐标 swipe 搜索长列表 | 找到 Scroll/List 容器后 `Component.scrollSearch` |
-| 继承上个 it 的滚动/开关/导航状态 | 页准入一次；每例重新确认并通过 UI 准备/恢复本例基线，失败停止新业务 |
-| 每例启动/终止/复位应用来清场 | 普通批次复用应用会话；只在声明的三类重启例外中重启 |
-| AppStorage 双重断言 | 离页/重进/重启后从 UI 验证持久化 |
-| 编译不过就注释注册或 Ignore | 修结构；仍失败则计入 infra/ERROR 分母 |
+| `if (comp) { click; assert }` 短路（找不到默认 PASS）| 正向路径无条件 `expect(comp != null).assertTrue()` + 必 click 后断言 |
+| `expect(driver != null).assertTrue()` 空断言 | 断目标页特征 landmark |
+| 点击无前后状态对比 | INTERACT 必须 `before / after` 对比（`isChecked` / `getText` / 控件存在变化） |
+| `assertComponentExist(ON.type('Column'))` 用错页 landmark | landmark 必须该页 spec 真实存在的类型 / id |
+| `ON.text('设置')` 凭空翻译 | `ON.text` 字面量可追溯到 manifest 字符串映射 |
+| `_IMPL_MISSING` 用例查 `<page>_root` 然后 `expect !== null`（root 永远存在 → 伪 PASS）| `_IMPL_MISSING` 用 `assertComponentExist(ON.id('<期望但不存在的 id>'))` 让它必 RED 暴露 spec gap |
+| `driver.scrollSearch(...)` (不存在) / 直接 `Component.scrollSearch`（O(N²) 退化 + 卡死 daemon）| `findInScroll` helper（有限次 `driver.swipe` 手动滚 ≤4 次） |
+| `withTimeout(scrollToTop, ...)` 类用 setTimeout 包裹 uitest API | uitest API 无 cancel：超时 resolve 后下次调用必抛 `dose not allow calling concurrently`；只能改用即发即返的 `driver.swipe` |
+| 每个 it() beforeEach 都 `resetScrollToTop`（造成屏幕反复颠簸）| 让 scroll 位置自然继承，下个 it 找邻近 toggle 就近滚 |
+| `stateKey = uiId.replace('settings_','').replace('_toggle','')` 推导 persistence key | `lookupStateKey(uiId)` 查 manifest `## ID → State Key 映射`；snake↔camel 必显式映射 |
+| 一个页面多条 it 全用同一通用类型（Grid/Column）| 不同 it 用不同 id / type；同类型集中是设计退化信号 |
+| `afterAll` 含业务断言 | `afterAll` 只清理 |
+| `beforeAll(async () => { driver = await Driver.create() })` | `beforeEach` 懒 create |
 
-## 11. ArkTS 编译约束
+**枚举铁律**（设计要求 + 生成必跑）：菜单项 / CAB 动作 / 设置项 / `@State boolean` Toggle 各**每项一条 it()**，禁合并；Scroll 页额外 1 条 `scroll_to_bottom_reveals_*`。
 
-- 所有变量、返回值和集合写明确类型；不用 `any/unknown`。
-- 不在 `it()` 内定义嵌套函数；共享逻辑放 Page Object/support。
-- Want 使用 SDK 声明的类型并带项目实际 `bundleName/moduleName/abilityName`。
-- 对 `waitForComponent` 的返回类型按当前 SDK 声明处理；不要以 `@ts-ignore` 覆盖版本差异。
-- `List.test.ets` 由单一 register owner 按实际 `*.test.ets` 确定性重建，不并发追加。
+---
+
+## 10. ArkTS 严格模式 + UI 编译要点
+
+| 规则 | ❌ | ✅ |
+|------|---|---|
+| `arkts-no-untyped-obj-literals` | `const m = { id: 1 }` 裸对象 / `parameters: { ... }` | 复用源码类 `new Xxx()` + 字段赋值；或定义 `interface`；`Want.parameters: Record<string, Object>` |
+| `arkts-no-any-unknown` | `let x` / `: any` / `as unknown` | 显式类型；ArkTS top type 是 `Object` |
+| `arkts-no-ns-as-obj` | `mocker.mockFunc(http, http.request)` 传 namespace | 包 class shim 后 mock 实例（仅 ut 相关；UI 默认走 mock 数据） |
+| `arkts-no-nested-funcs` | it() 内 `function buildMockX(...) {}` | 提到 describe 之外作 module-scope helper |
+| `arkts-limited-throw` | `throw err` (err 是 unknown) | `throw err instanceof Error ? err : new Error(String(err))` |
+| TestKit 大小写 | `AbilityDelegatorRegistry.xxx` | 小写实例 `abilityDelegatorRegistry.getAbilityDelegator()`；UiTest 从 `@ohos.UiTest` import |
+| `startAbility` Want | `await driver.startAbility({...})` 裸对象 | `import { Want } from '@kit.AbilityKit'`；`Want` 类型必填 `moduleName: 'entry'` |
+
+---
+
+## 11. 设备前置（跑测前必做，否则整批 ERROR）
+
+```bash
+# (1) 系统 ArkUI 测试模式 — 改完需重启设备
+$HDC -t $DEVICE shell param set persist.ace.testmode.enabled 1 && $HDC -t $DEVICE shell reboot
+
+# (2) auto-sign：DevEco → Project Structure → Signing Configs → 勾 Automatically generate signature
+
+# (3) uitest daemon —— 跑测时必须与 aa test 在同一条 hdc shell 链式执行（token=0 固定）
+$HDC -t $DEVICE shell "uitest start-daemon 0; aa test -b $BUNDLE -m entry_test \
+  -s unittest OpenHarmonyTestRunner -s timeout 600000" > /tmp/ui-run.log 2>&1
+```
+
+**四个常见根因**（症状都是"所有 UI ERROR / 拿不到窗口 / Cannot read property xxx of null"）：
+
+| 根因 | 特征日志 | 修法 |
+|------|---------|------|
+| daemon 没起 / 被杀 | `Wait for ApiCaller publish by server timeout` + `ipc connection is dead (17000006)` | 链式命令；token=0 |
+| 没开 auto-sign | `NapiDefineClass occur exception, className:Driver` | DevEco 勾自动签名，重编重装 |
+| `Driver.create()` 在 beforeAll | beforeAll 阶段 `Cannot get AbilityDelegator` | 改 `beforeEach` 懒 create |
+| testmode 没开 | `Get windows failed` / `GetRootByWindow failed` | `param set persist.ace.testmode.enabled 1` 后重启设备 |

@@ -1,6 +1,6 @@
 ---
 name: migbot-increment-review
-description: "Trigger: `$migbot-increment-review` or natural language. 审阅 SDD / Spec 类 Markdown 文档，输出优化稿"
+description: Trigger: `$migbot-increment-review` or natural language. 审阅 SDD / Spec 类 Markdown 文档，输出优化稿
 ---
 
 > Codex skill (converted from the `migbot-increment-review` slash command). Invoke with `$migbot-increment-review`, or pick it in `/skills` (the default_prompt below auto-runs). Codex has no custom slash commands, so the `$` prefix replaces `/`.

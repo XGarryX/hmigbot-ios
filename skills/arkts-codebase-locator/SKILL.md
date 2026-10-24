@@ -1,6 +1,6 @@
 ---
 name: arkts-codebase-locator
-description: "针对ArkTS语言的Harmony应用代码仓功能定位类问答技能。专门用于回答\"xx功能在哪实现？\"、\"导出逻辑在哪？\"、\"增加参数/开关/按钮在哪？\"等功能定位类问题，快速定位候选入口和核心文件集合。适用于HarmonyOS应用开发者快速理解和导航大型ArkTS代码库（同时支持 ArkTS V1 装饰器 @Component/@State/@Prop/@Link/@Provide/@Consume/@Observed/@ObjectLink/@StorageLink/@StorageProp/@LocalStorageLink/@LocalStorageProp/@Watch 与 V2 装饰器 @ComponentV2/@Local/@Param/@Once/@Event/@Provider/@Consumer/@ObservedV2/@Trace/@Monitor/@Computed/AppStorageV2/PersistenceV2 两套体系，定位查询时会自动覆盖两种）。使用场景包括：(1) 定位具体功能实现位置，(2) 查找特定逻辑代码，(3) 代码仓结构分析，(4) 快速理解项目架构，(5) 新功能开发时相关代码查找。"
+description: 针对ArkTS语言的Harmony应用代码仓功能定位类问答技能。专门用于回答"xx功能在哪实现？"、"导出逻辑在哪？"、"增加参数/开关/按钮在哪？"等功能定位类问题，快速定位候选入口和核心文件集合。适用于HarmonyOS应用开发者快速理解和导航大型ArkTS代码库（同时支持 ArkTS V1 装饰器 @Component/@State/@Prop/@Link/@Provide/@Consume/@Observed/@ObjectLink/@StorageLink/@StorageProp/@LocalStorageLink/@LocalStorageProp/@Watch 与 V2 装饰器 @ComponentV2/@Local/@Param/@Once/@Event/@Provider/@Consumer/@ObservedV2/@Trace/@Monitor/@Computed/AppStorageV2/PersistenceV2 两套体系，定位查询时会自动覆盖两种）。使用场景包括：(1) 定位具体功能实现位置，(2) 查找特定逻辑代码，(3) 代码仓结构分析，(4) 快速理解项目架构，(5) 新功能开发时相关代码查找。
 metadata:
   type: codebase
   domain: general

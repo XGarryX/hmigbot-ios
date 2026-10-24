@@ -1,4 +1,3 @@
-param([Parameter(Mandatory=$true)][string]$Workspace, [string]$Python = 'python')
-$ErrorActionPreference = 'Stop'
-& $Python (Join-Path $PSScriptRoot 'scripts/manage_install.py') uninstall --workspace $Workspace
+﻿param([string]$Target=(Get-Location).Path)
+& python "$PSScriptRoot/scripts/manage_install.py" uninstall --workspace $Target
 exit $LASTEXITCODE

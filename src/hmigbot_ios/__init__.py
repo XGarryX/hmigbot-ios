@@ -1,3 +1,1 @@
-"""Native iOS source adapter for standalone HMigBot."""
-
-__version__ = "0.11.0"
+__version__ = "1.5.2-ios.14"

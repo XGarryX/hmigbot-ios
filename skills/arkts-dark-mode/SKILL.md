@@ -1,6 +1,6 @@
 ---
 name: arkts-dark-mode
-description: "ArkTS 深色模式场景下的根因定位与修复（V2 优先，兼容 V1）：硬编码颜色（#RRGGBB / 0x / Color.xxx）、主题资源未切换、resources/dark 目录缺失或路径错、状态栏/导航栏颜色错、图标/SVG/图片未变色、HSP/HAR 模块深色资源失效、ColorMode 切换后不刷新、Canvas/Web 未响应主题等。代码示例使用 ArkTS V2 装饰器（`@ComponentV2 / @Local / @ObservedV2 / @Trace / AppStorageV2.connect`），V1（`@Component / @State / @StorageLink`）写法仅作历史对照。"
+description: ArkTS 深色模式场景下的根因定位与修复（V2 优先，兼容 V1）：硬编码颜色（#RRGGBB / 0x / Color.xxx）、主题资源未切换、resources/dark 目录缺失或路径错、状态栏/导航栏颜色错、图标/SVG/图片未变色、HSP/HAR 模块深色资源失效、ColorMode 切换后不刷新、Canvas/Web 未响应主题等。代码示例使用 ArkTS V2 装饰器（`@ComponentV2 / @Local / @ObservedV2 / @Trace / AppStorageV2.connect`），V1（`@Component / @State / @StorageLink`）写法仅作历史对照。
 metadata:
   type: domain
   domain: ui

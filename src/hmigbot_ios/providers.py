@@ -6,34 +6,46 @@ import subprocess
 from .core import MigrationError, json_bytes, read_json
 
 
-def swift_syntax(root, files, config_path):
+def invoke_json_provider(config_path, request):
+    """Shared process boundary for syntax and conditional-source providers."""
     config = read_json(config_path)
     for field in ('command', 'version_command'):
         if not isinstance(config.get(field), list) or not config[field] or not all(isinstance(v, str) and v for v in config[field]):
             raise MigrationError(f'Provider {field} must be a nonempty argument array')
-    inputs = []
-    for item in files:
-        if item['path'].endswith('.swift'):
-            inputs.append({**item, 'source': (root / item['path']).read_bytes().decode('utf-8')})
-    if not inputs:
-        raise MigrationError('No Swift input files')
     timeout = config.get('timeout_seconds', 120)
     if type(timeout) is not int or not 1 <= timeout <= 3600:
         raise MigrationError('Provider timeout must be 1..3600 seconds')
     try:
-        version = subprocess.run(config['version_command'], capture_output=True, timeout=30, shell=False)
+        from .init_environment import _environment
+        environment = _environment()
+        version = subprocess.run(config['version_command'], capture_output=True, timeout=30, shell=False, env=environment)
         if version.returncode or not version.stdout.strip():
             raise MigrationError('Cannot verify Swift provider version')
-        result = subprocess.run(config['command'], input=json_bytes({'files': inputs}), capture_output=True,
-                                timeout=timeout, shell=False)
-    except subprocess.TimeoutExpired as exc:
-        raise MigrationError('SwiftSyntax provider timed out; no successful artifact was produced') from exc
+        result = subprocess.run(config['command'], input=json_bytes(request), capture_output=True,
+                                timeout=timeout, shell=False, env=environment)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        raise MigrationError('Swift provider unavailable or timed out') from exc
     if result.returncode:
-        raise MigrationError('SwiftSyntax provider failed: ' + result.stderr.decode('utf-8', errors='replace')[-2000:])
+        raise MigrationError('Swift provider failed: ' + result.stderr.decode('utf-8', errors='replace')[-2000:])
     try:
         value = json.loads(result.stdout)
     except (ValueError, UnicodeError) as exc:
         raise MigrationError('Provider did not return UTF-8 JSON') from exc
+    return value, {'command': config['command'], 'version_command': config['version_command'],
+                   'exit_code': result.returncode, 'version_stdout': version.stdout.decode('utf-8', errors='replace'),
+                   'version_stderr': version.stderr.decode('utf-8', errors='replace')}, result.stdout, result.stderr
+
+
+def swift_syntax(root, files, config_path, *, source_view=None):
+    inputs = []
+    for item in files:
+        if item['path'].endswith('.swift'):
+            if source_view and not source_view.includes(item['path']):
+                continue
+            inputs.append({**item, 'source': source_view.text(item['path']) if source_view else (root / item['path']).read_bytes().decode('utf-8')})
+    if not inputs:
+        raise MigrationError('No Swift input files')
+    value, run, _, _ = invoke_json_provider(config_path, {'files': inputs})
     if not isinstance(value, dict) or value.get('protocol_version') != 1 or value.get('provider') != 'SwiftSyntax' or value.get('semantic_resolution') is not False:
         raise MigrationError('Unexpected SwiftSyntax protocol/evidence class')
     if not isinstance(value.get('files'), list):
@@ -62,8 +74,10 @@ def swift_syntax(root, files, config_path):
             issues.append({'code': 'swift_parse_error', 'path': file['path'], 'diagnostics': file.get('diagnostics', [])})
     if received != set(expected):
         raise MigrationError('SwiftSyntax provider omitted source files')
-    value['tool_version_output'] = version.stdout.decode('utf-8', errors='replace').strip()
+    value['tool_version_output'] = run['version_stdout'].strip()
     value['compiler_binding'] = 'unresolved'
+    if source_view:
+        value['source_view'] = source_view.reference
     return value, issues
 
 
@@ -71,18 +85,30 @@ def normalize_build_settings(raw):
     if not isinstance(raw, list) or not raw:
         raise MigrationError('Expected nonempty xcodebuild -showBuildSettings -json array')
     targets = []
+    seen = {}
+    duplicate_targets = []
     retained = {'PRODUCT_NAME', 'PRODUCT_BUNDLE_IDENTIFIER', 'PRODUCT_TYPE', 'SWIFT_VERSION', 'SDKROOT',
                 'SDK_NAME', 'IPHONEOS_DEPLOYMENT_TARGET', 'SUPPORTED_PLATFORMS', 'ARCHS', 'CONFIGURATION',
                 'SWIFT_ACTIVE_COMPILATION_CONDITIONS', 'GCC_PREPROCESSOR_DEFINITIONS', 'OTHER_SWIFT_FLAGS',
                 'OTHER_CFLAGS', 'HEADER_SEARCH_PATHS', 'FRAMEWORK_SEARCH_PATHS', 'INFOPLIST_FILE',
-                'CODE_SIGN_ENTITLEMENTS', 'SWIFT_OBJC_BRIDGING_HEADER', 'SRCROOT', 'PROJECT_FILE_PATH'}
+                'CODE_SIGN_ENTITLEMENTS', 'SWIFT_OBJC_BRIDGING_HEADER', 'SRCROOT', 'PROJECT_FILE_PATH',
+                'PLATFORM_NAME', 'EFFECTIVE_PLATFORM_NAME', 'SDK_VERSION', 'TOOLCHAIN_DIR', 'SWIFT_EXEC',
+                'SWIFT_INCLUDE_PATHS', 'PRODUCT_MODULE_NAME'}
     for entry in raw:
         if not isinstance(entry, dict) or not isinstance(entry.get('buildSettings'), dict):
             raise MigrationError('Invalid Xcode build settings entry')
+        name = entry.get('target')
+        if name in seen:
+            if seen[name] != entry:
+                raise MigrationError('Conflicting Xcode settings for target: ' + str(name))
+            duplicate_targets.append(name)
+            continue  # Xcode -alltargets can repeat its primary target verbatim.
+        seen[name] = entry
         settings = entry['buildSettings']
         targets.append({'target': entry.get('target'), 'settings': {key: settings[key] for key in sorted(retained & settings.keys())},
                         'source_file_membership': 'not_provided_by_showBuildSettings'})
-    return {'targets': targets, 'evidence': 'imported_xcode_settings', 'capture_authenticity': 'not_verified'}
+    return {'targets': targets, 'evidence': 'imported_xcode_settings', 'capture_authenticity': 'not_verified',
+            'identical_duplicate_entries':duplicate_targets}
 
 
 def clang_ast(root, files, config_path):

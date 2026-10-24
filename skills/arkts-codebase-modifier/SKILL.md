@@ -1,6 +1,6 @@
 ---
 name: arkts-codebase-modifier
-description: "针对ArkTS语言的Harmony应用代码仓功能修改类问题回答。专注于\"给xx增加开关/参数/流程怎么做？\"、\"新增视频播放怎么实现？\"等功能修改类问题。提供基于代码仓事实的功能修改建议，不直接修改代码（同时支持 ArkTS V1 装饰器 @Component/@State/@Prop/@Link/@Provide/@Consume/@Observed/@ObjectLink/@StorageLink/@StorageProp/@LocalStorageLink/@LocalStorageProp/@Watch 与 V2 装饰器 @ComponentV2/@Local/@Param/@Once/@Event/@Provider/@Consumer/@ObservedV2/@Trace/@Monitor/@Computed/AppStorageV2/PersistenceV2 两套体系，新增代码默认采用 V2 风格）。使用场景包括：(1) 功能新增实现，(2) 参数/开关添加，(3) 流程修改优化，(4) 组件功能扩展，(5) 交互逻辑调整，(6) 多媒体功能集成。依赖arkts-locator提供的定位信息。"
+description: 针对ArkTS语言的Harmony应用代码仓功能修改类问题回答。专注于"给xx增加开关/参数/流程怎么做？"、"新增视频播放怎么实现？"等功能修改类问题。提供基于代码仓事实的功能修改建议，不直接修改代码（同时支持 ArkTS V1 装饰器 @Component/@State/@Prop/@Link/@Provide/@Consume/@Observed/@ObjectLink/@StorageLink/@StorageProp/@LocalStorageLink/@LocalStorageProp/@Watch 与 V2 装饰器 @ComponentV2/@Local/@Param/@Once/@Event/@Provider/@Consumer/@ObservedV2/@Trace/@Monitor/@Computed/AppStorageV2/PersistenceV2 两套体系，新增代码默认采用 V2 风格）。使用场景包括：(1) 功能新增实现，(2) 参数/开关添加，(3) 流程修改优化，(4) 组件功能扩展，(5) 交互逻辑调整，(6) 多媒体功能集成。依赖arkts-locator提供的定位信息。
 metadata:
   type: codebase
   domain: general

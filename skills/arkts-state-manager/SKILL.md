@@ -1,6 +1,6 @@
 ---
 name: arkts-state-manager
-description: "生成 ArkTS/HarmonyOS 状态管理代码（V2 优先，API 12+）。当用户需要解决组件间数据通信、全局状态共享、数据持久化、UI 刷新不触发等问题，或使用 V2/V1 状态装饰器（@Local/@Param/@Event/@Provider/@Consumer/@ObservedV2/AppStorageV2/PersistenceV2 等）时，务必触发此 skill。即使只说\"父子组件传值\"\"全局变量\"也应触发。页面路由/导航跳转用 arkts-navigation-builder。"
+description: 生成 ArkTS/HarmonyOS 状态管理代码（V2 优先，API 12+）。当用户需要解决组件间数据通信、全局状态共享、数据持久化、UI 刷新不触发等问题，或使用 V2/V1 状态装饰器（@Local/@Param/@Event/@Provider/@Consumer/@ObservedV2/AppStorageV2/PersistenceV2 等）时，务必触发此 skill。即使只说"父子组件传值""全局变量"也应触发。页面路由/导航跳转用 arkts-navigation-builder。
 metadata:
   type: domain
   domain: state

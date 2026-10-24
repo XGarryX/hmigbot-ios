@@ -1,6 +1,9 @@
 ---
 name: migbot-increment-archiving
-description: "Migbot-Increment ARCHIVING 阶段 skill，用于变更归档管理。 当用户说\"执行 migbot-increment-archiving\"、\"归档xxx\"、\"完成归档\"或类似表述时触发。 本 skill 负责检查变更是否完成，并将完成的变更归档到 specs/archives/ 目录。"
+description: |
+  Migbot-Increment ARCHIVING 阶段 skill，用于变更归档管理。
+  当用户说"执行 migbot-increment-archiving"、"归档xxx"、"完成归档"或类似表述时触发。
+  本 skill 负责检查变更是否完成，并将完成的变更归档到 specs/archives/ 目录。
 ---
 
 # migbot-increment-archiving Skill
